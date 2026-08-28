@@ -1,0 +1,24 @@
+# Vendor reference material and installers are kept outside source history.
+/PATCHES/
+
+# Visual Studio and Qt generated state.
+/test/.vs/
+/test/x64/
+/test/test/x64/
+*.user
+*.suo
+*.VC.db
+*.VC.db-shm
+*.VC.db-wal
+*.VC.opendb
+*.ipch
+
+# Common generated files.
+*.obj
+*.pdb
+*.ilk
+*.iobj
+*.ipdb
+*.tlog
+*.log
+*.exe
