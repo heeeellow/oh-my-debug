@@ -159,3 +159,25 @@ Agent 留出稳定边界。
   Windows 假 Agent 与完整连接界面，板端 Agent 的交叉编译、推送和守护启动留作下一阶段。
 - 主程序工程显式依赖假 Agent 工程，两者统一输出到同一运行目录，避免单独命令行构建后界面
   误用旧版 Agent 或提示缺少程序。
+
+## 2026-08-28：Ubuntu aarch64 板端 Agent 原生验证
+
+### 实机环境
+
+- ADB 序列号 `976ccefbf0c7e61b` 在界面中沿用 `Nexus 4` 元数据，实际系统为 Ubuntu 22.04.5、
+  Linux 5.10.226、aarch64，ADB shell 身份为 root。
+- 板端已有 GCC/G++ 11.4、CMake 3.22.1 和 GNU Make 4.3，满足 Agent 的 C++17 原生构建要求。
+- 根文件系统 29 GiB 已 100% 占满；根目录存在约 1.78 万个 `core.*`，实际占用约 22.1 GiB。
+  最新可解析转储来自不断重启的 Xorg/LightDM。验证期间 core 数从 17833 增长到 17864，属于仍在
+  发生的独立板端故障，本轮未删除转储、停止服务或修改系统配置。
+
+### 验证与边界
+
+- 将最小 Agent 源码临时推送到 3.9 GiB 空闲的 `/dev/shm`，在内存盘中完成 CMake Release 构建；
+  产物为约 170 KiB 的 ARM64 Linux ELF。
+- Agent 仅监听板端 `127.0.0.1:27183`，Windows 使用临时 ADB `tcp:` 转发访问，没有将未认证
+  服务暴露到局域网。
+- Windows 冒烟客户端完成 `session.hello` 与 `capability.list`，结果为 PASS；客户端断开后 Agent
+  正常退出，临时 ADB 转发和 `/dev/shm` 构建目录均已清理。
+- 当前验证的仍是假能力 Agent；下一阶段需要实现真实 `system.info`，再设计上位机的一键部署、
+  启动、转发、连接和状态恢复流程。
