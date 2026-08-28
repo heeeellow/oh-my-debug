@@ -5,6 +5,7 @@
 /test/.vs/
 /test/x64/
 /test/test/x64/
+/test/agent/obj/
 *.user
 *.suo
 *.VC.db

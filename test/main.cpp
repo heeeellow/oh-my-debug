@@ -13,6 +13,8 @@ int main(int argc, char *argv[])
     std::string snapshotPath;
     std::string initialPage;
     std::string initialSize;
+    std::string agentSmokeHost;
+    std::uint16_t agentSmokePort = 0;
     for (int index = 1; index < argc; ++index) {
         if (std::string_view(argv[index]) == "--self-test") {
             return serialdemo::runSelfTest();
@@ -26,6 +28,17 @@ int main(int argc, char *argv[])
         if (std::string_view(argv[index]) == "--ui-size" && index + 1 < argc) {
             initialSize = argv[++index];
         }
+        if (std::string_view(argv[index]) == "--agent-smoke" && index + 2 < argc) {
+            agentSmokeHost = argv[++index];
+            const int port = std::stoi(argv[++index]);
+            if (port <= 0 || port > 65535) {
+                return 2;
+            }
+            agentSmokePort = static_cast<std::uint16_t>(port);
+        }
+    }
+    if (!agentSmokeHost.empty()) {
+        return serialdemo::runAgentSmokeTest(agentSmokeHost, agentSmokePort);
     }
     QApplication app(argc, argv);
     MainWindow window;

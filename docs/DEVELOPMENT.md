@@ -7,12 +7,14 @@
 - Qt 6.11.2 MSVC 64-bit
 - C++17
 
-当前工程入口为 `test/test.slnx`，项目文件为 `test/test.vcxproj`。
+当前工程入口为 `test/test.slnx`，其中包含 Qt 上位机 `test/test.vcxproj` 和无 Qt 的假 Agent
+`test/agent/agent.vcxproj`。
 
 ## 2. 目录约定
 
 ```text
 test/
+├── agent/         无 Qt 的板端 Agent/假服务入口
 ├── core/          标准 C++ 核心、传输和平台无关逻辑
 ├── application/   用例、设备会话和任务协调
 ├── ui/            Qt 界面
@@ -49,7 +51,8 @@ test/
 ## 5. 验证层级
 
 - 核心静态检查：依赖方向、输入校验、线程关闭和错误边界。
-- `--self-test`：编码、ADB 枚举和安全转发冒烟检查。
+- `--self-test`：编码、异步发送队列、串口可靠性帧、Agent 帧、ADB 枚举和安全转发冒烟检查。
+- `--agent-smoke <host> <port>`：连接本机假 Agent，验证 hello 与能力发现。
 - `--ui-snapshot <png>`：保存概览页快照；可加 `--ui-page serial`、`tests`、`history`
   或 `settings` 选择待验收页面，并用 `--ui-size 1366x768` 指定逻辑窗口尺寸。
 - UI 快照：检查主要分辨率下的裁切、重叠和状态层级。

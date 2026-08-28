@@ -10,5 +10,6 @@ TestTools 是面向 Rockchip 板卡调试与测试的 Windows 工作台。当前
 - [开发手册](docs/DEVELOPMENT.md)
 - [开发日志](docs/DEVLOG.md)
 - [第三方依赖与来源](docs/THIRD_PARTY.md)
+- [Agent 协议 v1 雏形](docs/AGENT_PROTOCOL_V1.md)
 
-当前 Qt 工程位于 `test/`，使用 Qt 6、C++17 和 Visual Studio 构建。
+当前解决方案位于 `test/`：上位机使用 Qt 6，Agent 雏形不依赖 Qt，二者均使用 C++17。

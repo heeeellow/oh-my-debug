@@ -1,12 +1,18 @@
 #include "self_test.h"
 
 #include "adb_transport.h"
+#include "agent_client.h"
+#include "agent_protocol.h"
+#include "async_serial_sender.h"
 #include "codec.h"
 #include "process_runner.h"
+#include "serial_test_engine.h"
 
 #include <chrono>
 #include <algorithm>
 #include <iostream>
+#include <condition_variable>
+#include <mutex>
 
 namespace serialdemo {
 
@@ -35,6 +41,84 @@ int runSelfTest()
     if (toHex(lineEndingProbe) != "41 54 0D 0A") {
         std::cerr << "FAIL line ending codec\n";
         return 11;
+    }
+
+    const auto frame0 = encodeIntegrityFrame(0, 32);
+    const auto frame1 = encodeIntegrityFrame(1, 32);
+    auto damagedFrame = encodeIntegrityFrame(2, 32);
+    damagedFrame[16] ^= 0x05;
+    IntegrityStreamVerifier verifier;
+    verifier.push(ByteBuffer{0x00, 0x01, 'T'});
+    verifier.push(ByteBuffer(frame0.begin(), frame0.begin() + 7));
+    ByteBuffer remainder(frame0.begin() + 7, frame0.end());
+    remainder.insert(remainder.end(), frame1.begin(), frame1.end());
+    remainder.insert(remainder.end(), damagedFrame.begin(), damagedFrame.end());
+    verifier.push(remainder);
+    verifier.push(frame1);
+    const auto &integrity = verifier.stats();
+    if (integrity.frames != 4 || integrity.uniqueFrames != 3 || integrity.validFrames != 3
+        || integrity.corruptedFrames != 1 || integrity.duplicateFrames != 1
+        || integrity.bitErrors != 2 || integrity.framingErrors == 0) {
+        std::cerr << "FAIL integrity stream verifier\n";
+        return 12;
+    }
+
+    PeriodicSendPlan sendPlan;
+    const auto start = PeriodicSendPlan::Clock::now();
+    if (!sendPlan.start({std::chrono::milliseconds(10), 2}, start)
+        || !sendPlan.isDue(start)) {
+        std::cerr << "FAIL periodic send start\n";
+        return 13;
+    }
+    sendPlan.recordAttempt(true, start);
+    sendPlan.recordAttempt(false, start + std::chrono::milliseconds(10));
+    if (sendPlan.isRunning() || sendPlan.attempts() != 2 || sendPlan.successes() != 1) {
+        std::cerr << "FAIL periodic send accounting\n";
+        return 14;
+    }
+
+    std::mutex senderMutex;
+    std::condition_variable senderCondition;
+    int senderCompletions = 0;
+    std::uint64_t senderTag = 0;
+    AsyncSerialSender sender;
+    sender.start([](const ByteBuffer &payload) { return payload == ByteBuffer{0x41, 0x54}; },
+                 [&](const ByteBuffer &, std::uint64_t tag, bool succeeded) {
+                     std::lock_guard<std::mutex> lock(senderMutex);
+                     if (succeeded) {
+                         ++senderCompletions;
+                         senderTag = tag;
+                     }
+                     senderCondition.notify_one();
+                 });
+    if (!sender.enqueue(ByteBuffer{0x41, 0x54}, 7)) {
+        std::cerr << "FAIL async sender enqueue\n";
+        return 15;
+    }
+    {
+        std::unique_lock<std::mutex> lock(senderMutex);
+        senderCondition.wait_for(lock, std::chrono::seconds(2), [&] { return senderCompletions == 1; });
+    }
+    sender.stop(true);
+    if (senderCompletions != 1 || senderTag != 7 || sender.pendingCount() != 0) {
+        std::cerr << "FAIL async sender completion\n";
+        return 16;
+    }
+
+    const auto encodedAgentFrame = testtools::encodeAgentFrame(
+        testtools::jsonAgentFrame("{\"protocol\":1,\"request_id\":\"unit\"}"));
+    testtools::AgentFrameDecoder agentDecoder;
+    std::vector<testtools::AgentFrame> agentFrames;
+    std::string agentFrameError;
+    agentDecoder.push(ByteBuffer(encodedAgentFrame.begin(), encodedAgentFrame.begin() + 3),
+                      agentFrames, agentFrameError);
+    if (!agentFrames.empty()
+        || !agentDecoder.push(ByteBuffer(encodedAgentFrame.begin() + 3, encodedAgentFrame.end()),
+                              agentFrames, agentFrameError)
+        || agentFrames.size() != 1
+        || testtools::agentFrameText(agentFrames.front()).find("request_id") == std::string::npos) {
+        std::cerr << "FAIL agent frame split/coalesce codec: " << agentFrameError << '\n';
+        return 17;
     }
 
     AdbTransport adb;
@@ -81,8 +165,37 @@ int runSelfTest()
         return 32;
     }
 
-    std::cout << "PASS codec+line-ending; adb_device=" << serial << "; remote_ports=" << ports.size()
+    std::cout << "PASS codec+line-ending+serial-stress; adb_device=" << serial << "; remote_ports=" << ports.size()
               << "; safe_dev_forward=tcp:" << localPort << '\n';
+    return 0;
+}
+
+int runAgentSmokeTest(const std::string &host, std::uint16_t port)
+{
+    testtools::AgentClient client;
+    std::string error;
+    if (!client.connect(host, port, error)) {
+        std::cerr << "FAIL " << error << '\n';
+        return 40;
+    }
+    std::string hello;
+    if (!client.request("{\"protocol\":1,\"request_id\":\"smoke-hello\","
+                        "\"method\":\"session.hello\",\"params\":{}}",
+                        hello, error)
+        || hello.find("\"protocol_min\":1") == std::string::npos
+        || hello.find("\"ok\":true") == std::string::npos) {
+        std::cerr << "FAIL agent hello: " << (error.empty() ? hello : error) << '\n';
+        return 41;
+    }
+    std::string capabilities;
+    if (!client.request("{\"protocol\":1,\"request_id\":\"smoke-capabilities\","
+                        "\"method\":\"capability.list\",\"params\":{}}",
+                        capabilities, error)
+        || capabilities.find("\"id\":\"system.info\"") == std::string::npos) {
+        std::cerr << "FAIL agent capabilities: " << (error.empty() ? capabilities : error) << '\n';
+        return 42;
+    }
+    std::cout << "PASS agent-v1 hello+capability.list host=" << host << " port=" << port << '\n';
     return 0;
 }
 

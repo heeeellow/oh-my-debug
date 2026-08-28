@@ -1,6 +1,8 @@
 #pragma once
 
 #include "core/serial_transport.h"
+#include "core/serial_test_engine.h"
+#include "core/async_serial_sender.h"
 
 #include <QtCore/QString>
 #include <QtWidgets/QWidget>
@@ -18,6 +20,8 @@ class QGroupBox;
 class QLabel;
 class QPlainTextEdit;
 class QPushButton;
+class QSpinBox;
+class QTimer;
 class QWidget;
 
 class SerialWorkspace final : public QWidget
@@ -56,15 +60,33 @@ private:
         QCheckBox *timestampCheck = nullptr;
         QComboBox *lineEndingCombo = nullptr;
         QPushButton *sendButton = nullptr;
+        QPushButton *autoSendButton = nullptr;
         QLabel *statusLabel = nullptr;
         QLabel *counterLabel = nullptr;
 
         std::unique_ptr<serialdemo::ISerialTransport> transport;
+        serialdemo::AsyncSerialSender sender;
         std::uint64_t receivedBytes = 0;
         std::uint64_t sentBytes = 0;
         bool connecting = false;
         std::string expectedFrame;
         std::string detectionBuffer;
+        serialdemo::ByteBuffer autoSendPayload;
+        serialdemo::PeriodicSendPlan autoSendPlan;
+        int autoIntervalMs = 1000;
+        std::uint64_t autoTargetCount = 100;
+        bool autoEcho = true;
+        std::uint64_t senderGeneration = 0;
+    };
+
+    struct StressDirection {
+        bool active = false;
+        int transmitter = 0;
+        int receiver = 1;
+        std::size_t payloadSize = 256;
+        std::uint32_t nextSequence = 0;
+        serialdemo::PeriodicSendPlan sendPlan;
+        serialdemo::IntegrityStreamVerifier verifier;
     };
 
     void buildUi();
@@ -75,6 +97,7 @@ private:
     void disconnectChannel(int index, bool showClosedStatus = true);
     void disconnectAll();
     void attachTransportCallbacks(int index);
+    void startSender(int index);
     void setChannelControlsEnabled(int index, bool enabled);
     void updateGlobalControls();
     void setChannelStatus(int index, const QString &message, bool error = false);
@@ -84,19 +107,31 @@ private:
     bool validateChannel(int index, QString &error) const;
     serialdemo::SerialConfig channelConfig(int index) const;
     serialdemo::ByteBuffer manualPayload(int index, bool &ok);
-    bool sendBytes(int index, const serialdemo::ByteBuffer &data);
+    bool sendBytes(int index, const serialdemo::ByteBuffer &data, bool echo = true);
     void sendManual(int index);
+    void toggleAutoSend(int index);
+    void stopAutoSend(int index, bool announce = false);
+    void processScheduledSends();
     void appendTransmitted(int index, const serialdemo::ByteBuffer &data);
     void appendReceived(int index, const serialdemo::ByteBuffer &data);
     void updateCounter(int index);
     void runBidirectionalTest();
     void updateBidirectionalResult(bool timedOut = false);
+    void showStressDialog();
+    void startStressTest(int direction, std::uint64_t frameCount,
+                         std::size_t payloadSize, int intervalMs);
+    void stopStressTest(const QString &reason, bool completed = false);
+    void finishStressTest(std::uint64_t generation);
+    QString stressDirectionSummary(const StressDirection &direction) const;
 
     QPushButton *connectBothButton_ = nullptr;
     QPushButton *disconnectBothButton_ = nullptr;
     QPushButton *bidirectionalTestButton_ = nullptr;
+    QPushButton *stressTestButton_ = nullptr;
     QLabel *testResultLabel_ = nullptr;
+    QLabel *stressResultLabel_ = nullptr;
     QLabel *routeLabel_ = nullptr;
+    QTimer *scheduleTimer_ = nullptr;
 
     std::array<ChannelUi, 2> channels_;
     serialdemo::AdbDevice currentAdbDevice_;
@@ -107,6 +142,10 @@ private:
     bool aToBPassed_ = false;
     bool bToAPassed_ = false;
     bool bidirectionalTestRunning_ = false;
+    bool stressTestRunning_ = false;
+    bool stressAwaitingReceive_ = false;
     bool shuttingDown_ = false;
+    std::array<StressDirection, 2> stressDirections_;
     std::uint64_t testGeneration_ = 0;
+    std::uint64_t stressGeneration_ = 0;
 };
