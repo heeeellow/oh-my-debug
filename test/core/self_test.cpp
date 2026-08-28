@@ -199,4 +199,49 @@ int runAgentSmokeTest(const std::string &host, std::uint16_t port)
     return 0;
 }
 
+int runAdbSerialSmokeTest(const std::string &serial, const std::string &endpoint)
+{
+    AdbTransport transport;
+    SerialConfig config;
+    config.adbSerial = serial;
+    config.endpoint = endpoint;
+    config.allowAdbRoot = true;
+    config.baudRate = 115200;
+
+    std::mutex statusMutex;
+    std::condition_variable statusCondition;
+    std::vector<std::string> messages;
+    bool completed = false;
+    bool connected = false;
+    transport.setStatusCallback([&](TransportState state, const std::string &message) {
+        std::lock_guard<std::mutex> lock(statusMutex);
+        messages.push_back(message);
+        if (state == TransportState::Connected || state == TransportState::Error) {
+            completed = true;
+            connected = state == TransportState::Connected;
+            statusCondition.notify_one();
+        }
+    });
+    transport.open(config);
+    {
+        std::unique_lock<std::mutex> lock(statusMutex);
+        statusCondition.wait_for(lock, std::chrono::seconds(15), [&] { return completed; });
+    }
+    transport.setStatusCallback({});
+    transport.close();
+    for (const auto &message : messages) {
+        std::cout << message << '\n';
+    }
+    if (!completed) {
+        std::cerr << "FAIL ADB serial open timed out\n";
+        return 50;
+    }
+    if (!connected) {
+        std::cerr << "FAIL ADB serial open rejected\n";
+        return 51;
+    }
+    std::cout << "PASS adb-serial-open serial=" << serial << " endpoint=" << endpoint << '\n';
+    return 0;
+}
+
 } // namespace serialdemo

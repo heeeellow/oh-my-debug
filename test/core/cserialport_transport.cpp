@@ -79,13 +79,13 @@ void CSerialPortTransport::open(const SerialConfig &config)
 
     if (!serialPort_.open()) {
         open_.store(false);
-        publishStatus(false,
+        publishStatus(TransportState::Error,
                       "打开本地串口失败: " + std::string(serialPort_.getLastErrorMsg()));
         return;
     }
 
     open_.store(true);
-    publishStatus(true, "本地串口已连接: " + config.endpoint);
+    publishStatus(TransportState::Connected, "本地串口已连接: " + config.endpoint);
 }
 
 void CSerialPortTransport::close()
@@ -95,7 +95,7 @@ void CSerialPortTransport::close()
         serialPort_.close();
     }
     if (wasOpen) {
-        publishStatus(false, "本地串口已关闭");
+        publishStatus(TransportState::Closed, "本地串口已关闭");
     }
 }
 

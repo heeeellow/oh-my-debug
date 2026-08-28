@@ -15,6 +15,9 @@ int main(int argc, char *argv[])
     std::string initialSize;
     std::string agentSmokeHost;
     std::uint16_t agentSmokePort = 0;
+    bool startAgentDemo = false;
+    std::string adbSerialSmokeSerial;
+    std::string adbSerialSmokeEndpoint;
     for (int index = 1; index < argc; ++index) {
         if (std::string_view(argv[index]) == "--self-test") {
             return serialdemo::runSelfTest();
@@ -36,9 +39,19 @@ int main(int argc, char *argv[])
             }
             agentSmokePort = static_cast<std::uint16_t>(port);
         }
+        if (std::string_view(argv[index]) == "--ui-agent-demo") {
+            startAgentDemo = true;
+        }
+        if (std::string_view(argv[index]) == "--adb-serial-smoke" && index + 2 < argc) {
+            adbSerialSmokeSerial = argv[++index];
+            adbSerialSmokeEndpoint = argv[++index];
+        }
     }
     if (!agentSmokeHost.empty()) {
         return serialdemo::runAgentSmokeTest(agentSmokeHost, agentSmokePort);
+    }
+    if (!adbSerialSmokeSerial.empty()) {
+        return serialdemo::runAdbSerialSmokeTest(adbSerialSmokeSerial, adbSerialSmokeEndpoint);
     }
     QApplication app(argc, argv);
     MainWindow window;
@@ -56,6 +69,9 @@ int main(int argc, char *argv[])
         }
     }
     window.show();
+    if (startAgentDemo) {
+        QTimer::singleShot(50, &window, [&window] { window.startAgentDemo(); });
+    }
     if (!snapshotPath.empty()) {
         QTimer::singleShot(1500, &app, [&app, &window, snapshotPath] {
             const bool saved = window.grab().save(QString::fromUtf8(snapshotPath), "PNG");

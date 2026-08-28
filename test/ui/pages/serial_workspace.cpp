@@ -588,17 +588,19 @@ void SerialWorkspace::attachTransportCallbacks(int index)
             }
         }, Qt::QueuedConnection);
     });
-    channels_[index].transport->setStatusCallback([guard, index](bool connected, const std::string &message) {
-        QMetaObject::invokeMethod(guard, [guard, index, connected, message] {
+    channels_[index].transport->setStatusCallback([guard, index](TransportState state,
+                                                                 const std::string &message) {
+        QMetaObject::invokeMethod(guard, [guard, index, state, message] {
             if (!guard || guard->shuttingDown_) {
                 return;
             }
             auto &channel = guard->channels_[index];
             const QString status = fromUtf8(message);
             emit guard->activityChanged(status);
-            const bool progress = status.startsWith(QStringLiteral("正在"));
-            guard->setChannelStatus(index, status, !connected && !progress
-                                                   && !status.endsWith(QStringLiteral("已关闭")));
+            const bool connected = state == TransportState::Connected;
+            const bool progress = state == TransportState::Progress;
+            const bool error = state == TransportState::Error;
+            guard->setChannelStatus(index, status, error);
             if (connected) {
                 channel.connecting = false;
                 channel.connectButton->setText(QStringLiteral("断开"));
@@ -607,7 +609,7 @@ void SerialWorkspace::attachTransportCallbacks(int index)
                 channel.connecting = false;
                 if (channel.transport && !channel.transport->isOpen()) {
                     guard->disconnectChannel(index, false);
-                    guard->setChannelStatus(index, status, !status.endsWith(QStringLiteral("已关闭")));
+                    guard->setChannelStatus(index, status, error);
                 }
             }
             guard->updateGlobalControls();

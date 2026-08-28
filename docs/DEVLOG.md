@@ -126,3 +126,36 @@ Agent 留出稳定边界。
 - 增加最大 1 MiB 的长度前缀帧编解码和无 Qt 的 `AgentClient`。
 - 假服务实现 `session.hello`、`capability.list`，只声明只读 `system.info`，不执行任意 shell。
 - 本机 TCP 冒烟验证 hello 与能力发现通过；当前客户端仍为同步测试客户端，尚未接入 GUI 会话。
+
+## 2026-08-28：Android 串口兼容与 Agent 主界面接入
+
+### Android 串口现场结论
+
+- RK3562 当前 `/dev/ttyUSB0/1/2` 为 `radio:radio 0660`，`/dev/ttyS6` 为 `root:root 0600`；
+  adbd root 后权限检查均通过，SELinux 为 Permissive。
+- `/dev/ttyUSB0` 和 `/dev/ttyUSB2` 只拒绝设置 `115200`，其余 raw、数据位、校验、停止位和流控
+  设置通过；ADB `dev:` 转发与本地 TCP 连接均正常。USB modem 驱动的物理链路不是传统 UART
+  时钟，拒绝 termios 波特率不应被视为打开失败。
+- `/dev/ttyUSB1` 被 `rild`（PID 388）占用。直接并行打开会干扰 4G 系统服务，因此保持阻止并
+  明确报告占用者，不以强制抢占作为修复。
+- RK3562 上不存在 `/dev/ttyS2`；Nexus 4 上的 `/dev/ttyS2` 以及 RK3562 的 `/dev/ttyS6` 均完成
+  termios、ADB 转发和 TCP 连接冒烟，未发送任何数据。
+
+### 修正
+
+- USB/ACM 串口完整 `stty` 失败时，自动重试不包含波特率的全部帧格式设置；只有第二次也失败
+  才终止连接。
+- 打开前在系统提供 `lsof` 时检查占用进程，为 `rild` 等系统服务给出明确且安全的错误。
+- 传输状态从 `bool + 文本前缀推断` 改为 `Progress/Connected/Error/Closed` 枚举，避免提示信息
+  被误判为失败。
+
+### Agent 主界面
+
+- 设置页增加“一键启动并连接假 Agent”和本机/ADB 转发端口连接入口。
+- Agent 握手和能力发现在线程中执行，socket 收发超时为 5 秒，不阻塞 GUI。
+- 顶栏、概览和设置页同步显示版本、连接状态与 `system.info（只读）` 能力。
+- 连接地址暂时只允许 `127.0.0.1`，假 Agent 退出或应用关闭时会关闭会话并清理子进程。
+- 当前 RK3562 为 Android 13、`armeabi-v7a`；开发机未发现可用 Android NDK，因此本轮交付的是
+  Windows 假 Agent 与完整连接界面，板端 Agent 的交叉编译、推送和守护启动留作下一阶段。
+- 主程序工程显式依赖假 Agent 工程，两者统一输出到同一运行目录，避免单独命令行构建后界面
+  误用旧版 Agent 或提示缺少程序。

@@ -48,11 +48,18 @@ test/
   /p:QtMsBuild='C:\Users\26613\AppData\Local\QtMsBuild'
 ```
 
+主程序工程已引用假 Agent 工程；执行上述命令会同时生成 `test.exe` 和同目录的
+`testtools-agent.exe`，不需要手工复制产物。
+
 ## 5. 验证层级
 
 - 核心静态检查：依赖方向、输入校验、线程关闭和错误边界。
 - `--self-test`：编码、异步发送队列、串口可靠性帧、Agent 帧、ADB 枚举和安全转发冒烟检查。
 - `--agent-smoke <host> <port>`：连接本机假 Agent，验证 hello 与能力发现。
+- `--adb-serial-smoke <serial> <endpoint>`：不发送数据，仅验证指定板端串口的权限、占用、termios、
+  ADB 转发和本地连接链路。
+- `--ui-agent-demo`：用于 UI 回归，启动本机假 Agent 并自动完成能力发现；可与
+  `--ui-page settings --ui-snapshot <png>` 组合。
 - `--ui-snapshot <png>`：保存概览页快照；可加 `--ui-page serial`、`tests`、`history`
   或 `settings` 选择待验收页面，并用 `--ui-size 1366x768` 指定逻辑窗口尺寸。
 - UI 快照：检查主要分辨率下的裁切、重叠和状态层级。

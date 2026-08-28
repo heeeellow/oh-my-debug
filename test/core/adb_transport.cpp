@@ -279,7 +279,7 @@ bool AdbTransport::ensureEndpointAccess(const SerialConfig &config, std::string 
         return false;
     }
 
-    publishStatus(false, "正在请求 ADB root 以访问板端串口...");
+    publishStatus(TransportState::Progress, "正在请求 ADB root 以访问板端串口...");
     const auto root = runAdb(config.adbSerial, {"root"}, std::chrono::seconds(8));
     if (root.exitCode != 0 || root.timedOut) {
         error = commandError("请求 ADB root", root)
@@ -291,7 +291,7 @@ bool AdbTransport::ensureEndpointAccess(const SerialConfig &config, std::string 
         return false;
     }
 
-    publishStatus(false, "正在等待 ADB root 设备重新上线...");
+    publishStatus(TransportState::Progress, "正在等待 ADB root 设备重新上线...");
     const auto wait = runAdb(config.adbSerial, {"wait-for-device"}, std::chrono::seconds(12));
     if (wait.exitCode != 0 || wait.timedOut) {
         error = commandError("等待 ADB 设备重新上线", wait);
@@ -307,11 +307,39 @@ bool AdbTransport::ensureEndpointAccess(const SerialConfig &config, std::string 
     return true;
 }
 
-std::string AdbTransport::sttyCommand(const SerialConfig &config) const
+bool AdbTransport::ensureEndpointNotBusy(const SerialConfig &config, std::string &error) const
+{
+    const auto result = runAdb(
+        config.adbSerial,
+        {"shell", "if command -v lsof >/dev/null 2>&1; then lsof " + config.endpoint
+                      + " 2>/dev/null; fi"},
+        std::chrono::seconds(3));
+    if (result.timedOut || result.exitCode != 0) {
+        // Occupancy detection is an optional diagnostic. Older Android images
+        // do not necessarily provide lsof, so absence must not block a port.
+        return true;
+    }
+    for (const auto &line : splitLines(result.standardOutput)) {
+        if (line.rfind("COMMAND", 0) == 0) {
+            continue;
+        }
+        if (line.find(config.endpoint) != std::string::npos) {
+            error = "板端串口正在被系统进程占用: " + line
+                    + "。直连可能干扰现有服务，请停止占用进程或选择其他端点";
+            return false;
+        }
+    }
+    return true;
+}
+
+std::string AdbTransport::sttyCommand(const SerialConfig &config, bool includeBaudRate) const
 {
     std::ostringstream command;
-    command << "stty -F " << config.endpoint << ' ' << config.baudRate
-            << " raw -echo cs" << config.dataBits << ' ';
+    command << "stty -F " << config.endpoint << ' ';
+    if (includeBaudRate) {
+        command << config.baudRate << ' ';
+    }
+    command << "raw -echo cs" << config.dataBits << ' ';
 
     switch (config.parity) {
     case Parity::Odd:
@@ -345,7 +373,7 @@ void AdbTransport::open(const SerialConfig &config)
 
     std::string error;
     if (!validateConfig(config, error)) {
-        publishStatus(false, error);
+        publishStatus(TransportState::Error, error);
         return;
     }
 
@@ -357,31 +385,53 @@ void AdbTransport::workerMain(SerialConfig config)
 {
     std::string accessError;
     if (!ensureEndpointAccess(config, accessError)) {
-        publishStatus(false, accessError);
+        publishStatus(TransportState::Error, accessError);
         return;
     }
     if (stopping_.load()) {
         return;
     }
 
-    publishStatus(false, "正在配置板端串口...");
-    const auto configureResult = runAdb(config.adbSerial,
-                                        {"shell", sttyCommand(config)},
-                                        std::chrono::seconds(4));
+    if (!ensureEndpointNotBusy(config, accessError)) {
+        publishStatus(TransportState::Error, accessError);
+        return;
+    }
+
+    publishStatus(TransportState::Progress, "正在配置板端串口...");
+    auto configureResult = runAdb(config.adbSerial,
+                                  {"shell", sttyCommand(config)},
+                                  std::chrono::seconds(4));
     if (configureResult.exitCode != 0 || configureResult.timedOut) {
-        publishStatus(false, commandError("配置板端串口", configureResult));
-        return;
+        const bool usbSerial = config.endpoint.rfind("/dev/ttyUSB", 0) == 0
+                               || config.endpoint.rfind("/dev/ttyACM", 0) == 0;
+        if (!usbSerial) {
+            publishStatus(TransportState::Error, commandError("配置板端串口", configureResult));
+            return;
+        }
+
+        // Several Android USB modem drivers expose a termios baud field but
+        // reject changing it because the physical link is USB, not a UART
+        // clock. Retry every meaningful framing flag without the baud value.
+        configureResult = runAdb(config.adbSerial,
+                                 {"shell", sttyCommand(config, false)},
+                                 std::chrono::seconds(4));
+        if (configureResult.exitCode != 0 || configureResult.timedOut) {
+            publishStatus(TransportState::Error, commandError("配置 USB 串口", configureResult));
+            return;
+        }
+        publishStatus(TransportState::Progress,
+                      "正在按 USB 链路继续连接（驱动不接受波特率设置）...");
     }
     if (stopping_.load()) {
         return;
     }
 
-    publishStatus(false, "正在建立 ADB 设备节点转发...");
+    publishStatus(TransportState::Progress, "正在建立 ADB 设备节点转发...");
     const auto forwardResult = runAdb(config.adbSerial,
                                       {"forward", "tcp:0", "dev:" + config.endpoint},
                                       std::chrono::seconds(4));
     if (forwardResult.exitCode != 0 || forwardResult.timedOut) {
-        publishStatus(false, commandError("建立 ADB 转发", forwardResult));
+        publishStatus(TransportState::Error, commandError("建立 ADB 转发", forwardResult));
         return;
     }
 
@@ -389,7 +439,7 @@ void AdbTransport::workerMain(SerialConfig config)
     try {
         localPort = std::stoi(trim(forwardResult.standardOutput));
     } catch (...) {
-        publishStatus(false, "ADB 未返回有效的本地转发端口");
+        publishStatus(TransportState::Error, "ADB 未返回有效的本地转发端口");
         return;
     }
 
@@ -401,7 +451,7 @@ void AdbTransport::workerMain(SerialConfig config)
             socket_->connect({asio::ip::make_address("127.0.0.1"), static_cast<unsigned short>(localPort)});
         }
         open_.store(true);
-        publishStatus(true,
+        publishStatus(TransportState::Connected,
                       "ADB 串口已连接: " + config.endpoint + " (localhost:" + std::to_string(localPort) + ")");
 
         std::array<std::uint8_t, 16384> buffer{};
@@ -410,7 +460,8 @@ void AdbTransport::workerMain(SerialConfig config)
             const auto received = socket_->read_some(asio::buffer(buffer), errorCode);
             if (errorCode) {
                 if (!stopping_.load()) {
-                    publishStatus(false, "ADB 串口连接中断: " + errorCode.message());
+                    publishStatus(TransportState::Error,
+                                  "ADB 串口连接中断: " + errorCode.message());
                 }
                 break;
             }
@@ -420,7 +471,8 @@ void AdbTransport::workerMain(SerialConfig config)
         }
     } catch (const std::exception &exception) {
         if (!stopping_.load()) {
-            publishStatus(false, "连接 ADB 转发端口失败: " + std::string(exception.what()));
+            publishStatus(TransportState::Error,
+                          "连接 ADB 转发端口失败: " + std::string(exception.what()));
         }
     }
 
@@ -432,7 +484,7 @@ void AdbTransport::workerMain(SerialConfig config)
     ioContext_.reset();
     removeForward(config.adbSerial, localPort);
     if (stopping_.load()) {
-        publishStatus(false, "ADB 串口已关闭");
+        publishStatus(TransportState::Closed, "ADB 串口已关闭");
     }
 }
 
@@ -501,7 +553,7 @@ bool AdbTransport::write(const ByteBuffer &data)
     asio::error_code errorCode;
     const auto written = asio::write(*socket_, asio::buffer(data), errorCode);
     if (errorCode) {
-        publishStatus(false, "ADB 串口发送失败: " + errorCode.message());
+        publishStatus(TransportState::Error, "ADB 串口发送失败: " + errorCode.message());
         return false;
     }
     return written == data.size();

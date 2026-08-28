@@ -34,7 +34,8 @@ private:
                          std::chrono::milliseconds timeout = std::chrono::seconds(5)) const;
     bool validateConfig(const SerialConfig &config, std::string &error) const;
     bool ensureEndpointAccess(const SerialConfig &config, std::string &error);
-    std::string sttyCommand(const SerialConfig &config) const;
+    bool ensureEndpointNotBusy(const SerialConfig &config, std::string &error) const;
+    std::string sttyCommand(const SerialConfig &config, bool includeBaudRate = true) const;
     void workerMain(SerialConfig config);
     void removeForward(const std::string &serial, int localPort) const;
 

@@ -143,6 +143,13 @@
     <ClInclude Include="core\serial_test_engine.h" />
     <ClInclude Include="ui\theme.h" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="agent\agent.vcxproj">
+      <Project>{B47D10DF-D01B-46DA-89B4-A1830CB69FF7}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+    </ProjectReference>
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">
     <Import Project="$(QtMsBuild)\qt.targets" />

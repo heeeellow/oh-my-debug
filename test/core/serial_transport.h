@@ -8,10 +8,17 @@
 
 namespace serialdemo {
 
+enum class TransportState {
+    Progress,
+    Connected,
+    Error,
+    Closed
+};
+
 class ISerialTransport {
 public:
     using DataCallback = std::function<void(const ByteBuffer &)>;
-    using StatusCallback = std::function<void(bool connected, const std::string &message)>;
+    using StatusCallback = std::function<void(TransportState state, const std::string &message)>;
 
     virtual ~ISerialTransport() = default;
 
@@ -44,7 +51,7 @@ protected:
         }
     }
 
-    void publishStatus(bool connected, const std::string &message) const
+    void publishStatus(TransportState state, const std::string &message) const
     {
         StatusCallback callback;
         {
@@ -52,7 +59,7 @@ protected:
             callback = statusCallback_;
         }
         if (callback) {
-            callback(connected, message);
+            callback(state, message);
         }
     }
 

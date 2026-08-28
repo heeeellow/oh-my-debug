@@ -7,7 +7,33 @@
 #include <array>
 #include <vector>
 
+#ifdef _WIN32
+#include <winsock2.h>
+#else
+#include <sys/socket.h>
+#include <sys/time.h>
+#endif
+
 namespace testtools {
+
+namespace {
+
+void setSocketTimeouts(asio::ip::tcp::socket &socket)
+{
+#ifdef _WIN32
+    const DWORD timeoutMs = 5000;
+    setsockopt(socket.native_handle(), SOL_SOCKET, SO_RCVTIMEO,
+               reinterpret_cast<const char *>(&timeoutMs), sizeof(timeoutMs));
+    setsockopt(socket.native_handle(), SOL_SOCKET, SO_SNDTIMEO,
+               reinterpret_cast<const char *>(&timeoutMs), sizeof(timeoutMs));
+#else
+    const timeval timeout{5, 0};
+    setsockopt(socket.native_handle(), SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    setsockopt(socket.native_handle(), SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+#endif
+}
+
+} // namespace
 
 AgentClient::AgentClient() = default;
 
@@ -25,6 +51,7 @@ bool AgentClient::connect(const std::string &host, std::uint16_t port, std::stri
         socket_ = std::make_unique<asio::ip::tcp::socket>(ioContext_);
         asio::connect(*socket_, endpoints);
         socket_->set_option(asio::ip::tcp::no_delay(true));
+        setSocketTimeouts(*socket_);
         error.clear();
         return true;
     } catch (const std::exception &exception) {

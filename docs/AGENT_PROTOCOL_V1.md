@@ -54,5 +54,18 @@ payload                    当前最大 1 MiB
 
 验证成功后假 Agent 会在客户端断开时退出。
 
+### 从主界面体验
+
+1. 构建完整的 `test/test.slnx`，确认 `test.exe` 旁边同时存在 `testtools-agent.exe`。
+2. 启动 TestTools，点击顶部的 `Agent`，或从左侧进入“设置”。
+3. 在“快速体验 · 本机假 Agent”中点击“启动并连接假 Agent”。
+4. 顶部状态应变为 `Agent · v0.1.0 · 已连接`，连接卡片显示协议 v1 协商成功，并发现
+   `system.info（只读）`。
+5. 点击“断开”结束会话；假 Agent 随之退出，不会留在后台。
+
+“Agent 连接”中的主机当前限制为 `127.0.0.1`。后续板端 Agent 通过 ADB 转发到本机端口后，也从
+这里连接。当前仓库尚未提供已交叉编译的 Android 二进制，因此一键体验只验证协议与界面链路，
+不会操作所选板卡。
+
 `test/agent/CMakeLists.txt` 只依赖 C++17、Asio 和线程库，可作为后续 Android/Linux 交叉编译入口；
 当前目标仍是假服务，不包含 init/service 配置或真实板卡能力。
