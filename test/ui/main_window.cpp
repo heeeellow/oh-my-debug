@@ -3,6 +3,7 @@
 #include "theme.h"
 #include "ui/pages/serial_workspace.h"
 
+#include <QtCore/QCoreApplication>
 #include <QtCore/QMetaObject>
 #include <QtCore/QPointer>
 #include <QtCore/QSignalBlocker>
@@ -101,16 +102,32 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
     buildUi();
+    connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit,
+            this, &MainWindow::prepareForShutdown, Qt::DirectConnection);
     refreshDevices();
 }
 
 MainWindow::~MainWindow()
 {
+    prepareForShutdown();
+}
+
+void MainWindow::prepareForShutdown()
+{
+    if (shuttingDown_) {
+        return;
+    }
+    shuttingDown_ = true;
+    if (serialWorkspace_) {
+        serialWorkspace_->prepareForShutdown();
+    }
     for (auto &thread : scanThreads_) {
         if (thread.joinable()) {
             thread.join();
         }
     }
+    scanThreads_.clear();
+    QCoreApplication::removePostedEvents(this);
 }
 
 bool MainWindow::navigateTo(const QString &pageName)
@@ -399,7 +416,7 @@ QWidget *MainWindow::wrapPage(const QString &title, const QString &subtitle, QWi
 
 void MainWindow::refreshDevices()
 {
-    if (scanning_ || serialBusy_) {
+    if (shuttingDown_ || scanning_ || serialBusy_) {
         return;
     }
     scanning_ = true;
@@ -412,7 +429,7 @@ void MainWindow::refreshDevices()
         testtools::DeviceDiscovery discovery;
         auto result = discovery.scanAdbDevices();
         QMetaObject::invokeMethod(guard, [guard, result = std::move(result)]() mutable {
-            if (guard) {
+            if (guard && !guard->shuttingDown_) {
                 guard->applyDeviceScan(std::move(result));
             }
         }, Qt::QueuedConnection);
@@ -421,6 +438,9 @@ void MainWindow::refreshDevices()
 
 void MainWindow::applyDeviceScan(testtools::DeviceScanResult result)
 {
+    if (shuttingDown_) {
+        return;
+    }
     const QString previousSerial = deviceCombo_->currentData().toString();
     const QSignalBlocker blocker(deviceCombo_);
     deviceCombo_->clear();

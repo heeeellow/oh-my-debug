@@ -30,6 +30,12 @@ int runSelfTest()
         std::cerr << "FAIL codec: " << error << '\n';
         return 10;
     }
+    ByteBuffer lineEndingProbe{0x41, 0x54};
+    appendLineEnding(lineEndingProbe, LineEnding::CrLf);
+    if (toHex(lineEndingProbe) != "41 54 0D 0A") {
+        std::cerr << "FAIL line ending codec\n";
+        return 11;
+    }
 
     AdbTransport adb;
     auto devices = adb.availableDevices(error);
@@ -75,7 +81,7 @@ int runSelfTest()
         return 32;
     }
 
-    std::cout << "PASS codec; adb_device=" << serial << "; remote_ports=" << ports.size()
+    std::cout << "PASS codec+line-ending; adb_device=" << serial << "; remote_ports=" << ports.size()
               << "; safe_dev_forward=tcp:" << localPort << '\n';
     return 0;
 }

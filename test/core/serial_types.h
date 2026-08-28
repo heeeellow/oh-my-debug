@@ -26,6 +26,7 @@ enum class FlowControl {
 struct SerialConfig {
     std::string endpoint;
     std::string adbSerial;
+    bool allowAdbRoot = false;
     int baudRate = 115200;
     int dataBits = 8;
     Parity parity = Parity::None;

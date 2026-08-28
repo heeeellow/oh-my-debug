@@ -30,6 +30,7 @@ public:
 
     void setAdbDevice(const serialdemo::AdbDevice &device);
     void refreshTargets();
+    void prepareForShutdown();
     bool hasActiveConnections() const;
 
 signals:
@@ -46,6 +47,7 @@ private:
         QComboBox *parityCombo = nullptr;
         QComboBox *stopBitsCombo = nullptr;
         QComboBox *flowControlCombo = nullptr;
+        QCheckBox *adbRootCheck = nullptr;
         QPushButton *connectButton = nullptr;
         QPlainTextEdit *receiveEdit = nullptr;
         QPlainTextEdit *sendEdit = nullptr;
@@ -84,6 +86,7 @@ private:
     serialdemo::ByteBuffer manualPayload(int index, bool &ok);
     bool sendBytes(int index, const serialdemo::ByteBuffer &data);
     void sendManual(int index);
+    void appendTransmitted(int index, const serialdemo::ByteBuffer &data);
     void appendReceived(int index, const serialdemo::ByteBuffer &data);
     void updateCounter(int index);
     void runBidirectionalTest();
@@ -104,5 +107,6 @@ private:
     bool aToBPassed_ = false;
     bool bToAPassed_ = false;
     bool bidirectionalTestRunning_ = false;
+    bool shuttingDown_ = false;
     std::uint64_t testGeneration_ = 0;
 };

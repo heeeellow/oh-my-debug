@@ -72,4 +72,22 @@ std::string toHex(const ByteBuffer &data)
     return result;
 }
 
+void appendLineEnding(ByteBuffer &data, LineEnding ending)
+{
+    switch (ending) {
+    case LineEnding::Lf:
+        data.push_back('\n');
+        break;
+    case LineEnding::Cr:
+        data.push_back('\r');
+        break;
+    case LineEnding::CrLf:
+        data.push_back('\r');
+        data.push_back('\n');
+        break;
+    case LineEnding::None:
+        break;
+    }
+}
+
 } // namespace serialdemo

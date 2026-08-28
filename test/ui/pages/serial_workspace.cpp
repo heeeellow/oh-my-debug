@@ -4,6 +4,7 @@
 #include "core/codec.h"
 #include "core/cserialport_transport.h"
 
+#include <QtCore/QCoreApplication>
 #include <QtCore/QDateTime>
 #include <QtCore/QMetaObject>
 #include <QtCore/QPointer>
@@ -51,6 +52,20 @@ QString channelName(int index)
     return index == 0 ? QStringLiteral("端点 A") : QStringLiteral("端点 B");
 }
 
+LineEnding lineEndingFromIndex(int index)
+{
+    switch (index) {
+    case 1:
+        return LineEnding::Lf;
+    case 2:
+        return LineEnding::Cr;
+    case 3:
+        return LineEnding::CrLf;
+    default:
+        return LineEnding::None;
+    }
+}
+
 void setVisualRole(QLabel *label, const QString &objectName)
 {
     label->setObjectName(objectName);
@@ -69,12 +84,23 @@ SerialWorkspace::SerialWorkspace(QWidget *parent)
 
 SerialWorkspace::~SerialWorkspace()
 {
+    prepareForShutdown();
+}
+
+void SerialWorkspace::prepareForShutdown()
+{
+    if (shuttingDown_) {
+        return;
+    }
+    shuttingDown_ = true;
     disconnectAll();
     for (auto &thread : scanThreads_) {
         if (thread.joinable()) {
             thread.join();
         }
     }
+    scanThreads_.clear();
+    QCoreApplication::removePostedEvents(this);
 }
 
 void SerialWorkspace::buildUi()
@@ -223,6 +249,11 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     settings->addWidget(channel.parityCombo, 1, 2, 1, 2);
     settings->addWidget(channel.stopBitsCombo, 1, 4);
     settings->addWidget(channel.flowControlCombo, 1, 5, 1, 2);
+    channel.adbRootCheck = new QCheckBox(QStringLiteral("权限不足时尝试 ADB root"), channel.group);
+    channel.adbRootCheck->setChecked(true);
+    channel.adbRootCheck->setToolTip(
+        QStringLiteral("仅在板端节点不可读写时重启 adbd；量产设备可能不支持"));
+    settings->addWidget(channel.adbRootCheck, 2, 1, 1, 6);
     settings->setColumnStretch(1, 1);
     settings->setColumnStretch(3, 2);
     layout->addLayout(settings);
@@ -230,7 +261,7 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     channel.counterLabel = new QLabel(QStringLiteral("RX: 0 B  TX: 0 B"), channel.group);
     channel.counterLabel->setObjectName(QStringLiteral("mutedLabel"));
     auto *receiveHeader = new QHBoxLayout;
-    auto *receiveTitle = new QLabel(QStringLiteral("接收监视"), channel.group);
+    auto *receiveTitle = new QLabel(QStringLiteral("收发监视"), channel.group);
     receiveTitle->setObjectName(QStringLiteral("sectionLabel"));
     receiveHeader->addWidget(receiveTitle);
     receiveHeader->addStretch();
@@ -241,13 +272,13 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     channel.receiveEdit->setObjectName(QStringLiteral("receiveConsole"));
     channel.receiveEdit->setReadOnly(true);
     channel.receiveEdit->setMaximumBlockCount(5000);
-    channel.receiveEdit->setPlaceholderText(QStringLiteral("该端点接收到的数据"));
+    channel.receiveEdit->setPlaceholderText(QStringLiteral("该端点发送和接收到的数据"));
     layout->addWidget(channel.receiveEdit, 1);
 
     auto *receiveTools = new QHBoxLayout;
     channel.receiveHexCheck = new QCheckBox(QStringLiteral("HEX 显示"), channel.group);
     channel.timestampCheck = new QCheckBox(QStringLiteral("时间戳"), channel.group);
-    auto *clearReceive = new QPushButton(QStringLiteral("清空接收"), channel.group);
+    auto *clearReceive = new QPushButton(QStringLiteral("清空监视"), channel.group);
     receiveTools->addWidget(channel.receiveHexCheck);
     receiveTools->addWidget(channel.timestampCheck);
     receiveTools->addStretch();
@@ -283,6 +314,8 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     layout->addLayout(sendTools);
 
     connect(channel.sourceCombo, &QComboBox::currentIndexChanged, this, [this, index] {
+        channels_[index].adbRootCheck->setVisible(channelUsesAdb(index));
+        channels_[index].adbRootCheck->setEnabled(channelUsesAdb(index));
         applyPorts(index);
         updateRouteSummary();
         updateGlobalControls();
@@ -303,6 +336,8 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     connect(clearReceive, &QPushButton::clicked, channel.receiveEdit, &QPlainTextEdit::clear);
     connect(clearSend, &QPushButton::clicked, channel.sendEdit, &QPlainTextEdit::clear);
 
+    channel.adbRootCheck->setVisible(channelUsesAdb(index));
+    channel.adbRootCheck->setEnabled(channelUsesAdb(index));
     setChannelStatus(index, QStringLiteral("未连接"));
     return channel.group;
 }
@@ -319,7 +354,7 @@ bool SerialWorkspace::selectedAdbIsOnline() const
 
 void SerialWorkspace::refreshTargets()
 {
-    if (channels_[0].transport || channels_[1].transport || scanning_) {
+    if (shuttingDown_ || channels_[0].transport || channels_[1].transport || scanning_) {
         return;
     }
 
@@ -356,7 +391,7 @@ void SerialWorkspace::refreshAdbPorts()
         std::string error;
         auto ports = scanner.availableRemotePorts(serial, error);
         QMetaObject::invokeMethod(guard, [guard, ports = std::move(ports), error = std::move(error)] {
-            if (!guard) {
+            if (!guard || guard->shuttingDown_) {
                 return;
             }
             guard->scanning_ = false;
@@ -433,6 +468,7 @@ SerialConfig SerialWorkspace::channelConfig(int index) const
     const QString portData = channel.portCombo->currentData().toString();
     config.endpoint = toUtf8(portData.isEmpty() ? channel.portCombo->currentText() : portData);
     config.adbSerial = currentAdbDevice_.serial;
+    config.allowAdbRoot = channelUsesAdb(index) && channel.adbRootCheck->isChecked();
     config.baudRate = channel.baudCombo->currentText().toInt();
     config.dataBits = channel.dataBitsCombo->currentText().toInt();
     config.parity = channel.parityCombo->currentIndex() == 1 ? Parity::Odd
@@ -510,14 +546,14 @@ void SerialWorkspace::attachTransportCallbacks(int index)
     QPointer<SerialWorkspace> guard(this);
     channels_[index].transport->setDataCallback([guard, index](const ByteBuffer &data) {
         QMetaObject::invokeMethod(guard, [guard, index, data] {
-            if (guard) {
+            if (guard && !guard->shuttingDown_) {
                 guard->appendReceived(index, data);
             }
         }, Qt::QueuedConnection);
     });
     channels_[index].transport->setStatusCallback([guard, index](bool connected, const std::string &message) {
         QMetaObject::invokeMethod(guard, [guard, index, connected, message] {
-            if (!guard) {
+            if (!guard || guard->shuttingDown_) {
                 return;
             }
             auto &channel = guard->channels_[index];
@@ -581,6 +617,7 @@ void SerialWorkspace::setChannelControlsEnabled(int index, bool enabled)
     channel.parityCombo->setEnabled(enabled);
     channel.stopBitsCombo->setEnabled(enabled);
     channel.flowControlCombo->setEnabled(enabled);
+    channel.adbRootCheck->setEnabled(enabled && channelUsesAdb(index));
 }
 
 void SerialWorkspace::updateGlobalControls()
@@ -671,27 +708,14 @@ ByteBuffer SerialWorkspace::manualPayload(int index, bool &ok)
         if (!parseHex(toUtf8(channel.sendEdit->toPlainText()), data, error)) {
             QMessageBox::warning(this, QStringLiteral("HEX 输入错误"), fromUtf8(error));
             ok = false;
+            return {};
         }
-        return data;
+    } else {
+        const QByteArray text = channel.sendEdit->toPlainText().toUtf8();
+        data.assign(reinterpret_cast<const std::uint8_t *>(text.constData()),
+                    reinterpret_cast<const std::uint8_t *>(text.constData()) + text.size());
     }
-
-    const QByteArray text = channel.sendEdit->toPlainText().toUtf8();
-    data.assign(reinterpret_cast<const std::uint8_t *>(text.constData()),
-                reinterpret_cast<const std::uint8_t *>(text.constData()) + text.size());
-    switch (channel.lineEndingCombo->currentIndex()) {
-    case 1:
-        data.push_back('\n');
-        break;
-    case 2:
-        data.push_back('\r');
-        break;
-    case 3:
-        data.push_back('\r');
-        data.push_back('\n');
-        break;
-    default:
-        break;
-    }
+    appendLineEnding(data, lineEndingFromIndex(channel.lineEndingCombo->currentIndex()));
     return data;
 }
 
@@ -707,6 +731,7 @@ bool SerialWorkspace::sendBytes(int index, const ByteBuffer &data)
         return false;
     }
     channel.sentBytes += data.size();
+    appendTransmitted(index, data);
     updateCounter(index);
     return true;
 }
@@ -718,6 +743,32 @@ void SerialWorkspace::sendManual(int index)
     if (ok) {
         sendBytes(index, data);
     }
+}
+
+void SerialWorkspace::appendTransmitted(int index, const ByteBuffer &data)
+{
+    if (data.empty()) {
+        return;
+    }
+    auto &channel = channels_[index];
+    QString display;
+    if (channel.timestampCheck->isChecked()) {
+        display += QDateTime::currentDateTime().toString(QStringLiteral("[HH:mm:ss.zzz] "));
+    }
+    display += QStringLiteral("TX  ");
+    if (channel.receiveHexCheck->isChecked()) {
+        display += fromUtf8(toHex(data));
+    } else {
+        QString payload = QString::fromUtf8(reinterpret_cast<const char *>(data.data()),
+                                            static_cast<qsizetype>(data.size()));
+        payload.replace(QStringLiteral("\r"), QStringLiteral("\\r"));
+        payload.replace(QStringLiteral("\n"), QStringLiteral("\\n"));
+        display += payload;
+    }
+    display += QLatin1Char('\n');
+    channel.receiveEdit->moveCursor(QTextCursor::End);
+    channel.receiveEdit->insertPlainText(display);
+    channel.receiveEdit->moveCursor(QTextCursor::End);
 }
 
 void SerialWorkspace::appendReceived(int index, const ByteBuffer &data)
@@ -744,11 +795,15 @@ void SerialWorkspace::appendReceived(int index, const ByteBuffer &data)
     if (channel.timestampCheck->isChecked()) {
         display += QDateTime::currentDateTime().toString(QStringLiteral("[HH:mm:ss.zzz] "));
     }
+    display += QStringLiteral("RX  ");
     if (channel.receiveHexCheck->isChecked()) {
         display += fromUtf8(toHex(data));
     } else {
         display += QString::fromUtf8(reinterpret_cast<const char *>(data.data()),
                                      static_cast<qsizetype>(data.size()));
+    }
+    if (!display.endsWith(QLatin1Char('\n'))) {
+        display += QLatin1Char('\n');
     }
     channel.receiveEdit->moveCursor(QTextCursor::End);
     channel.receiveEdit->insertPlainText(display);
@@ -785,8 +840,10 @@ void SerialWorkspace::runBidirectionalTest()
     updateBidirectionalResult();
     updateGlobalControls();
 
-    const ByteBuffer bytesA(frameA.begin(), frameA.end());
-    const ByteBuffer bytesB(frameB.begin(), frameB.end());
+    ByteBuffer bytesA(frameA.begin(), frameA.end());
+    ByteBuffer bytesB(frameB.begin(), frameB.end());
+    appendLineEnding(bytesA, lineEndingFromIndex(channels_[0].lineEndingCombo->currentIndex()));
+    appendLineEnding(bytesB, lineEndingFromIndex(channels_[1].lineEndingCombo->currentIndex()));
     if (!sendBytes(0, bytesA) || !sendBytes(1, bytesB)) {
         bidirectionalTestRunning_ = false;
         testResultLabel_->setText(QStringLiteral("链路验证 · 发送失败"));

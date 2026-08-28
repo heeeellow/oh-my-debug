@@ -254,6 +254,59 @@ bool AdbTransport::validateConfig(const SerialConfig &config, std::string &error
     return true;
 }
 
+bool AdbTransport::ensureEndpointAccess(const SerialConfig &config, std::string &error)
+{
+    const auto exists = runAdb(config.adbSerial,
+                               {"shell", "test -e " + config.endpoint},
+                               std::chrono::seconds(3));
+    if (exists.exitCode != 0 || exists.timedOut) {
+        error = "板端串口节点不存在或不可访问: " + config.endpoint;
+        return false;
+    }
+
+    const auto probeAccess = [this, &config] {
+        return runAdb(config.adbSerial,
+                      {"shell", "test -r " + config.endpoint + " && test -w " + config.endpoint},
+                      std::chrono::seconds(3));
+    };
+    auto access = probeAccess();
+    if (access.exitCode == 0 && !access.timedOut) {
+        return true;
+    }
+    if (!config.allowAdbRoot) {
+        error = "板端串口权限不足: " + config.endpoint
+                + "。可勾选“权限不足时尝试 ADB root”后重试";
+        return false;
+    }
+
+    publishStatus(false, "正在请求 ADB root 以访问板端串口...");
+    const auto root = runAdb(config.adbSerial, {"root"}, std::chrono::seconds(8));
+    if (root.exitCode != 0 || root.timedOut) {
+        error = commandError("请求 ADB root", root)
+                + "；量产版本可能禁止 adbd root，请改用板端 Agent";
+        return false;
+    }
+    if (stopping_.load()) {
+        error = "连接已取消";
+        return false;
+    }
+
+    publishStatus(false, "正在等待 ADB root 设备重新上线...");
+    const auto wait = runAdb(config.adbSerial, {"wait-for-device"}, std::chrono::seconds(12));
+    if (wait.exitCode != 0 || wait.timedOut) {
+        error = commandError("等待 ADB 设备重新上线", wait);
+        return false;
+    }
+
+    access = probeAccess();
+    if (access.exitCode != 0 || access.timedOut) {
+        error = "ADB root 后仍无法读写板端串口: " + config.endpoint
+                + "，请检查 SELinux、设备节点属组或改用板端 Agent";
+        return false;
+    }
+    return true;
+}
+
 std::string AdbTransport::sttyCommand(const SerialConfig &config) const
 {
     std::ostringstream command;
@@ -302,6 +355,15 @@ void AdbTransport::open(const SerialConfig &config)
 
 void AdbTransport::workerMain(SerialConfig config)
 {
+    std::string accessError;
+    if (!ensureEndpointAccess(config, accessError)) {
+        publishStatus(false, accessError);
+        return;
+    }
+    if (stopping_.load()) {
+        return;
+    }
+
     publishStatus(false, "正在配置板端串口...");
     const auto configureResult = runAdb(config.adbSerial,
                                         {"shell", sttyCommand(config)},

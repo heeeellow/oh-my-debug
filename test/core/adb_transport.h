@@ -33,6 +33,7 @@ private:
                          const std::vector<std::string> &arguments,
                          std::chrono::milliseconds timeout = std::chrono::seconds(5)) const;
     bool validateConfig(const SerialConfig &config, std::string &error) const;
+    bool ensureEndpointAccess(const SerialConfig &config, std::string &error);
     std::string sttyCommand(const SerialConfig &config) const;
     void workerMain(SerialConfig config);
     void removeForward(const std::string &serial, int localPort) const;

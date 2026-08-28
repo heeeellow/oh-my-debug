@@ -52,6 +52,7 @@ private:
     QPushButton *addNavigationButton(const QString &text, int pageIndex);
 
     void refreshDevices();
+    void prepareForShutdown();
     void applyDeviceScan(testtools::DeviceScanResult result);
     void applySelectedDevice();
     serialdemo::AdbDevice selectedDevice() const;
@@ -75,4 +76,5 @@ private:
     std::vector<std::thread> scanThreads_;
     bool scanning_ = false;
     bool serialBusy_ = false;
+    bool shuttingDown_ = false;
 };
