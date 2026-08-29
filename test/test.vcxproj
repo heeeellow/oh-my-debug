@@ -106,8 +106,10 @@
     <QtMoc Include="ui\pages\serial_workspace.h" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="application\device_discovery.cpp" />
+    <ClCompile Include="application\agent_deployment.cpp" />
     <ClCompile Include="core\agent_client.cpp" />
     <ClCompile Include="core\agent_protocol.cpp" />
+    <ClCompile Include="core\agent_serial_transport.cpp" />
     <ClCompile Include="core\async_serial_sender.cpp" />
     <ClCompile Include="core\adb_transport.cpp" />
     <ClCompile Include="core\codec.cpp" />
@@ -130,8 +132,10 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="application\device_discovery.h" />
+    <ClInclude Include="application\agent_deployment.h" />
     <ClInclude Include="core\agent_client.h" />
     <ClInclude Include="core\agent_protocol.h" />
+    <ClInclude Include="core\agent_serial_transport.h" />
     <ClInclude Include="core\async_serial_sender.h" />
     <ClInclude Include="core\adb_transport.h" />
     <ClInclude Include="core\codec.h" />
@@ -142,13 +146,6 @@
     <ClInclude Include="core\self_test.h" />
     <ClInclude Include="core\serial_test_engine.h" />
     <ClInclude Include="ui\theme.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="agent\agent.vcxproj">
-      <Project>{B47D10DF-D01B-46DA-89B4-A1830CB69FF7}</Project>
-      <LinkLibraryDependencies>false</LinkLibraryDependencies>
-      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
-    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">

@@ -3,10 +3,12 @@
 #include "adb_transport.h"
 #include "agent_client.h"
 #include "agent_protocol.h"
+#include "agent_serial_transport.h"
 #include "async_serial_sender.h"
 #include "codec.h"
 #include "process_runner.h"
 #include "serial_test_engine.h"
+#include "application/agent_deployment.h"
 
 #include <chrono>
 #include <algorithm>
@@ -241,6 +243,105 @@ int runAdbSerialSmokeTest(const std::string &serial, const std::string &endpoint
         return 51;
     }
     std::cout << "PASS adb-serial-open serial=" << serial << " endpoint=" << endpoint << '\n';
+    return 0;
+}
+
+int runAgentSerialSmokeTest(const std::string &serial, std::uint16_t agentControlPort,
+                            const std::string &endpoint)
+{
+    AgentSerialTransport transport(serial, agentControlPort);
+    SerialConfig config;
+    config.adbSerial = serial;
+    config.endpoint = endpoint;
+    config.baudRate = 115200;
+
+    std::mutex statusMutex;
+    std::condition_variable statusCondition;
+    std::vector<std::string> messages;
+    bool completed = false;
+    bool connected = false;
+    bool failedAfterConnect = false;
+    transport.setStatusCallback([&](TransportState state, const std::string &message) {
+        std::lock_guard<std::mutex> lock(statusMutex);
+        messages.push_back(message);
+        if (state == TransportState::Connected || state == TransportState::Error) {
+            if (connected && state == TransportState::Error) {
+                failedAfterConnect = true;
+            }
+            connected = connected || state == TransportState::Connected;
+            completed = true;
+            statusCondition.notify_all();
+        }
+    });
+    transport.open(config);
+    {
+        std::unique_lock<std::mutex> lock(statusMutex);
+        statusCondition.wait_for(lock, std::chrono::seconds(15), [&] { return completed; });
+        if (connected) {
+            statusCondition.wait_for(lock, std::chrono::seconds(5), [&] {
+                return failedAfterConnect;
+            });
+        }
+    }
+    const bool stayedOpen = connected && transport.isOpen() && !failedAfterConnect;
+    transport.setStatusCallback({});
+    transport.close();
+    for (const auto &message : messages) {
+        std::cout << message << '\n';
+    }
+    if (!completed || !connected) {
+        std::cerr << "FAIL Agent serial open failed\n";
+        return 60;
+    }
+    if (!stayedOpen) {
+        std::cerr << "FAIL Agent serial stream did not remain open for 5 seconds\n";
+        return 61;
+    }
+    std::cout << "PASS agent-serial-hold serial=" << serial
+              << " endpoint=" << endpoint << " seconds=5 no_data_sent\n";
+    return 0;
+}
+
+int runAgentDeploymentSmokeTest(const std::string &serial,
+                                const std::string &applicationDirectory)
+{
+    testtools::AgentDeployment deployment;
+    const auto result = deployment.deployAndForward(serial, applicationDirectory,
+        [](const std::string &message) { std::cout << message << '\n'; });
+    if (!result.succeeded) {
+        std::cerr << "FAIL Agent deployment: " << result.error << '\n';
+        return 70;
+    }
+
+    testtools::AgentClient client;
+    std::string error;
+    std::string response;
+    const auto cleanup = [&] {
+        client.close();
+        deployment.removeForward(serial, result.localPort);
+    };
+    if (!client.connect("127.0.0.1", result.localPort, error)
+        || !client.request("{\"protocol\":1,\"request_id\":\"deploy-info\","
+                           "\"method\":\"system.info\",\"params\":{}}",
+                           response, error)
+        || response.find("\"platform\":\"android\"") == std::string::npos) {
+        cleanup();
+        std::cerr << "FAIL deployed Agent system.info: "
+                  << (error.empty() ? response : error) << '\n';
+        return 71;
+    }
+    if (!client.request("{\"protocol\":1,\"request_id\":\"deploy-serial-list\","
+                        "\"method\":\"serial.list\",\"params\":{}}",
+                        response, error)
+        || response.find("\"endpoint\":\"/dev/ttyUSB2\"") == std::string::npos) {
+        cleanup();
+        std::cerr << "FAIL deployed Agent serial.list: "
+                  << (error.empty() ? response : error) << '\n';
+        return 72;
+    }
+    cleanup();
+    std::cout << "PASS android-agent-deploy abi=" << result.abi
+              << " serial=" << serial << " ttyUSB2=discovered\n";
     return 0;
 }
 

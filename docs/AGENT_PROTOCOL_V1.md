@@ -1,10 +1,18 @@
-# TestTools Agent 协议 v1 雏形
+# TestTools Agent 协议 v1
 
-## 当前目的
+## 当前实现
 
-这一版用于验证“上位机负责交互与编排、板端服务负责受控设备操作”的边界。它不是可直接进入
-量产系统的远程管理服务。目前只实现协议编解码、`session.hello`、`capability.list` 和一个仅监听
-本机回环地址的假 Agent。
+Agent 是运行在安卓或 Linux 板端的无 Qt C++17 服务。上位机通过 ADB 把它部署到
+`/data/local/tmp/testtools-agent/`，Agent 只监听板端 `127.0.0.1:27183`，控制和数据端口都通过
+ADB 转发到 Windows。本机假 Agent 只保留为协议测试夹具，不出现在产品界面，也不参与正常构建。
+
+当前 Agent 版本为 `0.2.0`，实现：
+
+- `session.hello`：协议范围、Agent 版本和平台。
+- `capability.list`：`system.info` 与 `serial.stream`。
+- `system.info`：系统、内核、架构、板型、系统版本和有效 UID。
+- `serial.list`：设备节点、USB 接口名称、读写权限和占用进程。
+- `serial.open` / `serial.close`：由 Agent 独占打开串口并分配临时原始数据端口。
 
 ## 传输帧
 
@@ -14,58 +22,34 @@
 payload                    当前最大 1 MiB
 ```
 
-解码器支持 TCP 拆包和粘包，拒绝零长度、超限长度和未知帧类型。JSON 请求必须包含协议版本、
-`request_id`、`method` 和 `params`。响应回显 `request_id`，业务任务后续使用独立的 `job_id`。
+解码器支持 TCP 拆包和粘包，拒绝零长度、超限长度和未知帧类型。JSON 请求包含 `protocol`、
+`request_id`、`method` 和 `params`，响应回显 `request_id`。
 
-## 已实现的最小请求
+## 串口数据通道
+
+`serial.open` 校验 `/dev/tty*` 字符设备、检查占用、取得文件锁并配置 termios。成功响应包含
+`session_id` 和仅绑定回环地址的 `stream_port`。上位机为该端口创建独立 ADB `tcp:` 转发，之后
+在这条连接上直接传输串口原始字节；控制 JSON 不与高吞吐数据混流。
+
+当前实现一次只管理一个板端串口会话。界面会阻止同时打开两个 Agent 串口，但允许
+“Windows 本地串口 + 板端 Agent 串口”的双端点验证。多板端并发将在会话表和资源管理器完成后开放。
+
+## 安全边界
+
+- Agent 和数据端口只绑定回环地址，不直接暴露到板卡网络。
+- ADB 仅负责发现、部署和端口转发，不承担串口业务语义。
+- 不提供任意 shell RPC；每个新能力必须有固定方法、参数校验和风险等级。
+- `/dev/ttyUSB1` 等被系统进程占用的端点会返回明确占用者，不会抢占系统服务。
+- 当前开发部署依赖已有 ADB 授权。量产阶段仍需补充包签名、版本校验和 init/service 集成。
+
+## 请求示例
 
 ```json
 {"protocol":1,"request_id":"hello-1","method":"session.hello","params":{}}
 ```
 
 ```json
-{"protocol":1,"request_id":"caps-1","method":"capability.list","params":{}}
+{"protocol":1,"request_id":"serial-open-1","method":"serial.open","params":{"endpoint":"/dev/ttyUSB2","baud_rate":115200,"data_bits":8,"parity":"none","stop_bits":1,"flow_control":"none"}}
 ```
 
-假 Agent 只声明只读的 `system.info` 能力，用于证明能力发现链路。它不执行 shell，也不开放真实
-硬件操作。
-
-## 安全和部署边界
-
-- 假 Agent 只绑定 `127.0.0.1`；真实板端第一阶段也应通过 ADB 转发访问，不监听外网接口。
-- 不提供任意 shell RPC。新能力必须有稳定 ID、参数约束、风险等级和资源声明。
-- 当前假服务没有认证、持久任务、超时、取消和恢复机制，不得作为生产服务部署。
-- 当前 `AgentClient` 是同步冒烟客户端，只能在后台工作线程中使用；接入 GUI 前需增加超时与异步
-  会话管理。
-
-## 本机验证
-
-构建 `test/test.slnx` 后会同时生成 `test.exe` 和 `testtools-agent.exe`。先启动假 Agent：
-
-```powershell
-.\test\x64\Release\testtools-agent.exe --port 27183
-```
-
-再从另一终端运行上位机协议冒烟：
-
-```powershell
-.\test\x64\Release\test.exe --agent-smoke 127.0.0.1 27183
-```
-
-验证成功后假 Agent 会在客户端断开时退出。
-
-### 从主界面体验
-
-1. 构建完整的 `test/test.slnx`，确认 `test.exe` 旁边同时存在 `testtools-agent.exe`。
-2. 启动 TestTools，点击顶部的 `Agent`，或从左侧进入“设置”。
-3. 在“快速体验 · 本机假 Agent”中点击“启动并连接假 Agent”。
-4. 顶部状态应变为 `Agent · v0.1.0 · 已连接`，连接卡片显示协议 v1 协商成功，并发现
-   `system.info（只读）`。
-5. 点击“断开”结束会话；假 Agent 随之退出，不会留在后台。
-
-“Agent 连接”中的主机当前限制为 `127.0.0.1`。后续板端 Agent 通过 ADB 转发到本机端口后，也从
-这里连接。当前仓库尚未提供已交叉编译的 Android 二进制，因此一键体验只验证协议与界面链路，
-不会操作所选板卡。
-
-`test/agent/CMakeLists.txt` 只依赖 C++17、Asio 和线程库，可作为后续 Android/Linux 交叉编译入口；
-当前目标仍是假服务，不包含 init/service 配置或真实板卡能力。
+协议测试夹具可通过 CMake 选项 `TESTTOOLS_BUILD_FAKE_AGENT=ON` 单独构建；它不是最终用户功能。

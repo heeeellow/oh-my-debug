@@ -7,6 +7,7 @@
 
 #include <string>
 #include <string_view>
+#include <filesystem>
 
 int main(int argc, char *argv[])
 {
@@ -15,9 +16,12 @@ int main(int argc, char *argv[])
     std::string initialSize;
     std::string agentSmokeHost;
     std::uint16_t agentSmokePort = 0;
-    bool startAgentDemo = false;
     std::string adbSerialSmokeSerial;
     std::string adbSerialSmokeEndpoint;
+    std::string agentSerialSmokeSerial;
+    std::string agentSerialSmokeEndpoint;
+    std::uint16_t agentSerialSmokePort = 0;
+    std::string agentDeploySmokeSerial;
     for (int index = 1; index < argc; ++index) {
         if (std::string_view(argv[index]) == "--self-test") {
             return serialdemo::runSelfTest();
@@ -39,12 +43,21 @@ int main(int argc, char *argv[])
             }
             agentSmokePort = static_cast<std::uint16_t>(port);
         }
-        if (std::string_view(argv[index]) == "--ui-agent-demo") {
-            startAgentDemo = true;
-        }
         if (std::string_view(argv[index]) == "--adb-serial-smoke" && index + 2 < argc) {
             adbSerialSmokeSerial = argv[++index];
             adbSerialSmokeEndpoint = argv[++index];
+        }
+        if (std::string_view(argv[index]) == "--agent-serial-smoke" && index + 3 < argc) {
+            agentSerialSmokeSerial = argv[++index];
+            const int port = std::stoi(argv[++index]);
+            if (port <= 0 || port > 65535) {
+                return 2;
+            }
+            agentSerialSmokePort = static_cast<std::uint16_t>(port);
+            agentSerialSmokeEndpoint = argv[++index];
+        }
+        if (std::string_view(argv[index]) == "--agent-deploy-smoke" && index + 1 < argc) {
+            agentDeploySmokeSerial = argv[++index];
         }
     }
     if (!agentSmokeHost.empty()) {
@@ -52,6 +65,17 @@ int main(int argc, char *argv[])
     }
     if (!adbSerialSmokeSerial.empty()) {
         return serialdemo::runAdbSerialSmokeTest(adbSerialSmokeSerial, adbSerialSmokeEndpoint);
+    }
+    if (!agentSerialSmokeSerial.empty()) {
+        return serialdemo::runAgentSerialSmokeTest(agentSerialSmokeSerial,
+                                                   agentSerialSmokePort,
+                                                   agentSerialSmokeEndpoint);
+    }
+    if (!agentDeploySmokeSerial.empty()) {
+        const std::string applicationDirectory =
+            std::filesystem::absolute(std::filesystem::u8path(argv[0])).parent_path().u8string();
+        return serialdemo::runAgentDeploymentSmokeTest(agentDeploySmokeSerial,
+                                                       applicationDirectory);
     }
     QApplication app(argc, argv);
     MainWindow window;
@@ -69,9 +93,6 @@ int main(int argc, char *argv[])
         }
     }
     window.show();
-    if (startAgentDemo) {
-        QTimer::singleShot(50, &window, [&window] { window.startAgentDemo(); });
-    }
     if (!snapshotPath.empty()) {
         QTimer::singleShot(1500, &app, [&app, &window, snapshotPath] {
             const bool saved = window.grab().save(QString::fromUtf8(snapshotPath), "PNG");

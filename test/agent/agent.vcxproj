@@ -38,10 +38,14 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="fake_agent_main.cpp" />
+    <ClCompile Include="agent_main.cpp" />
+    <ClCompile Include="agent_service.cpp" />
+    <ClCompile Include="serial_bridge.cpp" />
     <ClCompile Include="..\core\agent_protocol.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="agent_service.h" />
+    <ClInclude Include="serial_bridge.h" />
     <ClInclude Include="..\core\agent_protocol.h" />
     <ClInclude Include="..\core\serial_types.h" />
   </ItemGroup>

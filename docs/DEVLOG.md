@@ -181,3 +181,42 @@ Agent 留出稳定边界。
   正常退出，临时 ADB 转发和 `/dev/shm` 构建目录均已清理。
 - 当前验证的仍是假能力 Agent；下一阶段需要实现真实 `system.info`，再设计上位机的一键部署、
   启动、转发、连接和状态恢复流程。
+
+## 2026-08-29：真实 Android Agent 与托管串口流
+
+### 现场诊断
+
+- 当前只连接 RK3562 Android 13 设备 `e2ea0f728463744a`，ABI 为 `armeabi-v7a`，adbd 身份为 root。
+- `/dev/ttyUSB2` 是 Quectel EG800AK-CN 的 `Mobile AT Interface`，未被进程占用；
+  `/dev/ttyUSB1` 同为 AT 接口，但由 `rild`（PID 388）占用。
+- 旧 `adb forward dev:/dev/ttyUSB2` 虽能返回本地端口，但连接会立即 EOF；`ttyUSB0` 与 `ttyS6`
+  表现相同，目标 adbd 又不支持 `dev-raw:`。因此问题不是 chmod 或波特率设置，产品路径改为 Agent
+  托管串口。
+
+### 实现
+
+- Agent `0.2.0` 增加真实 `system.info`、`serial.list`、`serial.open` 和 `serial.close`，使用 POSIX
+  termios、文件锁和回环 TCP 原始数据通道，不依赖 Qt。
+- 设置页移除假 Agent 和手工主机/端口输入，改为选择设备后“一键部署 / 更新并连接”。部署过程自动
+  识别 ABI、推送到 `/data/local/tmp/testtools-agent/`、记录 PID、启动、探测日志并创建控制转发。
+- 串口工作台移除用户可见的 ADB 直连与 root 开关，板端串口经真实 Agent 枚举和打开；占用进程直接
+  显示在端点名称旁。当前 Agent 为单板端串口会话，界面阻止两路 Agent 串口同时打开。
+- 普通计划发送改名为“定时 / 次数发送”，仍使用用户输入的内容和行尾；可靠性压测继续使用带序号与
+  校验的数据帧，两者保持独立入口和状态。
+- 增加 `scripts/build-android-agent.ps1`，Android Agent 构建产物按 ABI 复制到主程序运行目录。
+
+### 验证
+
+- Android NDK r27d、API 23、静态 libc++ 构建成功，产物为 ARM 32-bit ELF。
+- Windows Release 主程序零警告、零错误构建通过。
+- `--agent-deploy-smoke` 在实机完成 ABI 识别、替换部署、启动、`system.info` 和 `serial.list`，结果
+  PASS；首次验证发现 toybox 不支持 `setsid -f` 且旧 Agent 无法退出，已改为 nohup、PID 文件和
+  兼容旧版本的进程清理后复测通过。
+- `--agent-serial-smoke e2ea0f728463744a <control-port> /dev/ttyUSB2` 打开数据通道并空闲保持 5 秒，
+  结果 PASS，测试明确未发送任何串口字节。
+- 设置页和串口页在 1360×860 完成快照检查，无裁切和重叠。
+
+### 当前边界
+
+- 尚未向 4G 模块发送 AT 指令；真实命令收发留给用户在已知安全场景下验收。
+- 下一阶段应先实现 Agent 多会话资源表和心跳/断线恢复，再扩展并发测试项与任务历史。

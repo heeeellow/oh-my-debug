@@ -22,6 +22,9 @@ public:
 
     std::vector<AdbDevice> availableDevices(std::string &error) const;
     std::vector<std::string> availableRemotePorts(const std::string &serial, std::string &error) const;
+    CommandResult runCommand(const std::string &serial,
+                             const std::vector<std::string> &arguments,
+                             std::chrono::milliseconds timeout = std::chrono::seconds(5)) const;
 
     void open(const SerialConfig &config) override;
     void close() override;

@@ -1,6 +1,6 @@
 #include "serial_workspace.h"
 
-#include "core/adb_transport.h"
+#include "core/agent_serial_transport.h"
 #include "core/codec.h"
 #include "core/cserialport_transport.h"
 
@@ -168,9 +168,15 @@ void SerialWorkspace::buildUi()
         if (!channels_[0].transport && !channels_[1].transport) {
             const auto configA = channelConfig(0);
             const auto configB = channelConfig(1);
-            if (channelUsesAdb(0) == channelUsesAdb(1)
+            if (channelUsesAgent(0) && channelUsesAgent(1)) {
+                QMessageBox::information(
+                    this, QStringLiteral("当前为单板串口会话"),
+                    QStringLiteral("当前 Agent 版本一次管理一个板端串口。可使用一路 Windows 串口和一路板端 Agent 串口；多板端会话会在后续扩展。"));
+                return;
+            }
+            if (channelUsesAgent(0) == channelUsesAgent(1)
                 && configA.endpoint == configB.endpoint
-                && (!channelUsesAdb(0) || configA.adbSerial == configB.adbSerial)) {
+                && (!channelUsesAgent(0) || configA.adbSerial == configB.adbSerial)) {
                 QMessageBox::warning(this, QStringLiteral("无法连接两路"),
                                      QStringLiteral("端点 A 和 B 不能同时打开同一个串口。"));
                 return;
@@ -236,7 +242,7 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     settings->setVerticalSpacing(7);
     channel.sourceCombo = new QComboBox(channel.group);
     channel.sourceCombo->addItem(QStringLiteral("Windows 本地串口"), false);
-    channel.sourceCombo->addItem(QStringLiteral("ADB 板端串口"), true);
+    channel.sourceCombo->addItem(QStringLiteral("板端 Agent 串口"), true);
     if (index == 1) {
         channel.sourceCombo->setCurrentIndex(1);
     }
@@ -278,12 +284,6 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     settings->addWidget(channel.parityCombo, 1, 2, 1, 2);
     settings->addWidget(channel.stopBitsCombo, 1, 4);
     settings->addWidget(channel.flowControlCombo, 1, 5, 1, 2);
-    channel.adbRootCheck = new QCheckBox(QStringLiteral("权限不足时尝试 ADB root"), channel.group);
-    channel.adbRootCheck->setChecked(true);
-    channel.adbRootCheck->setToolTip(
-        QStringLiteral("仅在板端节点不可读写时重启 adbd；量产设备可能不支持"));
-    settings->addWidget(channel.adbRootCheck, 2, 1, 1, 6);
-    settings->setRowMinimumHeight(2, channel.adbRootCheck->sizeHint().height());
     settings->setColumnStretch(1, 1);
     settings->setColumnStretch(3, 2);
     layout->addLayout(settings);
@@ -335,7 +335,7 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     channel.sendButton = new QPushButton(QStringLiteral("发送"), channel.group);
     channel.sendButton->setObjectName(QStringLiteral("primaryButton"));
     channel.sendButton->setEnabled(false);
-    channel.autoSendButton = new QPushButton(QStringLiteral("自动发送…"), channel.group);
+    channel.autoSendButton = new QPushButton(QStringLiteral("定时 / 次数…"), channel.group);
     channel.autoSendButton->setEnabled(false);
     sendTools->addWidget(channel.sendHexCheck);
     sendTools->addWidget(new QLabel(QStringLiteral("行尾"), channel.group));
@@ -347,8 +347,6 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     layout->addLayout(sendTools);
 
     connect(channel.sourceCombo, &QComboBox::currentIndexChanged, this, [this, index] {
-        channels_[index].adbRootCheck->setVisible(channelUsesAdb(index));
-        channels_[index].adbRootCheck->setEnabled(channelUsesAdb(index));
         applyPorts(index);
         updateRouteSummary();
         updateGlobalControls();
@@ -372,20 +370,19 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     connect(clearReceive, &QPushButton::clicked, channel.receiveEdit, &QPlainTextEdit::clear);
     connect(clearSend, &QPushButton::clicked, channel.sendEdit, &QPlainTextEdit::clear);
 
-    channel.adbRootCheck->setVisible(channelUsesAdb(index));
-    channel.adbRootCheck->setEnabled(channelUsesAdb(index));
     setChannelStatus(index, QStringLiteral("未连接"));
     return channel.group;
 }
 
-bool SerialWorkspace::channelUsesAdb(int index) const
+bool SerialWorkspace::channelUsesAgent(int index) const
 {
     return channels_[index].sourceCombo->currentData().toBool();
 }
 
-bool SerialWorkspace::selectedAdbIsOnline() const
+bool SerialWorkspace::selectedAgentIsOnline() const
 {
-    return currentAdbDevice_.state == "device" && !currentAdbDevice_.serial.empty();
+    return currentAdbDevice_.state == "device" && !currentAdbDevice_.serial.empty()
+           && agentControlPort_ != 0 && agentAdbSerial_ == currentAdbDevice_.serial;
 }
 
 void SerialWorkspace::refreshTargets()
@@ -397,48 +394,46 @@ void SerialWorkspace::refreshTargets()
     localPorts_ = CSerialPortTransport::availablePorts();
     applyPorts(0);
     applyPorts(1);
-    refreshAdbPorts();
+    refreshAgentPorts();
 }
 
-void SerialWorkspace::refreshAdbPorts()
+void SerialWorkspace::refreshAgentPorts()
 {
-    adbPorts_.clear();
+    agentPorts_.clear();
     applyPorts(0);
     applyPorts(1);
 
-    if (!selectedAdbIsOnline()) {
+    if (!selectedAgentIsOnline()) {
         scanning_ = false;
         emit activityChanged(currentAdbDevice_.serial.empty()
-                                 ? QStringLiteral("未选择在线 ADB 设备，板端串口列表为空")
-                                 : QStringLiteral("ADB 设备状态为 %1，板端串口不可用")
-                                       .arg(fromUtf8(currentAdbDevice_.state)));
+                                 ? QStringLiteral("未选择安卓设备，板端串口列表为空")
+                                 : QStringLiteral("请先在设置中部署并连接该设备的 Agent"));
         updateGlobalControls();
         return;
     }
 
     scanning_ = true;
-    emit activityChanged(QStringLiteral("正在读取 %1 的板端串口")
+    emit activityChanged(QStringLiteral("正在通过 Agent 读取 %1 的板端串口")
                              .arg(fromUtf8(currentAdbDevice_.serial)));
     updateGlobalControls();
-    const std::string serial = currentAdbDevice_.serial;
+    const std::uint16_t controlPort = agentControlPort_;
     QPointer<SerialWorkspace> guard(this);
-    scanThreads_.emplace_back([guard, serial] {
-        AdbTransport scanner;
+    scanThreads_.emplace_back([guard, controlPort] {
         std::string error;
-        auto ports = scanner.availableRemotePorts(serial, error);
+        auto ports = AgentSerialTransport::availablePorts(controlPort, error);
         QMetaObject::invokeMethod(guard, [guard, ports = std::move(ports), error = std::move(error)] {
             if (!guard || guard->shuttingDown_) {
                 return;
             }
             guard->scanning_ = false;
-            guard->adbPorts_ = std::move(ports);
+            guard->agentPorts_ = std::move(ports);
             guard->applyPorts(0);
             guard->applyPorts(1);
             if (!error.empty()) {
                 emit guard->activityChanged(fromUtf8(error));
             } else {
-                emit guard->activityChanged(QStringLiteral("已发现 %1 个板端串口")
-                                                .arg(guard->adbPorts_.size()));
+                emit guard->activityChanged(QStringLiteral("Agent 已发现 %1 个板端串口")
+                                                .arg(guard->agentPorts_.size()));
             }
             guard->updateGlobalControls();
         }, Qt::QueuedConnection);
@@ -451,6 +446,18 @@ void SerialWorkspace::setAdbDevice(const AdbDevice &device)
         return;
     }
     currentAdbDevice_ = device;
+    refreshTargets();
+    updateRouteSummary();
+}
+
+void SerialWorkspace::setAgentConnection(const std::string &adbSerial,
+                                         std::uint16_t localControlPort)
+{
+    if (hasActiveConnections()) {
+        return;
+    }
+    agentAdbSerial_ = adbSerial;
+    agentControlPort_ = localControlPort;
     refreshTargets();
     updateRouteSummary();
 }
@@ -472,11 +479,20 @@ void SerialWorkspace::applyPorts(int index)
     const QSignalBlocker blocker(channel.portCombo);
     channel.portCombo->clear();
 
-    if (channelUsesAdb(index)) {
-        for (const auto &port : adbPorts_) {
-            channel.portCombo->addItem(fromUtf8(port), fromUtf8(port));
+    if (channelUsesAgent(index)) {
+        for (const auto &port : agentPorts_) {
+            QString detail = fromUtf8(port.interfaceName);
+            if (!port.occupiedBy.empty()) {
+                detail = QStringLiteral("占用中：%1").arg(fromUtf8(port.occupiedBy));
+            } else if (!port.readable || !port.writable) {
+                detail = QStringLiteral("权限不足");
+            }
+            const QString endpoint = fromUtf8(port.endpoint);
+            channel.portCombo->addItem(detail.isEmpty()
+                                           ? endpoint : endpoint + QStringLiteral(" — ") + detail,
+                                       endpoint);
         }
-        channel.portCombo->setToolTip(QStringLiteral("板端设备节点，例如 /dev/ttyS2"));
+        channel.portCombo->setToolTip(QStringLiteral("由板端 Agent 枚举和独占管理的设备节点"));
     } else {
         for (const auto &port : localPorts_) {
             const QString name = fromUtf8(port.name);
@@ -504,7 +520,7 @@ SerialConfig SerialWorkspace::channelConfig(int index) const
     const QString portData = channel.portCombo->currentData().toString();
     config.endpoint = toUtf8(portData.isEmpty() ? channel.portCombo->currentText() : portData);
     config.adbSerial = currentAdbDevice_.serial;
-    config.allowAdbRoot = channelUsesAdb(index) && channel.adbRootCheck->isChecked();
+    config.allowAdbRoot = false;
     config.baudRate = channel.baudCombo->currentText().toInt();
     config.dataBits = channel.dataBitsCombo->currentText().toInt();
     config.parity = channel.parityCombo->currentIndex() == 1 ? Parity::Odd
@@ -526,8 +542,8 @@ bool SerialWorkspace::validateChannel(int index, QString &error) const
         error = channelName(index) + QStringLiteral(" 的波特率无效");
         return false;
     }
-    if (channelUsesAdb(index) && !selectedAdbIsOnline()) {
-        error = QStringLiteral("ADB 设备不是 device 状态，无法连接 ") + channelName(index);
+    if (channelUsesAgent(index) && !selectedAgentIsOnline()) {
+        error = QStringLiteral("请先在设置中部署并连接板端 Agent，再连接 ") + channelName(index);
         return false;
     }
 
@@ -535,9 +551,13 @@ bool SerialWorkspace::validateChannel(int index, QString &error) const
     const auto &other = channels_[otherIndex];
     if (other.transport || other.connecting) {
         const auto otherConfig = channelConfig(otherIndex);
-        if (channelUsesAdb(index) == channelUsesAdb(otherIndex)
+        if (channelUsesAgent(index) && channelUsesAgent(otherIndex)) {
+            error = QStringLiteral("当前 Agent 版本一次管理一个板端串口");
+            return false;
+        }
+        if (channelUsesAgent(index) == channelUsesAgent(otherIndex)
             && config.endpoint == otherConfig.endpoint
-            && (!channelUsesAdb(index) || config.adbSerial == otherConfig.adbSerial)) {
+            && (!channelUsesAgent(index) || config.adbSerial == otherConfig.adbSerial)) {
             error = QStringLiteral("端点 A 和 B 不能同时打开同一个串口");
             return false;
         }
@@ -558,9 +578,9 @@ void SerialWorkspace::connectChannel(int index)
         return;
     }
 
-    const bool adb = channelUsesAdb(index);
-    if (adb) {
-        channel.transport = std::make_unique<AdbTransport>();
+    const bool agent = channelUsesAgent(index);
+    if (agent) {
+        channel.transport = std::make_unique<AgentSerialTransport>(agentAdbSerial_, agentControlPort_);
     } else {
         channel.transport = std::make_unique<CSerialPortTransport>();
     }
@@ -573,7 +593,7 @@ void SerialWorkspace::connectChannel(int index)
     updateGlobalControls();
     channel.transport->open(channelConfig(index));
 
-    if (!adb && !channel.transport->isOpen()) {
+    if (!agent && !channel.transport->isOpen()) {
         disconnectChannel(index, false);
     }
 }
@@ -698,7 +718,6 @@ void SerialWorkspace::setChannelControlsEnabled(int index, bool enabled)
     channel.parityCombo->setEnabled(enabled);
     channel.stopBitsCombo->setEnabled(enabled);
     channel.flowControlCombo->setEnabled(enabled);
-    channel.adbRootCheck->setEnabled(enabled && channelUsesAdb(index));
 }
 
 void SerialWorkspace::updateGlobalControls()
@@ -709,20 +728,21 @@ void SerialWorkspace::updateGlobalControls()
                           && channels_[1].transport && channels_[1].transport->isOpen();
     const bool anyAutoSend = channels_[0].autoSendPlan.isRunning()
                              || channels_[1].autoSendPlan.isRunning();
-    const auto sameEndpoint = [this] {
+    const auto resourceConflict = [this] {
         const auto configA = channelConfig(0);
         const auto configB = channelConfig(1);
-        return channelUsesAdb(0) == channelUsesAdb(1)
+        return (channelUsesAgent(0) && channelUsesAgent(1))
+               || (channelUsesAgent(0) == channelUsesAgent(1)
                && !configA.endpoint.empty() && configA.endpoint == configB.endpoint
-               && (!channelUsesAdb(0) || configA.adbSerial == configB.adbSerial);
+               && (!channelUsesAgent(0) || configA.adbSerial == configB.adbSerial));
     };
-    const auto channelReady = [this, &sameEndpoint](int index) {
+    const auto channelReady = [this, &resourceConflict](int index) {
         const auto &channel = channels_[index];
         const bool basicReady = !channel.portCombo->currentText().trimmed().isEmpty()
                                 && channel.baudCombo->currentText().toInt() > 0
-                                && (!channelUsesAdb(index) || selectedAdbIsOnline());
+                                && (!channelUsesAgent(index) || selectedAgentIsOnline());
         const int otherIndex = 1 - index;
-        const bool conflictsWithOpenChannel = channels_[otherIndex].transport && sameEndpoint();
+        const bool conflictsWithOpenChannel = channels_[otherIndex].transport && resourceConflict();
         return basicReady && !conflictsWithOpenChannel;
     };
     for (int index = 0; index < 2; ++index) {
@@ -738,7 +758,7 @@ void SerialWorkspace::updateGlobalControls()
     }
     const bool missingChannelsReady = (channels_[0].transport || channelReady(0))
                                       && (channels_[1].transport || channelReady(1));
-    const bool pairCompatible = channels_[0].transport || channels_[1].transport || !sameEndpoint();
+    const bool pairCompatible = channels_[0].transport || channels_[1].transport || !resourceConflict();
     connectBothButton_->setEnabled(!scanning_ && !bothOpen && !channels_[0].connecting
                                    && !channels_[1].connecting && missingChannelsReady && pairCompatible);
     connectBothButton_->setText(bothOpen ? QStringLiteral("链路已连接")
@@ -782,7 +802,7 @@ void SerialWorkspace::updateRouteSummary()
     }
     const auto endpoint = [this](int index) {
         const auto &channel = channels_[index];
-        const QString type = channelUsesAdb(index) ? QStringLiteral("ADB 直连") : QStringLiteral("Windows");
+        const QString type = channelUsesAgent(index) ? QStringLiteral("板端 Agent") : QStringLiteral("Windows");
         const QString data = channel.portCombo->currentData().toString();
         const QString port = data.isEmpty() ? channel.portCombo->currentText() : data;
         return QStringLiteral("%1 · %2").arg(type, port.isEmpty() ? QStringLiteral("未选择") : port);
@@ -858,7 +878,7 @@ void SerialWorkspace::toggleAutoSend(int index)
     }
 
     QDialog dialog(this);
-    dialog.setWindowTitle(channelName(index) + QStringLiteral(" 自动发送"));
+    dialog.setWindowTitle(channelName(index) + QStringLiteral(" 定时 / 次数发送"));
     auto *layout = new QVBoxLayout(&dialog);
     auto *form = new QFormLayout;
     auto *intervalSpin = new QSpinBox(&dialog);
@@ -893,15 +913,15 @@ void SerialWorkspace::toggleAutoSend(int index)
     config.interval = std::chrono::milliseconds(channel.autoIntervalMs);
     config.targetCount = channel.autoTargetCount;
     if (!channel.autoSendPlan.start(config)) {
-        QMessageBox::warning(this, QStringLiteral("参数无效"), QStringLiteral("自动发送间隔必须大于 0。"));
+        QMessageBox::warning(this, QStringLiteral("参数无效"), QStringLiteral("发送间隔必须大于 0。"));
         return;
     }
     channel.autoSendPayload = std::move(payload);
-    channel.autoSendButton->setText(QStringLiteral("停止自动发送"));
+    channel.autoSendButton->setText(QStringLiteral("停止计划发送"));
     channel.sendEdit->setEnabled(false);
     channel.sendHexCheck->setEnabled(false);
     channel.lineEndingCombo->setEnabled(false);
-    emit activityChanged(QStringLiteral("%1 已开始自动发送").arg(channelName(index)));
+    emit activityChanged(QStringLiteral("%1 已开始定时 / 次数发送").arg(channelName(index)));
     updateGlobalControls();
 }
 
@@ -914,13 +934,13 @@ void SerialWorkspace::stopAutoSend(int index, bool announce)
     channel.autoSendPlan.stop();
     channel.autoSendPayload.clear();
     if (channel.autoSendButton) {
-        channel.autoSendButton->setText(QStringLiteral("自动发送…"));
+        channel.autoSendButton->setText(QStringLiteral("定时 / 次数…"));
         channel.sendEdit->setEnabled(true);
         channel.sendHexCheck->setEnabled(true);
         channel.lineEndingCombo->setEnabled(true);
     }
     if (announce && wasRunning) {
-        emit activityChanged(QStringLiteral("%1 自动发送结束：已提交 %2 / 尝试 %3")
+        emit activityChanged(QStringLiteral("%1 计划发送结束：已提交 %2 / 尝试 %3")
                                  .arg(channelName(index)).arg(successes).arg(attempts));
     }
     updateGlobalControls();

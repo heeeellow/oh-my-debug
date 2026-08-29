@@ -1,38 +1,29 @@
 #include "main_window.h"
 
+#include "application/agent_deployment.h"
 #include "core/agent_client.h"
 #include "theme.h"
 #include "ui/pages/serial_workspace.h"
 
 #include <QtCore/QCoreApplication>
-#include <QtCore/QDir>
-#include <QtCore/QFileInfo>
 #include <QtCore/QMetaObject>
 #include <QtCore/QPointer>
-#include <QtCore/QProcess>
 #include <QtCore/QSignalBlocker>
 #include <QtGui/QIcon>
 #include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QFrame>
-#include <QtWidgets/QFormLayout>
 #include <QtWidgets/QGridLayout>
 #include <QtWidgets/QHBoxLayout>
 #include <QtWidgets/QLabel>
-#include <QtWidgets/QLineEdit>
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QScrollArea>
 #include <QtWidgets/QSizePolicy>
-#include <QtWidgets/QSpinBox>
 #include <QtWidgets/QStackedWidget>
 #include <QtWidgets/QStyle>
 #include <QtWidgets/QVBoxLayout>
 
 #include <utility>
-
-#ifdef Q_OS_WIN
-#include <windows.h>
-#endif
 
 namespace {
 
@@ -141,6 +132,7 @@ void MainWindow::prepareForShutdown()
         return;
     }
     shuttingDown_ = true;
+    const std::string selectedSerial = selectedDevice().serial;
     if (serialWorkspace_) {
         serialWorkspace_->prepareForShutdown();
     }
@@ -150,12 +142,12 @@ void MainWindow::prepareForShutdown()
         agentClient_->close();
         agentClient_.reset();
     }
-    if (fakeAgentProcess_ && fakeAgentProcess_->state() != QProcess::NotRunning) {
-        fakeAgentProcess_->terminate();
-        if (!fakeAgentProcess_->waitForFinished(1000)) {
-            fakeAgentProcess_->kill();
-            fakeAgentProcess_->waitForFinished(1000);
-        }
+    const std::string agentSerial = agentAdbSerial_;
+    const std::uint16_t agentPort = agentForwardPort_;
+    agentAdbSerial_.clear();
+    agentForwardPort_ = 0;
+    if (!agentSerial.empty() && agentPort != 0) {
+        testtools::AgentDeployment().removeForward(agentSerial, agentPort);
     }
     for (auto &thread : scanThreads_) {
         if (thread.joinable()) {
@@ -169,6 +161,13 @@ void MainWindow::prepareForShutdown()
         }
     }
     agentThreads_.clear();
+    // A deployment may have completed after the event loop began shutting
+    // down, before its queued result could transfer ownership of the port.
+    // Remove only forwards targeting this Agent's fixed control port.
+    testtools::AgentDeployment().removeControlForwards(selectedSerial);
+    if (!agentSerial.empty() && agentSerial != selectedSerial) {
+        testtools::AgentDeployment().removeControlForwards(agentSerial);
+    }
     QCoreApplication::removePostedEvents(this);
 }
 
@@ -189,11 +188,6 @@ bool MainWindow::navigateTo(const QString &pageName)
         return false;
     }
     return true;
-}
-
-void MainWindow::startAgentDemo()
-{
-    startLocalFakeAgent();
 }
 
 void MainWindow::buildUi()
@@ -421,63 +415,38 @@ QWidget *MainWindow::buildSettingsPage()
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(12);
 
-    auto *experienceCard = new QFrame(content);
-    experienceCard->setObjectName(QStringLiteral("featureCard"));
-    auto *experienceLayout = new QVBoxLayout(experienceCard);
-    experienceLayout->setContentsMargins(18, 16, 18, 16);
-    experienceLayout->setSpacing(8);
-    auto *experienceTitle = new QLabel(QStringLiteral("快速体验 · 本机假 Agent"), experienceCard);
-    experienceTitle->setObjectName(QStringLiteral("sectionLabel"));
-    auto *experienceBody = new QLabel(
-        QStringLiteral("启动随程序构建的无 Qt 假服务，验证 Agent v1 握手和能力发现。它不操作板卡，也不执行 shell。"),
-        experienceCard);
-    experienceBody->setObjectName(QStringLiteral("cardBody"));
-    experienceBody->setWordWrap(true);
-    startFakeAgentButton_ = new QPushButton(QStringLiteral("启动并连接假 Agent"), experienceCard);
-    startFakeAgentButton_->setObjectName(QStringLiteral("primaryButton"));
-    auto *experienceActions = new QHBoxLayout;
-    experienceActions->addWidget(startFakeAgentButton_);
-    experienceActions->addStretch();
-    experienceLayout->addWidget(experienceTitle);
-    experienceLayout->addWidget(experienceBody);
-    experienceLayout->addLayout(experienceActions);
-    layout->addWidget(experienceCard);
-
     auto *connectionCard = new QFrame(content);
     connectionCard->setObjectName(QStringLiteral("featureCard"));
     auto *connectionLayout = new QVBoxLayout(connectionCard);
     connectionLayout->setContentsMargins(18, 16, 18, 16);
     connectionLayout->setSpacing(10);
-    auto *connectionTitle = new QLabel(QStringLiteral("Agent 连接"), connectionCard);
+    auto *connectionTitle = new QLabel(QStringLiteral("板端 Agent"), connectionCard);
     connectionTitle->setObjectName(QStringLiteral("sectionLabel"));
     auto *connectionBody = new QLabel(
-        QStringLiteral("当前仅允许连接 127.0.0.1。真实板端 Agent 应先通过 ADB forward 映射到本机端口。"),
+        QStringLiteral("根据顶部选择的 ADB 设备自动识别 ABI、部署真实 Agent、建立安全的本机转发并发现能力。"),
         connectionCard);
     connectionBody->setObjectName(QStringLiteral("cardBody"));
     connectionBody->setWordWrap(true);
     connectionLayout->addWidget(connectionTitle);
     connectionLayout->addWidget(connectionBody);
 
-    auto *form = new QFormLayout;
-    agentHostEdit_ = new QLineEdit(QStringLiteral("127.0.0.1"), connectionCard);
-    agentHostEdit_->setPlaceholderText(QStringLiteral("127.0.0.1"));
-    agentPortSpin_ = new QSpinBox(connectionCard);
-    agentPortSpin_->setRange(1, 65535);
-    agentPortSpin_->setValue(27183);
-    form->addRow(QStringLiteral("主机"), agentHostEdit_);
-    form->addRow(QStringLiteral("端口"), agentPortSpin_);
-    connectionLayout->addLayout(form);
+    agentDeviceValue_ = new QLabel(QStringLiteral("目标设备：未选择"), connectionCard);
+    agentDeviceValue_->setObjectName(QStringLiteral("cardBody"));
+    connectionLayout->addWidget(agentDeviceValue_);
 
     auto *actions = new QHBoxLayout;
-    connectAgentButton_ = new QPushButton(QStringLiteral("连接并发现能力"), connectionCard);
-    connectAgentButton_->setObjectName(QStringLiteral("primaryButton"));
-    disconnectAgentButton_ = new QPushButton(QStringLiteral("断开"), connectionCard);
-    actions->addWidget(connectAgentButton_);
+    deployAgentButton_ = new QPushButton(QStringLiteral("部署 / 更新并连接"), connectionCard);
+    deployAgentButton_->setObjectName(QStringLiteral("primaryButton"));
+    disconnectAgentButton_ = new QPushButton(QStringLiteral("断开本机连接"), connectionCard);
+    stopAgentButton_ = new QPushButton(QStringLiteral("停止板端 Agent"), connectionCard);
+    stopAgentButton_->setObjectName(QStringLiteral("ghostButton"));
+    actions->addWidget(deployAgentButton_);
     actions->addWidget(disconnectAgentButton_);
+    actions->addWidget(stopAgentButton_);
     actions->addStretch();
     connectionLayout->addLayout(actions);
 
-    agentConnectionDetail_ = new QLabel(QStringLiteral("尚未连接 Agent"), connectionCard);
+    agentConnectionDetail_ = new QLabel(QStringLiteral("尚未连接真实板端 Agent"), connectionCard);
     agentConnectionDetail_->setObjectName(QStringLiteral("cardBody"));
     agentConnectionDetail_->setWordWrap(true);
     agentConnectionDetail_->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -485,56 +454,24 @@ QWidget *MainWindow::buildSettingsPage()
     agentCapabilitiesValue_->setObjectName(QStringLiteral("cardBody"));
     agentCapabilitiesValue_->setWordWrap(true);
     agentCapabilitiesValue_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    agentSystemInfoValue_ = new QLabel(QStringLiteral("设备信息：—"), connectionCard);
+    agentSystemInfoValue_->setObjectName(QStringLiteral("cardBody"));
+    agentSystemInfoValue_->setWordWrap(true);
+    agentSystemInfoValue_->setTextInteractionFlags(Qt::TextSelectableByMouse);
     connectionLayout->addWidget(agentConnectionDetail_);
     connectionLayout->addWidget(agentCapabilitiesValue_);
+    connectionLayout->addWidget(agentSystemInfoValue_);
     layout->addWidget(connectionCard);
     layout->addStretch();
 
-    fakeAgentProcess_ = new QProcess(this);
-#ifdef Q_OS_WIN
-    fakeAgentProcess_->setCreateProcessArgumentsModifier(
-        [](QProcess::CreateProcessArguments *arguments) { arguments->flags |= CREATE_NO_WINDOW; });
-#endif
-    connect(fakeAgentProcess_, &QProcess::readyReadStandardOutput, this, [this] {
-        fakeAgentOutput_ += QString::fromUtf8(fakeAgentProcess_->readAllStandardOutput());
-        if (fakeAgentOutput_.contains(QStringLiteral("LISTENING"))
-            && !agentConnecting_ && !agentClient_) {
-            connectAgentEndpoint();
-        }
-    });
-    connect(fakeAgentProcess_, &QProcess::readyReadStandardError, this, [this] {
-        const QString error = QString::fromUtf8(fakeAgentProcess_->readAllStandardError()).trimmed();
-        if (!error.isEmpty() && agentConnectionDetail_) {
-            agentConnectionDetail_->setText(QStringLiteral("假 Agent：%1").arg(error));
-        }
-    });
-    connect(fakeAgentProcess_, &QProcess::errorOccurred, this, [this](QProcess::ProcessError) {
-        if (!shuttingDown_) {
-            setAgentStatus(QStringLiteral("Agent · 启动失败"), StatusTone::Error,
-                           fakeAgentProcess_->errorString());
-            updateAgentControls();
-        }
-    });
-    connect(fakeAgentProcess_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
-            this, [this](int exitCode, QProcess::ExitStatus) {
-        if (!shuttingDown_ && agentClient_) {
-            disconnectAgent(QStringLiteral("本机假 Agent 已退出"));
-        } else if (!shuttingDown_ && agentStatusLabel_
-                   && agentStatusLabel_->text().contains(QStringLiteral("启动中"))) {
-            setAgentStatus(QStringLiteral("Agent · 启动失败"), StatusTone::Error,
-                           QStringLiteral("假 Agent 已退出，退出码 %1").arg(exitCode));
-        }
-        updateAgentControls();
-    });
-
-    connect(startFakeAgentButton_, &QPushButton::clicked, this, &MainWindow::startLocalFakeAgent);
-    connect(connectAgentButton_, &QPushButton::clicked, this, &MainWindow::connectAgentEndpoint);
+    connect(deployAgentButton_, &QPushButton::clicked, this, &MainWindow::deploySelectedAgent);
     connect(disconnectAgentButton_, &QPushButton::clicked, this, [this] {
         disconnectAgent(QStringLiteral("Agent 已断开"));
     });
+    connect(stopAgentButton_, &QPushButton::clicked, this, &MainWindow::stopSelectedAgent);
     updateAgentControls();
     return wrapPage(QStringLiteral("设置"),
-                    QStringLiteral("连接 Agent，查看协议版本和设备能力"), content);
+                    QStringLiteral("管理真实板端 Agent、协议版本和设备能力"), content);
 }
 
 QWidget *MainWindow::buildEmptyPage(const QString &title, const QString &subtitle,
@@ -585,68 +522,47 @@ QWidget *MainWindow::wrapPage(const QString &title, const QString &subtitle, QWi
     return page;
 }
 
-void MainWindow::startLocalFakeAgent()
-{
-    if (!fakeAgentProcess_ || agentConnecting_ || agentClient_) {
-        return;
-    }
-    if (fakeAgentProcess_->state() != QProcess::NotRunning) {
-        connectAgentEndpoint();
-        return;
-    }
-
-    const QString executable = QDir(QCoreApplication::applicationDirPath())
-                                   .filePath(QStringLiteral("testtools-agent.exe"));
-    if (!QFileInfo(executable).isFile()) {
-        setAgentStatus(QStringLiteral("Agent · 缺少程序"), StatusTone::Error,
-                       QStringLiteral("未找到 %1，请先构建完整解决方案").arg(executable));
-        updateAgentControls();
-        return;
-    }
-
-    agentHostEdit_->setText(QStringLiteral("127.0.0.1"));
-    fakeAgentOutput_.clear();
-    fakeAgentProcess_->setProgram(executable);
-    fakeAgentProcess_->setArguments({QStringLiteral("--port"),
-                                     QString::number(agentPortSpin_->value())});
-    fakeAgentProcess_->setWorkingDirectory(QCoreApplication::applicationDirPath());
-    setAgentStatus(QStringLiteral("Agent · 启动中"), StatusTone::Neutral,
-                   QStringLiteral("正在启动本机假 Agent"));
-    fakeAgentProcess_->start();
-    updateAgentControls();
-}
-
-void MainWindow::connectAgentEndpoint()
+void MainWindow::deploySelectedAgent()
 {
     if (agentConnecting_ || agentClient_ || shuttingDown_) {
         return;
     }
-    QString host = agentHostEdit_->text().trimmed().toLower();
-    if (host == QStringLiteral("localhost") || host == QStringLiteral("::1")) {
-        host = QStringLiteral("127.0.0.1");
-        agentHostEdit_->setText(host);
-    }
-    if (host != QStringLiteral("127.0.0.1")) {
-        setAgentStatus(QStringLiteral("Agent · 地址被拒绝"), StatusTone::Error,
-                       QStringLiteral("当前安全策略只允许本机或 ADB 转发地址 127.0.0.1"));
+    const auto device = selectedDevice();
+    if (device.serial.empty() || device.state != "device") {
+        setAgentStatus(QStringLiteral("Agent · 无可用设备"), StatusTone::Error,
+                       QStringLiteral("请先在顶部选择在线的 ADB 设备"));
         return;
     }
 
-    const std::string nativeHost = host.toStdString();
-    const std::uint16_t port = static_cast<std::uint16_t>(agentPortSpin_->value());
+    const std::string serial = device.serial;
+    const QByteArray applicationDirectoryBytes = QCoreApplication::applicationDirPath().toUtf8();
+    const std::string applicationDirectory(
+        applicationDirectoryBytes.constData(), static_cast<std::size_t>(applicationDirectoryBytes.size()));
     const std::uint64_t generation = ++agentGeneration_;
     agentConnecting_ = true;
-    setAgentStatus(QStringLiteral("Agent · 连接中"), StatusTone::Neutral,
-                   QStringLiteral("正在进行协议协商与能力发现"));
+    setAgentStatus(QStringLiteral("Agent · 部署中"), StatusTone::Neutral,
+                   QStringLiteral("正在准备真实板端 Agent"));
     updateAgentControls();
 
     QPointer<MainWindow> guard(this);
-    agentThreads_.emplace_back([guard, nativeHost, port, generation] {
+    agentThreads_.emplace_back([guard, serial, applicationDirectory, generation] {
+        testtools::AgentDeployment deployment;
+        const auto progress = [guard, generation](const std::string &message) {
+            QMetaObject::invokeMethod(guard, [guard, generation, message] {
+                if (guard && !guard->shuttingDown_ && generation == guard->agentGeneration_) {
+                    guard->setAgentStatus(QStringLiteral("Agent · 部署中"), StatusTone::Neutral,
+                                          fromUtf8(message));
+                }
+            }, Qt::QueuedConnection);
+        };
+        auto deploymentResult = deployment.deployAndForward(serial, applicationDirectory, progress);
         auto client = std::make_shared<testtools::AgentClient>();
-        std::string error;
+        std::string error = deploymentResult.error;
         std::string hello;
         std::string capabilities;
-        bool succeeded = client->connect(nativeHost, port, error);
+        std::string systemInfo;
+        bool succeeded = deploymentResult.succeeded
+                         && client->connect("127.0.0.1", deploymentResult.localPort, error);
         if (succeeded) {
             succeeded = client->request(
                 "{\"protocol\":1,\"request_id\":\"ui-hello\","
@@ -659,17 +575,36 @@ void MainWindow::connectAgentEndpoint()
                 "\"method\":\"capability.list\",\"params\":{}}",
                 capabilities, error);
         }
+        if (succeeded) {
+            succeeded = client->request(
+                "{\"protocol\":1,\"request_id\":\"ui-system-info\","
+                "\"method\":\"system.info\",\"params\":{}}",
+                systemInfo, error);
+        }
+        if (!succeeded && deploymentResult.localPort != 0) {
+            deployment.removeForward(serial, deploymentResult.localPort);
+            deploymentResult.localPort = 0;
+        }
         QMetaObject::invokeMethod(guard,
             [guard, client = std::move(client), hello = std::move(hello),
-             capabilities = std::move(capabilities), error = std::move(error),
-             succeeded, nativeHost, port, generation]() mutable {
+             capabilities = std::move(capabilities), systemInfo = std::move(systemInfo),
+             error = std::move(error), deploymentResult = std::move(deploymentResult),
+             succeeded, serial, generation]() mutable {
                 if (!guard || guard->shuttingDown_ || generation != guard->agentGeneration_) {
                     client->close();
+                    if (deploymentResult.localPort != 0) {
+                        testtools::AgentDeployment().removeForward(serial,
+                                                                  deploymentResult.localPort);
+                    }
                     return;
                 }
                 guard->agentConnecting_ = false;
                 if (!succeeded) {
                     client->close();
+                    if (deploymentResult.localPort != 0) {
+                        testtools::AgentDeployment().removeForward(serial,
+                                                                  deploymentResult.localPort);
+                    }
                     guard->setAgentStatus(QStringLiteral("Agent · 连接失败"), StatusTone::Error,
                                           fromUtf8(error));
                     guard->updateAgentControls();
@@ -677,23 +612,80 @@ void MainWindow::connectAgentEndpoint()
                 }
 
                 guard->agentClient_ = std::move(client);
+                guard->agentAdbSerial_ = serial;
+                guard->agentForwardPort_ = deploymentResult.localPort;
+                if (guard->serialWorkspace_) {
+                    guard->serialWorkspace_->setAgentConnection(serial,
+                                                                 deploymentResult.localPort);
+                }
                 const QString version = jsonStringValue(hello, "agent_version");
-                const bool systemInfo = capabilities.find("\"id\":\"system.info\"")
-                                        != std::string::npos;
+                const bool systemInfoCapability = capabilities.find("\"id\":\"system.info\"")
+                                                  != std::string::npos;
+                const bool serialStream = capabilities.find("\"id\":\"serial.stream\"")
+                                          != std::string::npos;
                 guard->agentSummary_ = version.isEmpty()
                     ? QStringLiteral("已连接")
                     : QStringLiteral("v%1 · 已连接").arg(version);
                 guard->setAgentStatus(QStringLiteral("Agent · %1").arg(guard->agentSummary_),
                                       StatusTone::Good,
-                                      QStringLiteral("%1:%2，协议 v1 协商成功")
-                                          .arg(fromUtf8(nativeHost)).arg(port));
+                                      QStringLiteral("%1 · %2 · 本地转发端口 %3")
+                                          .arg(fromUtf8(serial), fromUtf8(deploymentResult.abi))
+                                          .arg(deploymentResult.localPort));
                 guard->agentCapabilitiesValue_->setText(
-                    systemInfo ? QStringLiteral("已发现能力：system.info（只读）")
-                               : QStringLiteral("已发现能力：Agent 未返回已知能力"));
+                    QStringLiteral("已发现能力：%1%2")
+                        .arg(systemInfoCapability ? QStringLiteral("system.info（只读）")
+                                                  : QStringLiteral("—"),
+                             serialStream ? QStringLiteral("、serial.stream（设备 I/O）")
+                                          : QString{}));
                 guard->agentCapabilitiesValue_->setToolTip(fromUtf8(capabilities));
-                guard->setActivity(QStringLiteral("Agent v1 握手与能力发现完成"));
+                const QString model = jsonStringValue(systemInfo, "model");
+                const QString architecture = jsonStringValue(systemInfo, "architecture");
+                const QString release = jsonStringValue(systemInfo, "os_release");
+                guard->agentSystemInfoValue_->setText(
+                    QStringLiteral("设备信息：%1 · %2 · Android %3")
+                        .arg(model.isEmpty() ? QStringLiteral("未知型号") : model,
+                             architecture.isEmpty() ? fromUtf8(deploymentResult.abi) : architecture,
+                             release.isEmpty() ? QStringLiteral("未知") : release));
+                guard->agentSystemInfoValue_->setToolTip(fromUtf8(systemInfo));
+                guard->setActivity(QStringLiteral("真实板端 Agent 部署、握手与能力发现完成"));
                 guard->updateAgentControls();
             }, Qt::QueuedConnection);
+    });
+}
+
+void MainWindow::stopSelectedAgent()
+{
+    if (agentConnecting_ || shuttingDown_) {
+        return;
+    }
+    std::string serial = agentAdbSerial_;
+    if (serial.empty()) {
+        serial = selectedDevice().serial;
+    }
+    if (serial.empty()) {
+        setAgentStatus(QStringLiteral("Agent · 无可用设备"), StatusTone::Error,
+                       QStringLiteral("请先选择 ADB 设备"));
+        return;
+    }
+    disconnectAgent(QStringLiteral("正在停止板端 Agent"));
+    const std::uint64_t generation = ++agentGeneration_;
+    agentConnecting_ = true;
+    updateAgentControls();
+    QPointer<MainWindow> guard(this);
+    agentThreads_.emplace_back([guard, serial, generation] {
+        std::string error;
+        const bool stopped = testtools::AgentDeployment().stopRemote(serial, error);
+        QMetaObject::invokeMethod(guard, [guard, stopped, error = std::move(error), generation] {
+            if (!guard || guard->shuttingDown_ || generation != guard->agentGeneration_) {
+                return;
+            }
+            guard->agentConnecting_ = false;
+            guard->setAgentStatus(stopped ? QStringLiteral("Agent · 已停止")
+                                          : QStringLiteral("Agent · 停止失败"),
+                                  stopped ? StatusTone::Neutral : StatusTone::Error,
+                                  stopped ? QStringLiteral("板端 Agent 已停止") : fromUtf8(error));
+            guard->updateAgentControls();
+        }, Qt::QueuedConnection);
     });
 }
 
@@ -705,15 +697,24 @@ void MainWindow::disconnectAgent(const QString &reason)
         agentClient_->close();
         agentClient_.reset();
     }
-    if (fakeAgentProcess_ && fakeAgentProcess_->state() != QProcess::NotRunning) {
-        fakeAgentProcess_->terminate();
+    if (serialWorkspace_) {
+        serialWorkspace_->setAgentConnection({}, 0);
     }
+    if (!agentAdbSerial_.empty() && agentForwardPort_ != 0) {
+        testtools::AgentDeployment().removeForward(agentAdbSerial_, agentForwardPort_);
+    }
+    agentAdbSerial_.clear();
+    agentForwardPort_ = 0;
     agentSummary_ = QStringLiteral("未连接");
     setAgentStatus(QStringLiteral("Agent · 未连接"), StatusTone::Neutral,
                    reason.isEmpty() ? QStringLiteral("尚未连接 Agent") : reason);
     if (agentCapabilitiesValue_) {
         agentCapabilitiesValue_->setText(QStringLiteral("已发现能力：—"));
         agentCapabilitiesValue_->setToolTip({});
+    }
+    if (agentSystemInfoValue_) {
+        agentSystemInfoValue_->setText(QStringLiteral("设备信息：—"));
+        agentSystemInfoValue_->setToolTip({});
     }
     if (!reason.isEmpty()) {
         setActivity(reason);
@@ -747,25 +748,23 @@ void MainWindow::setAgentStatus(const QString &text, StatusTone tone, const QStr
 
 void MainWindow::updateAgentControls()
 {
-    if (!connectAgentButton_) {
+    if (!deployAgentButton_) {
         return;
     }
     const bool connected = static_cast<bool>(agentClient_);
-    const bool fakeRunning = fakeAgentProcess_
-                             && fakeAgentProcess_->state() != QProcess::NotRunning;
-    agentHostEdit_->setEnabled(!agentConnecting_ && !connected && !fakeRunning);
-    agentPortSpin_->setEnabled(!agentConnecting_ && !connected && !fakeRunning);
-    connectAgentButton_->setEnabled(!agentConnecting_ && !connected && !fakeRunning);
-    disconnectAgentButton_->setEnabled(agentConnecting_ || connected || fakeRunning);
-    startFakeAgentButton_->setEnabled(!agentConnecting_ && !connected && !fakeRunning);
-    startFakeAgentButton_->setText(connected && fakeRunning ? QStringLiteral("假 Agent 已连接")
-                                       : fakeRunning ? QStringLiteral("假 Agent 启动中")
-                                                     : QStringLiteral("启动并连接假 Agent"));
-    startFakeAgentButton_->setObjectName(connected || fakeRunning
-                                             ? QStringLiteral("ghostButton")
-                                             : QStringLiteral("primaryButton"));
-    startFakeAgentButton_->style()->unpolish(startFakeAgentButton_);
-    startFakeAgentButton_->style()->polish(startFakeAgentButton_);
+    const auto device = selectedDevice();
+    const bool online = !device.serial.empty() && device.state == "device";
+    deployAgentButton_->setEnabled(online && !agentConnecting_ && !connected && !serialBusy_);
+    disconnectAgentButton_->setEnabled(connected && !serialBusy_);
+    stopAgentButton_->setEnabled(online && !agentConnecting_ && !serialBusy_);
+    deployAgentButton_->setText(agentConnecting_ ? QStringLiteral("正在处理...")
+                                                  : QStringLiteral("部署 / 更新并连接"));
+    if (agentDeviceValue_) {
+        agentDeviceValue_->setText(online
+            ? QStringLiteral("目标设备：%1 · %2").arg(fromUtf8(device.serial),
+                                                     fromUtf8(device.description))
+            : QStringLiteral("目标设备：未选择在线 ADB 设备"));
+    }
 }
 
 void MainWindow::refreshDevices()
@@ -865,8 +864,13 @@ void MainWindow::applySelectedDevice()
     if (!serialWorkspace_) {
         return;
     }
-    serialWorkspace_->setAdbDevice(selectedDevice());
+    const auto device = selectedDevice();
+    if (!agentAdbSerial_.empty() && agentAdbSerial_ != device.serial) {
+        disconnectAgent(QStringLiteral("已切换设备，原 Agent 连接已断开"));
+    }
+    serialWorkspace_->setAdbDevice(device);
     updateOverview();
+    updateAgentControls();
 }
 
 void MainWindow::showPage(int pageIndex)

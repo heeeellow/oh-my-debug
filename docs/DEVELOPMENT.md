@@ -7,14 +7,14 @@
 - Qt 6.11.2 MSVC 64-bit
 - C++17
 
-当前工程入口为 `test/test.slnx`，其中包含 Qt 上位机 `test/test.vcxproj` 和无 Qt 的假 Agent
-`test/agent/agent.vcxproj`。
+Windows 上位机工程为 `test/test.vcxproj`；板端无 Qt Agent 位于 `test/agent/`，通过 CMake
+面向 Android/Linux 独立构建。产品程序不再依赖或启动本机假 Agent。
 
 ## 2. 目录约定
 
 ```text
 test/
-├── agent/         无 Qt 的板端 Agent/假服务入口
+├── agent/         无 Qt 的真实板端 Agent；假服务仅为可选测试夹具
 ├── core/          标准 C++ 核心、传输和平台无关逻辑
 ├── application/   用例、设备会话和任务协调
 ├── ui/            Qt 界面
@@ -48,23 +48,32 @@ test/
   /p:QtMsBuild='C:\Users\26613\AppData\Local\QtMsBuild'
 ```
 
-主程序工程已引用假 Agent 工程；执行上述命令会同时生成 `test.exe` 和同目录的
-`testtools-agent.exe`，不需要手工复制产物。
+Android Agent 使用仓库脚本构建并复制到主程序运行目录。以当前 `armeabi-v7a` 板卡为例：
+
+```powershell
+.\scripts\build-android-agent.ps1 `
+  -NdkRoot 'C:\Android\Sdk\ndk\27.3.13750724' `
+  -CMakeProgram 'cmake' -NinjaProgram 'ninja'
+```
+
+产物位置为 `test/x64/Release/agents/android/armeabi-v7a/testtools-agent`。构建目录和二进制是
+生成物，不提交 Git。上位机根据 `ro.product.cpu.abi` 选择对应目录。
 
 ## 5. 验证层级
 
 - 核心静态检查：依赖方向、输入校验、线程关闭和错误边界。
 - `--self-test`：编码、异步发送队列、串口可靠性帧、Agent 帧、ADB 枚举和安全转发冒烟检查。
-- `--agent-smoke <host> <port>`：连接本机假 Agent，验证 hello 与能力发现。
-- `--adb-serial-smoke <serial> <endpoint>`：不发送数据，仅验证指定板端串口的权限、占用、termios、
-  ADB 转发和本地连接链路。
-- `--ui-agent-demo`：用于 UI 回归，启动本机假 Agent 并自动完成能力发现；可与
-  `--ui-page settings --ui-snapshot <png>` 组合。
+- `--agent-smoke <host> <port>`：验证真实或测试 Agent 的 hello 与能力发现。
+- `--agent-deploy-smoke <adb-serial>`：执行真实 ABI 识别、部署、启动、控制转发、`system.info`
+  和 `serial.list`；不发送串口数据。
+- `--agent-serial-smoke <adb-serial> <control-port> <endpoint>`：经真实 Agent 打开指定串口并保持
+  5 秒，验证数据通道不会立即 EOF；不发送任何字节。
+- `--adb-serial-smoke` 仅保留用于复现旧固件 ADB 设备节点转发问题，不是产品串口路径。
 - `--ui-snapshot <png>`：保存概览页快照；可加 `--ui-page serial`、`tests`、`history`
   或 `settings` 选择待验收页面，并用 `--ui-size 1366x768` 指定逻辑窗口尺寸。
 - UI 快照：检查主要分辨率下的裁切、重叠和状态层级。
 - 实机验证：串口连接、收发、双向验证和异常断开。
-- Agent 阶段：协议单元测试、假服务测试，再进入真实板端。
+- Agent 阶段：协议单元测试、真实板端部署、能力枚举、稳定保持，再进行已知安全指令的收发测试。
 
 构建通过不等于实机通过；验证记录写入 `DEVLOG.md`。
 

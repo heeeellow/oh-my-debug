@@ -182,6 +182,13 @@ CommandResult AdbTransport::runAdb(const std::string &serial,
     return ProcessRunner::run(adbProgram_, fullArguments, timeout);
 }
 
+CommandResult AdbTransport::runCommand(const std::string &serial,
+                                       const std::vector<std::string> &arguments,
+                                       std::chrono::milliseconds timeout) const
+{
+    return runAdb(serial, arguments, timeout);
+}
+
 std::vector<AdbDevice> AdbTransport::availableDevices(std::string &error) const
 {
     const auto result = runAdb({}, {"devices", "-l"});

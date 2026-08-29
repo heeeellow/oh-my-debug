@@ -3,6 +3,7 @@
 #include "core/serial_transport.h"
 #include "core/serial_test_engine.h"
 #include "core/async_serial_sender.h"
+#include "core/agent_serial_transport.h"
 
 #include <QtCore/QString>
 #include <QtWidgets/QWidget>
@@ -33,6 +34,7 @@ public:
     ~SerialWorkspace() override;
 
     void setAdbDevice(const serialdemo::AdbDevice &device);
+    void setAgentConnection(const std::string &adbSerial, std::uint16_t localControlPort);
     void refreshTargets();
     void prepareForShutdown();
     bool hasActiveConnections() const;
@@ -51,7 +53,6 @@ private:
         QComboBox *parityCombo = nullptr;
         QComboBox *stopBitsCombo = nullptr;
         QComboBox *flowControlCombo = nullptr;
-        QCheckBox *adbRootCheck = nullptr;
         QPushButton *connectButton = nullptr;
         QPlainTextEdit *receiveEdit = nullptr;
         QPlainTextEdit *sendEdit = nullptr;
@@ -91,7 +92,7 @@ private:
 
     void buildUi();
     QWidget *buildChannelPanel(int index);
-    void refreshAdbPorts();
+    void refreshAgentPorts();
     void applyPorts(int index);
     void connectChannel(int index);
     void disconnectChannel(int index, bool showClosedStatus = true);
@@ -102,8 +103,8 @@ private:
     void updateGlobalControls();
     void setChannelStatus(int index, const QString &message, bool error = false);
     void updateRouteSummary();
-    bool channelUsesAdb(int index) const;
-    bool selectedAdbIsOnline() const;
+    bool channelUsesAgent(int index) const;
+    bool selectedAgentIsOnline() const;
     bool validateChannel(int index, QString &error) const;
     serialdemo::SerialConfig channelConfig(int index) const;
     serialdemo::ByteBuffer manualPayload(int index, bool &ok);
@@ -136,7 +137,9 @@ private:
     std::array<ChannelUi, 2> channels_;
     serialdemo::AdbDevice currentAdbDevice_;
     std::vector<serialdemo::PortInfo> localPorts_;
-    std::vector<std::string> adbPorts_;
+    std::vector<serialdemo::AgentSerialPort> agentPorts_;
+    std::string agentAdbSerial_;
+    std::uint16_t agentControlPort_ = 0;
     std::vector<std::thread> scanThreads_;
     bool scanning_ = false;
     bool aToBPassed_ = false;

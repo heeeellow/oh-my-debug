@@ -6,6 +6,7 @@
 /test/x64/
 /test/test/x64/
 /test/agent/obj/
+/test/agent/out/
 *.user
 *.suo
 *.VC.db

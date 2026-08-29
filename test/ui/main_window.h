@@ -11,10 +11,7 @@
 
 class QComboBox;
 class QLabel;
-class QLineEdit;
-class QProcess;
 class QPushButton;
-class QSpinBox;
 class QStackedWidget;
 class QWidget;
 class SerialWorkspace;
@@ -28,7 +25,6 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow() override;
     bool navigateTo(const QString &pageName);
-    void startAgentDemo();
 
 private:
     enum class StatusTone {
@@ -60,8 +56,8 @@ private:
     QPushButton *addNavigationButton(const QString &text, int pageIndex);
 
     void refreshDevices();
-    void startLocalFakeAgent();
-    void connectAgentEndpoint();
+    void deploySelectedAgent();
+    void stopSelectedAgent();
     void disconnectAgent(const QString &reason = {});
     void setAgentStatus(const QString &text, StatusTone tone, const QString &detail = {});
     void updateAgentControls();
@@ -86,20 +82,20 @@ private:
     QLabel *overviewDeviceValue_ = nullptr;
     QLabel *overviewAdbValue_ = nullptr;
     QLabel *overviewAgentValue_ = nullptr;
-    QLineEdit *agentHostEdit_ = nullptr;
-    QSpinBox *agentPortSpin_ = nullptr;
-    QPushButton *startFakeAgentButton_ = nullptr;
-    QPushButton *connectAgentButton_ = nullptr;
+    QLabel *agentDeviceValue_ = nullptr;
+    QPushButton *deployAgentButton_ = nullptr;
     QPushButton *disconnectAgentButton_ = nullptr;
+    QPushButton *stopAgentButton_ = nullptr;
     QLabel *agentConnectionDetail_ = nullptr;
     QLabel *agentCapabilitiesValue_ = nullptr;
-    QProcess *fakeAgentProcess_ = nullptr;
+    QLabel *agentSystemInfoValue_ = nullptr;
     std::shared_ptr<testtools::AgentClient> agentClient_;
     std::vector<QPushButton *> navigationButtons_;
     std::vector<std::thread> scanThreads_;
     std::vector<std::thread> agentThreads_;
-    QString fakeAgentOutput_;
     QString agentSummary_ = QStringLiteral("未连接");
+    std::string agentAdbSerial_;
+    std::uint16_t agentForwardPort_ = 0;
     std::uint64_t agentGeneration_ = 0;
     bool scanning_ = false;
     bool agentConnecting_ = false;
