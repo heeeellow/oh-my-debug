@@ -77,6 +77,7 @@ private:
         int autoIntervalMs = 1000;
         std::uint64_t autoTargetCount = 100;
         bool autoEcho = true;
+        bool lineEndingCustomized = false;
         std::uint64_t senderGeneration = 0;
     };
 

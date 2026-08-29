@@ -14,7 +14,7 @@ target_compile_features(testtools-agent PRIVATE cxx_std_17)
 target_compile_definitions(testtools-agent PRIVATE ASIO_STANDALONE)
 target_include_directories(testtools-agent PRIVATE
     ..
-    ../third_party/asio/include
+    ../../third_party/asio/include
 )
 target_link_libraries(testtools-agent PRIVATE Threads::Threads)
 
@@ -33,7 +33,7 @@ if(TESTTOOLS_BUILD_FAKE_AGENT)
     target_compile_definitions(testtools-agent-fixture PRIVATE ASIO_STANDALONE)
     target_include_directories(testtools-agent-fixture PRIVATE
         ..
-        ../third_party/asio/include
+        ../../third_party/asio/include
     )
     target_link_libraries(testtools-agent-fixture PRIVATE Threads::Threads)
     if(WIN32)

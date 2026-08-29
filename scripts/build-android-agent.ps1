@@ -5,16 +5,20 @@ param(
     [string]$Abi = 'armeabi-v7a',
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
+    [string]$OutputDirectory = '',
     [string]$CMakeProgram = 'cmake',
     [string]$NinjaProgram = 'ninja'
 )
 
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
-$sourceDirectory = Join-Path $repositoryRoot 'test\agent'
-$buildDirectory = Join-Path $sourceDirectory "out\android-$Abi"
+$sourceDirectory = Join-Path $repositoryRoot 'src\agent'
+$buildDirectory = Join-Path $repositoryRoot "build\agent\android-$Abi-$Configuration"
 $toolchain = Join-Path $NdkRoot 'build\cmake\android.toolchain.cmake'
-$applicationOutput = Join-Path $repositoryRoot "test\x64\$Configuration\agents\android\$Abi"
+if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
+    $OutputDirectory = Join-Path $repositoryRoot "build\windows\x64\$Configuration"
+}
+$applicationOutput = Join-Path $OutputDirectory "agents\android\$Abi"
 
 if (-not (Test-Path -LiteralPath $toolchain -PathType Leaf)) {
     throw "Android NDK toolchain not found: $toolchain"

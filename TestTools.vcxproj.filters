@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="应用入口"><UniqueIdentifier>{70CE9B14-4040-4F97-A69C-880CD37F059C}</UniqueIdentifier></Filter>
+    <Filter Include="应用层"><UniqueIdentifier>{28095C26-80A8-4905-A3AC-CB94406758E3}</UniqueIdentifier></Filter>
+    <Filter Include="核心层"><UniqueIdentifier>{40FB2F4D-D6CB-4684-8144-B811775817A4}</UniqueIdentifier></Filter>
+    <Filter Include="诊断"><UniqueIdentifier>{6AF4B221-FE58-49E8-9378-3DD0C578BF0F}</UniqueIdentifier></Filter>
+    <Filter Include="界面"><UniqueIdentifier>{FCFEA46F-05AC-4141-8F89-AD180B8F9CD5}</UniqueIdentifier></Filter>
+    <Filter Include="第三方依赖"><UniqueIdentifier>{95E8146D-B511-4FE1-B608-A3DE25FFFC2E}</UniqueIdentifier></Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="src\ui\main_window.h"><Filter>界面</Filter></QtMoc>
+    <QtMoc Include="src\ui\pages\serial_workspace.h"><Filter>界面</Filter></QtMoc>
+    <ClCompile Include="src\main.cpp"><Filter>应用入口</Filter></ClCompile>
+    <ClCompile Include="src\application\device_discovery.cpp"><Filter>应用层</Filter></ClCompile>
+    <ClCompile Include="src\application\agent_deployment.cpp"><Filter>应用层</Filter></ClCompile>
+    <ClCompile Include="src\core\adb_transport.cpp"><Filter>核心层</Filter></ClCompile>
+    <ClCompile Include="src\core\agent_client.cpp"><Filter>核心层</Filter></ClCompile>
+    <ClCompile Include="src\core\agent_protocol.cpp"><Filter>核心层</Filter></ClCompile>
+    <ClCompile Include="src\core\agent_serial_transport.cpp"><Filter>核心层</Filter></ClCompile>
+    <ClCompile Include="src\core\async_serial_sender.cpp"><Filter>核心层</Filter></ClCompile>
+    <ClCompile Include="src\core\codec.cpp"><Filter>核心层</Filter></ClCompile>
+    <ClCompile Include="src\core\cserialport_transport.cpp"><Filter>核心层</Filter></ClCompile>
+    <ClCompile Include="src\core\process_runner.cpp"><Filter>核心层</Filter></ClCompile>
+    <ClCompile Include="src\core\serial_test_engine.cpp"><Filter>核心层</Filter></ClCompile>
+    <ClCompile Include="src\diagnostics\self_test.cpp"><Filter>诊断</Filter></ClCompile>
+    <ClCompile Include="src\ui\main_window.cpp"><Filter>界面</Filter></ClCompile>
+    <ClCompile Include="src\ui\pages\serial_workspace.cpp"><Filter>界面</Filter></ClCompile>
+    <ClCompile Include="src\ui\theme.cpp"><Filter>界面</Filter></ClCompile>
+    <ClCompile Include="third_party\CSerialPort\src\SerialPort.cpp"><Filter>第三方依赖</Filter></ClCompile>
+    <ClCompile Include="third_party\CSerialPort\src\SerialPortAsyncBase.cpp"><Filter>第三方依赖</Filter></ClCompile>
+    <ClCompile Include="third_party\CSerialPort\src\SerialPortBase.cpp"><Filter>第三方依赖</Filter></ClCompile>
+    <ClCompile Include="third_party\CSerialPort\src\SerialPortInfo.cpp"><Filter>第三方依赖</Filter></ClCompile>
+    <ClCompile Include="third_party\CSerialPort\src\SerialPortInfoBase.cpp"><Filter>第三方依赖</Filter></ClCompile>
+    <ClCompile Include="third_party\CSerialPort\src\SerialPortInfoWinBase.cpp"><Filter>第三方依赖</Filter></ClCompile>
+    <ClCompile Include="third_party\CSerialPort\src\SerialPortWinBase.cpp"><Filter>第三方依赖</Filter></ClCompile>
+    <ClCompile Include="third_party\tiny-process-library\process.cpp"><Filter>第三方依赖</Filter></ClCompile>
+    <ClCompile Include="third_party\tiny-process-library\process_win.cpp"><Filter>第三方依赖</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\application\device_discovery.h"><Filter>应用层</Filter></ClInclude>
+    <ClInclude Include="src\application\agent_deployment.h"><Filter>应用层</Filter></ClInclude>
+    <ClInclude Include="src\core\adb_transport.h"><Filter>核心层</Filter></ClInclude>
+    <ClInclude Include="src\core\agent_client.h"><Filter>核心层</Filter></ClInclude>
+    <ClInclude Include="src\core\agent_protocol.h"><Filter>核心层</Filter></ClInclude>
+    <ClInclude Include="src\core\agent_serial_transport.h"><Filter>核心层</Filter></ClInclude>
+    <ClInclude Include="src\core\async_serial_sender.h"><Filter>核心层</Filter></ClInclude>
+    <ClInclude Include="src\core\codec.h"><Filter>核心层</Filter></ClInclude>
+    <ClInclude Include="src\core\cserialport_transport.h"><Filter>核心层</Filter></ClInclude>
+    <ClInclude Include="src\core\process_runner.h"><Filter>核心层</Filter></ClInclude>
+    <ClInclude Include="src\core\serial_test_engine.h"><Filter>核心层</Filter></ClInclude>
+    <ClInclude Include="src\core\serial_transport.h"><Filter>核心层</Filter></ClInclude>
+    <ClInclude Include="src\core\serial_types.h"><Filter>核心层</Filter></ClInclude>
+    <ClInclude Include="src\diagnostics\self_test.h"><Filter>诊断</Filter></ClInclude>
+    <ClInclude Include="src\ui\theme.h"><Filter>界面</Filter></ClInclude>
+  </ItemGroup>
+</Project>

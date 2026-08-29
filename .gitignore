@@ -1,12 +1,13 @@
 # Vendor reference material and installers are kept outside source history.
 /PATCHES/
 
-# Visual Studio and Qt generated state.
-/test/.vs/
-/test/x64/
-/test/test/x64/
-/test/agent/obj/
-/test/agent/out/
+# Visual Studio, Qt, CMake and Agent generated state.
+/.vs/
+/build/
+# 旧解决方案仍可能被已打开的 Visual Studio 占用；关闭后可直接删除。
+/test/
+/src/agent/obj/
+/src/agent/out/
 *.user
 *.suo
 *.VC.db

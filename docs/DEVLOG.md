@@ -236,3 +236,17 @@ Agent 留出稳定边界。
   Agent 文件描述符和板端 `stty` 均报告 9600；这说明 115200 没有作为可验证的物理速率生效。
   对该 USB AT 接口，通信走 USB bulk，波特率为兼容参数而非 USB 链路速率。界面状态现会同时显示
   请求值和内核报告值，避免误导。
+
+### ttyUSB2 AT 实机复查与目录整理
+
+- 通过与产品一致的 Agent 控制帧和原始数据通道直连 `/dev/ttyUSB2`：发送 `41 54 0D 0A`
+  （`AT\r\n`）收到 `0D 0A 4F 4B 0D 0A`（`OK`）；发送 `ATI\r` 收到 Quectel
+  `EG800AK`、固件版本与 `OK`。由此排除 ttyUSB2 权限、Agent 转发和接收线程故障。
+- 新增 `--agent-at-smoke` 后再经界面实际使用的 `AgentSerialTransport` 完整链路复测，发送
+  `AT\r\n` 同样收到 `OK`，自检、现有 Agent 重连和 AT 冒烟退出码均为 0。
+- 界面原默认行尾为“不追加”，仅发送 `AT` 时模块会继续等待结束符，看起来像“无回显”。现在识别到
+  未占用 AT 接口时默认选择 `CRLF（AT 推荐）`，输入框也显示 AT 提示；用户手动选择其他行尾后不再
+  自动覆盖。
+- 源码从含义不清的 `test/` 收拢到 `src/{application,core,agent,diagnostics,ui}`，第三方依赖提升到
+  根目录 `third_party/`，解决方案统一命名为 `TestTools.slnx` / `TestTools.vcxproj`，全部生成物统一
+  输出到未跟踪的 `build/`。同时删除未参与构建的空白 `test.ui` 与 `test.qrc`。

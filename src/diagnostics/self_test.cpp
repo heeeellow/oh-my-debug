@@ -1,13 +1,13 @@
 #include "self_test.h"
 
-#include "adb_transport.h"
-#include "agent_client.h"
-#include "agent_protocol.h"
-#include "agent_serial_transport.h"
-#include "async_serial_sender.h"
-#include "codec.h"
-#include "process_runner.h"
-#include "serial_test_engine.h"
+#include "core/adb_transport.h"
+#include "core/agent_client.h"
+#include "core/agent_protocol.h"
+#include "core/agent_serial_transport.h"
+#include "core/async_serial_sender.h"
+#include "core/codec.h"
+#include "core/process_runner.h"
+#include "core/serial_test_engine.h"
 #include "application/agent_deployment.h"
 
 #include <chrono>
@@ -371,6 +371,78 @@ int runAgentReconnectSmokeTest(const std::string &serial)
     }
     std::cout << "PASS existing-agent-reconnect abi=" << result.abi
               << " serial=" << serial << '\n';
+    return 0;
+}
+
+int runAgentAtSmokeTest(const std::string &serial, const std::string &endpoint)
+{
+    testtools::AgentDeployment deployment;
+    const auto connection = deployment.reconnect(serial,
+        [](const std::string &message) { std::cout << message << '\n'; });
+    if (!connection.succeeded) {
+        std::cerr << "FAIL Agent reconnect: " << connection.error << '\n';
+        return 75;
+    }
+
+    AgentSerialTransport transport(serial, connection.localPort);
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool connected = false;
+    bool failed = false;
+    std::string status;
+    ByteBuffer received;
+    transport.setStatusCallback([&](TransportState state, const std::string &message) {
+        std::lock_guard<std::mutex> lock(mutex);
+        status = message;
+        connected = connected || state == TransportState::Connected;
+        failed = failed || state == TransportState::Error;
+        condition.notify_all();
+    });
+    transport.setDataCallback([&](const ByteBuffer &data) {
+        std::lock_guard<std::mutex> lock(mutex);
+        received.insert(received.end(), data.begin(), data.end());
+        condition.notify_all();
+    });
+
+    SerialConfig config;
+    config.endpoint = endpoint;
+    config.baudRate = 115200;
+    transport.open(config);
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        condition.wait_for(lock, std::chrono::seconds(10), [&] { return connected || failed; });
+    }
+    if (!connected) {
+        transport.close();
+        deployment.removeForward(serial, connection.localPort);
+        std::cerr << "FAIL Agent AT open: " << status << '\n';
+        return 76;
+    }
+
+    const ByteBuffer command{'A', 'T', '\r', '\n'};
+    if (!transport.write(command)) {
+        transport.close();
+        deployment.removeForward(serial, connection.localPort);
+        std::cerr << "FAIL Agent AT write\n";
+        return 77;
+    }
+    bool receivedOk = false;
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        receivedOk = condition.wait_for(lock, std::chrono::seconds(5), [&] {
+            const std::string text(received.begin(), received.end());
+            return text.find("OK") != std::string::npos || failed;
+        }) && !failed;
+    }
+    transport.close();
+    deployment.removeForward(serial, connection.localPort);
+    if (!receivedOk) {
+        std::cerr << "FAIL Agent AT response: status=" << status
+                  << " bytes=" << toHex(received) << '\n';
+        return 78;
+    }
+    std::cout << "PASS agent-at serial=" << serial << " endpoint=" << endpoint
+              << " tx=41 54 0D 0A rx=" << toHex(received) << '\n';
     return 0;
 }
 

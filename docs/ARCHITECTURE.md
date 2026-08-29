@@ -47,8 +47,8 @@ TestTools 从串口助手演进为设备中心的调试与测试工作台。架�
 └──────────────────────────────────────────────────────────────┘
 ```
 
-依赖只能向下。`core/` 和未来的 `application/` 不得出现 `QString`、`QByteArray`、`QObject`、
-Qt 容器或 Qt 线程类型。Qt 回调通过 `ui/adapters/` 投递到 GUI 线程。
+依赖只能向下。`src/core/` 和 `src/application/` 不得出现 `QString`、`QByteArray`、`QObject`、
+Qt 容器或 Qt 线程类型。Qt 回调通过 `src/ui/` 投递到 GUI 线程。
 
 ## 3. Windows 端职责
 

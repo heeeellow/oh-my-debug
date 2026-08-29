@@ -7,29 +7,30 @@
 - Qt 6.11.2 MSVC 64-bit
 - C++17
 
-Windows 上位机工程为 `test/test.vcxproj`；板端无 Qt Agent 位于 `test/agent/`，通过 CMake
+Windows 上位机工程为根目录 `TestTools.vcxproj`；板端无 Qt Agent 位于 `src/agent/`，通过 CMake
 面向 Android/Linux 独立构建。产品程序不再依赖或启动本机假 Agent。
 
 ## 2. 目录约定
 
 ```text
-test/
+src/
 ├── agent/         无 Qt 的真实板端 Agent；假服务仅为可选测试夹具
-├── core/          标准 C++ 核心、传输和平台无关逻辑
 ├── application/   用例、设备会话和任务协调
-├── ui/            Qt 界面
-│   ├── adapters/  标准 C++ 与 Qt 的桥接
-│   ├── pages/     功能页面
-│   └── widgets/   本项目通用控件
-├── third_party/   已审查的第三方依赖
-└── main.cpp
+├── core/          标准 C++ 核心、传输和平台无关逻辑
+├── diagnostics/   内置自检和实机冒烟入口
+├── ui/            Qt 界面与 GUI 线程桥接
+└── main.cpp       Windows 应用入口
+third_party/       已审查的第三方依赖
+scripts/           构建和部署脚本
+docs/              架构、开发手册与开发记录
+build/             所有生成物，不提交 Git
 ```
 
 目录随代码实际出现创建，不提前放空目录。
 
 ## 3. 强制边界
 
-- `core/`、`application/` 不得包含 Qt 头文件。
+- `src/core/`、`src/application/` 不得包含 Qt 头文件。
 - UI 不直接拼接 ADB shell 命令；通过核心接口调用。
 - 后台线程不得直接访问 Qt 控件。
 - 设备节点、测试 ID 和外部参数必须校验。
@@ -38,13 +39,14 @@ test/
 
 ## 4. 构建
 
-在已配置 Qt VS Tools 的 Visual Studio 中打开 `test/test.slnx`，选择 `x64` 和 Debug/Release 构建。
+在已配置 Qt VS Tools 的 Visual Studio 中打开根目录 `TestTools.slnx`，选择 `x64` 和
+Debug/Release 构建。
 
 命令行构建时需要让 MSBuild 找到 QtMsBuild，并确保 Qt 安装已注册：
 
 ```powershell
 & 'C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe' `
-  '.\test\test.vcxproj' /m /p:Configuration=Release /p:Platform=x64 `
+  '.\TestTools.vcxproj' /m /p:Configuration=Release /p:Platform=x64 `
   /p:QtMsBuild='C:\Users\26613\AppData\Local\QtMsBuild'
 ```
 
@@ -58,8 +60,9 @@ Debug/Release 运行目录。也可单独运行仓库脚本；以当前 `armeabi
   -CMakeProgram 'cmake' -NinjaProgram 'ninja'
 ```
 
-产物位置为 `test/x64/Release/agents/android/armeabi-v7a/testtools-agent`。构建目录和二进制是
-生成物，不提交 Git。上位机根据 `ro.product.cpu.abi` 选择对应目录。
+主程序产物位置为 `build/windows/x64/Release/TestTools.exe`，对应 Android Agent 位于
+`build/windows/x64/Release/agents/android/armeabi-v7a/testtools-agent`。所有构建目录和二进制
+均不提交 Git；上位机根据 `ro.product.cpu.abi` 选择对应 Agent。
 
 ## 5. 验证层级
 
@@ -69,6 +72,8 @@ Debug/Release 运行目录。也可单独运行仓库脚本；以当前 `armeabi
 - `--agent-deploy-smoke <adb-serial>`：执行真实 ABI 识别、部署、启动、控制转发、`system.info`
   和 `serial.list`；不发送串口数据。
 - `--agent-reconnect-smoke <adb-serial>`：不重新部署，探测并连接板端现有 Agent，验证握手和转发。
+- `--agent-at-smoke <adb-serial> <endpoint>`：通过与界面相同的 Agent 串口传输发送一次安全的
+  `AT\r\n`，并验证在 5 秒内收到 `OK`；该检查会真实发送 AT 指令。
 - `--agent-serial-smoke <adb-serial> <control-port> <endpoint>`：经真实 Agent 打开指定串口并保持
   5 秒，验证数据通道不会立即 EOF；不发送任何字节。
 - `--adb-serial-smoke` 仅保留用于复现旧固件 ADB 设备节点转发问题，不是产品串口路径。

@@ -12,6 +12,8 @@
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{8E035381-B87B-4EFC-9A06-B5F10FCEE4DE}</ProjectGuid>
+    <ProjectName>TestTools</ProjectName>
+    <RootNamespace>TestTools</RootNamespace>
     <Keyword>QtVS_v304</Keyword>
     <WindowsTargetPlatformVersion Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">10.0</WindowsTargetPlatformVersion>
     <WindowsTargetPlatformVersion Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">10.0</WindowsTargetPlatformVersion>
@@ -61,6 +63,11 @@
     <Import Project="$(QtMsBuild)\Qt.props" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <OutDir>$(ProjectDir)build\windows\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)build\intermediate\desktop\$(Platform)\$(Configuration)\</IntDir>
+    <TargetName>TestTools</TargetName>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
@@ -72,7 +79,7 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(ProjectDir)core;$(ProjectDir)third_party\CSerialPort\include;$(ProjectDir)third_party\asio\include;$(ProjectDir)third_party\tiny-process-library;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\core;$(ProjectDir)third_party\CSerialPort\include;$(ProjectDir)third_party\asio\include;$(ProjectDir)third_party\tiny-process-library;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>ASIO_STANDALONE;CSERIALPORT_USE_UTF8;NOMINMAX;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
@@ -90,7 +97,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(ProjectDir)core;$(ProjectDir)third_party\CSerialPort\include;$(ProjectDir)third_party\asio\include;$(ProjectDir)third_party\tiny-process-library;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\core;$(ProjectDir)third_party\CSerialPort\include;$(ProjectDir)third_party\asio\include;$(ProjectDir)third_party\tiny-process-library;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>ASIO_STANDALONE;CSERIALPORT_USE_UTF8;NOMINMAX;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
@@ -102,24 +109,24 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <QtMoc Include="ui\main_window.h" />
-    <QtMoc Include="ui\pages\serial_workspace.h" />
-    <ClCompile Include="main.cpp" />
-    <ClCompile Include="application\device_discovery.cpp" />
-    <ClCompile Include="application\agent_deployment.cpp" />
-    <ClCompile Include="core\agent_client.cpp" />
-    <ClCompile Include="core\agent_protocol.cpp" />
-    <ClCompile Include="core\agent_serial_transport.cpp" />
-    <ClCompile Include="core\async_serial_sender.cpp" />
-    <ClCompile Include="core\adb_transport.cpp" />
-    <ClCompile Include="core\codec.cpp" />
-    <ClCompile Include="core\cserialport_transport.cpp" />
-    <ClCompile Include="core\process_runner.cpp" />
-    <ClCompile Include="core\self_test.cpp" />
-    <ClCompile Include="core\serial_test_engine.cpp" />
-    <ClCompile Include="ui\main_window.cpp" />
-    <ClCompile Include="ui\pages\serial_workspace.cpp" />
-    <ClCompile Include="ui\theme.cpp" />
+    <QtMoc Include="src\ui\main_window.h" />
+    <QtMoc Include="src\ui\pages\serial_workspace.h" />
+    <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\application\device_discovery.cpp" />
+    <ClCompile Include="src\application\agent_deployment.cpp" />
+    <ClCompile Include="src\core\agent_client.cpp" />
+    <ClCompile Include="src\core\agent_protocol.cpp" />
+    <ClCompile Include="src\core\agent_serial_transport.cpp" />
+    <ClCompile Include="src\core\async_serial_sender.cpp" />
+    <ClCompile Include="src\core\adb_transport.cpp" />
+    <ClCompile Include="src\core\codec.cpp" />
+    <ClCompile Include="src\core\cserialport_transport.cpp" />
+    <ClCompile Include="src\core\process_runner.cpp" />
+    <ClCompile Include="src\core\serial_test_engine.cpp" />
+    <ClCompile Include="src\diagnostics\self_test.cpp" />
+    <ClCompile Include="src\ui\main_window.cpp" />
+    <ClCompile Include="src\ui\pages\serial_workspace.cpp" />
+    <ClCompile Include="src\ui\theme.cpp" />
     <ClCompile Include="third_party\CSerialPort\src\SerialPort.cpp" />
     <ClCompile Include="third_party\CSerialPort\src\SerialPortAsyncBase.cpp" />
     <ClCompile Include="third_party\CSerialPort\src\SerialPortBase.cpp" />
@@ -131,21 +138,21 @@
     <ClCompile Include="third_party\tiny-process-library\process_win.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="application\device_discovery.h" />
-    <ClInclude Include="application\agent_deployment.h" />
-    <ClInclude Include="core\agent_client.h" />
-    <ClInclude Include="core\agent_protocol.h" />
-    <ClInclude Include="core\agent_serial_transport.h" />
-    <ClInclude Include="core\async_serial_sender.h" />
-    <ClInclude Include="core\adb_transport.h" />
-    <ClInclude Include="core\codec.h" />
-    <ClInclude Include="core\cserialport_transport.h" />
-    <ClInclude Include="core\process_runner.h" />
-    <ClInclude Include="core\serial_transport.h" />
-    <ClInclude Include="core\serial_types.h" />
-    <ClInclude Include="core\self_test.h" />
-    <ClInclude Include="core\serial_test_engine.h" />
-    <ClInclude Include="ui\theme.h" />
+    <ClInclude Include="src\application\device_discovery.h" />
+    <ClInclude Include="src\application\agent_deployment.h" />
+    <ClInclude Include="src\core\agent_client.h" />
+    <ClInclude Include="src\core\agent_protocol.h" />
+    <ClInclude Include="src\core\agent_serial_transport.h" />
+    <ClInclude Include="src\core\async_serial_sender.h" />
+    <ClInclude Include="src\core\adb_transport.h" />
+    <ClInclude Include="src\core\codec.h" />
+    <ClInclude Include="src\core\cserialport_transport.h" />
+    <ClInclude Include="src\core\process_runner.h" />
+    <ClInclude Include="src\core\serial_transport.h" />
+    <ClInclude Include="src\core\serial_types.h" />
+    <ClInclude Include="src\core\serial_test_engine.h" />
+    <ClInclude Include="src\diagnostics\self_test.h" />
+    <ClInclude Include="src\ui\theme.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">
@@ -165,7 +172,7 @@
   <Target Name="BuildTestToolsAndroidAgent" AfterTargets="Build"
           Condition="'$(DesignTimeBuild)'!='true' AND Exists('$(TestToolsNdkRoot)\build\cmake\android.toolchain.cmake')">
     <Message Importance="High" Text="Building Android Agent for $(Configuration) output..." />
-    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)..\scripts\build-android-agent.ps1&quot; -NdkRoot &quot;$(TestToolsNdkRoot)&quot; -Configuration &quot;$(Configuration)&quot; -CMakeProgram &quot;$(TestToolsCMakeProgram)&quot; -NinjaProgram &quot;$(TestToolsNinjaProgram)&quot;" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)scripts\build-android-agent.ps1&quot; -NdkRoot &quot;$(TestToolsNdkRoot)&quot; -Configuration &quot;$(Configuration)&quot; -OutputDirectory &quot;$(OutDir).&quot; -CMakeProgram &quot;$(TestToolsCMakeProgram)&quot; -NinjaProgram &quot;$(TestToolsNinjaProgram)&quot;" />
   </Target>
   <Target Name="WarnMissingTestToolsAndroidAgent" AfterTargets="Build"
           Condition="'$(DesignTimeBuild)'!='true' AND !Exists('$(TestToolsNdkRoot)\build\cmake\android.toolchain.cmake')">

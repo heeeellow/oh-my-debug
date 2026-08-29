@@ -331,7 +331,9 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     channel.sendHexCheck = new QCheckBox(QStringLiteral("HEX 发送"), channel.group);
     channel.lineEndingCombo = new QComboBox(channel.group);
     channel.lineEndingCombo->addItems({QStringLiteral("不追加"), QStringLiteral("LF"),
-                                       QStringLiteral("CR"), QStringLiteral("CRLF")});
+                                       QStringLiteral("CR"), QStringLiteral("CRLF（AT 推荐）")});
+    channel.lineEndingCombo->setToolTip(
+        QStringLiteral("AT 指令通常需要 CRLF；二进制协议可选择不追加。"));
     auto *clearSend = new QPushButton(QStringLiteral("清空发送"), channel.group);
     clearReceive->setObjectName(QStringLiteral("ghostButton"));
     clearSend->setObjectName(QStringLiteral("ghostButton"));
@@ -357,6 +359,9 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     connect(channel.portCombo, &QComboBox::currentTextChanged, this, [this] {
         updateRouteSummary();
         updateGlobalControls();
+    });
+    connect(channel.lineEndingCombo, &QComboBox::activated, this, [this, index] {
+        channels_[index].lineEndingCustomized = true;
     });
     connect(channel.baudCombo, &QComboBox::currentTextChanged, this, [this] { updateGlobalControls(); });
     connect(channel.connectButton, &QPushButton::clicked, this, [this, index] {
@@ -523,6 +528,22 @@ void SerialWorkspace::applyPorts(int index)
     if (restoreIndex >= 0) {
         channel.portCombo->setCurrentIndex(restoreIndex);
     }
+    bool selectedAtInterface = false;
+    if (channelUsesAgent(index)) {
+        const std::string selectedEndpoint = toUtf8(channel.portCombo->currentData().toString());
+        const auto selected = std::find_if(agentPorts_.begin(), agentPorts_.end(),
+            [&selectedEndpoint](const AgentSerialPort &port) {
+                return port.endpoint == selectedEndpoint;
+            });
+        selectedAtInterface = selected != agentPorts_.end()
+                              && selected->interfaceName.find("AT") != std::string::npos;
+    }
+    if (!channel.lineEndingCustomized) {
+        channel.lineEndingCombo->setCurrentIndex(selectedAtInterface ? 3 : 0);
+    }
+    channel.sendEdit->setPlaceholderText(selectedAtInterface
+        ? QStringLiteral("输入 AT 指令，例如 AT；默认追加 CRLF")
+        : QStringLiteral("输入该端点要发送的数据"));
     if (channel.portCombo->lineEdit()) {
         channel.portCombo->lineEdit()->setCursorPosition(0);
     }

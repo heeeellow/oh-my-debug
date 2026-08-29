@@ -1,5 +1,5 @@
 #include "ui/main_window.h"
-#include "core/self_test.h"
+#include "diagnostics/self_test.h"
 #include <QtCore/QStringList>
 #include <QtCore/QTimer>
 #include <QtGui/QPixmap>
@@ -23,6 +23,8 @@ int main(int argc, char *argv[])
     std::uint16_t agentSerialSmokePort = 0;
     std::string agentDeploySmokeSerial;
     std::string agentReconnectSmokeSerial;
+    std::string agentAtSmokeSerial;
+    std::string agentAtSmokeEndpoint;
     for (int index = 1; index < argc; ++index) {
         if (std::string_view(argv[index]) == "--self-test") {
             return serialdemo::runSelfTest();
@@ -63,6 +65,10 @@ int main(int argc, char *argv[])
         if (std::string_view(argv[index]) == "--agent-reconnect-smoke" && index + 1 < argc) {
             agentReconnectSmokeSerial = argv[++index];
         }
+        if (std::string_view(argv[index]) == "--agent-at-smoke" && index + 2 < argc) {
+            agentAtSmokeSerial = argv[++index];
+            agentAtSmokeEndpoint = argv[++index];
+        }
     }
     if (!agentSmokeHost.empty()) {
         return serialdemo::runAgentSmokeTest(agentSmokeHost, agentSmokePort);
@@ -83,6 +89,9 @@ int main(int argc, char *argv[])
     }
     if (!agentReconnectSmokeSerial.empty()) {
         return serialdemo::runAgentReconnectSmokeTest(agentReconnectSmokeSerial);
+    }
+    if (!agentAtSmokeSerial.empty()) {
+        return serialdemo::runAgentAtSmokeTest(agentAtSmokeSerial, agentAtSmokeEndpoint);
     }
     QApplication app(argc, argv);
     MainWindow window;

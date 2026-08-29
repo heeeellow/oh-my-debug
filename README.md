@@ -12,4 +12,5 @@ TestTools 是面向 Rockchip 板卡调试与测试的 Windows 工作台。当前
 - [第三方依赖与来源](docs/THIRD_PARTY.md)
 - [Agent 协议 v1 雏形](docs/AGENT_PROTOCOL_V1.md)
 
-当前解决方案位于 `test/`：上位机使用 Qt 6，Agent 雏形不依赖 Qt，二者均使用 C++17。
+在仓库根目录打开 `TestTools.slnx` 即可开发。上位机使用 Qt 6，板端 Agent 不依赖 Qt，二者均使用
+C++17；源码集中在 `src/`，第三方依赖和生成物分别位于 `third_party/` 与 `build/`。

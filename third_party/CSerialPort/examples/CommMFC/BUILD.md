@@ -1,4 +1,4 @@
-# MFC使用CSerialPort动态库
+﻿# MFC使用CSerialPort动态库
 
 CommMFCDLL示例代码支持两种方式编译：
 
