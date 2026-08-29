@@ -10,6 +10,10 @@
 Windows 上位机工程为根目录 `TestTools.vcxproj`；板端无 Qt Agent 位于 `src/agent/`，通过 CMake
 面向 Android/Linux 独立构建。产品程序不再依赖或启动本机假 Agent。
 
+主解决方案 `TestTools.slnx` 只包含 Qt GUI 工程，确保 Visual Studio 的“本地 Windows 调试器”
+始终启动界面程序。用于协议开发的 Windows Agent 工程保留在
+`src/agent/TestToolsAgent.vcxproj`，需要时单独打开或命令行构建，不作为产品启动项目。
+
 ## 2. 目录约定
 
 ```text

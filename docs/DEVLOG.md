@@ -250,3 +250,6 @@ Agent 留出稳定边界。
 - 源码从含义不清的 `test/` 收拢到 `src/{application,core,agent,diagnostics,ui}`，第三方依赖提升到
   根目录 `third_party/`，解决方案统一命名为 `TestTools.slnx` / `TestTools.vcxproj`，全部生成物统一
   输出到未跟踪的 `build/`。同时删除未参与构建的空白 `test.ui` 与 `test.qrc`。
+- 首次整理时主解决方案同时包含 Qt GUI 和 Windows Agent 控制台工程，Visual Studio 可能把后者
+  选为启动项目，表现为编译后只出现终端。主解决方案现只保留 `TestTools.vcxproj`；Windows Agent
+  工程仍可独立构建，Android Agent 继续由 GUI 工程的构建目标自动生成。

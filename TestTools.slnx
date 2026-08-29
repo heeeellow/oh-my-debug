@@ -3,5 +3,4 @@
     <Platform Name="x64" />
   </Configurations>
   <Project Path="TestTools.vcxproj" Id="8e035381-b87b-4efc-9a06-b5f10fcee4de" />
-  <Project Path="src\agent\TestToolsAgent.vcxproj" Id="b47d10df-d01b-46da-89b4-a1830cb69ff7" />
 </Solution>
