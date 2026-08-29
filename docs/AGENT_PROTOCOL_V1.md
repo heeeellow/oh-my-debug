@@ -6,7 +6,7 @@ Agent 是运行在安卓或 Linux 板端的无 Qt C++17 服务。上位机通过
 `/data/local/tmp/testtools-agent/`，Agent 只监听板端 `127.0.0.1:27183`，控制和数据端口都通过
 ADB 转发到 Windows。本机假 Agent 只保留为协议测试夹具，不出现在产品界面，也不参与正常构建。
 
-当前 Agent 版本为 `0.2.0`，实现：
+当前 Agent 版本为 `0.2.1`，实现：
 
 - `session.hello`：协议范围、Agent 版本和平台。
 - `capability.list`：`system.info` 与 `serial.stream`。
@@ -30,6 +30,10 @@ payload                    当前最大 1 MiB
 `serial.open` 校验 `/dev/tty*` 字符设备、检查占用、取得文件锁并配置 termios。成功响应包含
 `session_id` 和仅绑定回环地址的 `stream_port`。上位机为该端口创建独立 ADB `tcp:` 转发，之后
 在这条连接上直接传输串口原始字节；控制 JSON 不与高吞吐数据混流。
+
+响应还包含 `baud_rate_requested`、Agent 文件描述符读取到的 `baud_rate_effective` 和
+`baud_rate_applied`。对 `/dev/ttyUSB*`、`/dev/ttyACM*` 这类 USB 虚拟串口，该数值通常只是
+termios 兼容字段，不代表 USB 总线或模块内部 UART 的物理速率，界面会按“驱动管理”提示。
 
 当前实现一次只管理一个板端串口会话。界面会阻止同时打开两个 Agent 串口，但允许
 “Windows 本地串口 + 板端 Agent 串口”的双端点验证。多板端并发将在会话表和资源管理器完成后开放。

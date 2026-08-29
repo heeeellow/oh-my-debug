@@ -220,7 +220,7 @@ std::string AgentService::handleRequest(const std::string &request)
     }
     if (method == "session.hello") {
         return resultResponse(requestId,
-            "{\"agent\":\"testtools-agent\",\"agent_version\":\"0.2.0\","
+            "{\"agent\":\"testtools-agent\",\"agent_version\":\"0.2.1\","
             "\"protocol_min\":1,\"protocol_max\":1,\"platform\":\""
             + platformName() + "\"}");
     }
@@ -291,15 +291,21 @@ std::string AgentService::serialOpenResponse(const std::string &requestId,
     }
     std::uint16_t port = 0;
     std::string sessionId;
+    int effectiveBaudRate = 0;
+    bool baudRateApplied = false;
     std::string error;
-    if (!serialBridge_.start(config, port, sessionId, error)) {
+    if (!serialBridge_.start(config, port, sessionId, effectiveBaudRate,
+                             baudRateApplied, error)) {
         return errorResponse(requestId, "serial_open_failed", error);
     }
     activeSerialSessionId_ = sessionId;
     return resultResponse(requestId,
         "{\"session_id\":\"" + jsonEscape(sessionId)
         + "\",\"stream_port\":" + std::to_string(port)
-        + ",\"endpoint\":\"" + jsonEscape(config.endpoint) + "\"}");
+        + ",\"endpoint\":\"" + jsonEscape(config.endpoint)
+        + "\",\"baud_rate_requested\":" + std::to_string(config.baudRate)
+        + ",\"baud_rate_effective\":" + std::to_string(effectiveBaudRate)
+        + ",\"baud_rate_applied\":" + (baudRateApplied ? "true" : "false") + "}");
 }
 
 std::string AgentService::serialCloseResponse(const std::string &requestId,

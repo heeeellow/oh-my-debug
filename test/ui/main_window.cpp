@@ -423,7 +423,7 @@ QWidget *MainWindow::buildSettingsPage()
     auto *connectionTitle = new QLabel(QStringLiteral("板端 Agent"), connectionCard);
     connectionTitle->setObjectName(QStringLiteral("sectionLabel"));
     auto *connectionBody = new QLabel(
-        QStringLiteral("根据顶部选择的 ADB 设备自动识别 ABI、部署真实 Agent、建立安全的本机转发并发现能力。"),
+        QStringLiteral("优先连接板端已运行的 Agent；未发现时再自动识别 ABI、部署当前版本并发现能力。"),
         connectionCard);
     connectionBody->setObjectName(QStringLiteral("cardBody"));
     connectionBody->setWordWrap(true);
@@ -435,7 +435,7 @@ QWidget *MainWindow::buildSettingsPage()
     connectionLayout->addWidget(agentDeviceValue_);
 
     auto *actions = new QHBoxLayout;
-    deployAgentButton_ = new QPushButton(QStringLiteral("部署 / 更新并连接"), connectionCard);
+    deployAgentButton_ = new QPushButton(QStringLiteral("连接 / 必要时部署"), connectionCard);
     deployAgentButton_->setObjectName(QStringLiteral("primaryButton"));
     disconnectAgentButton_ = new QPushButton(QStringLiteral("断开本机连接"), connectionCard);
     stopAgentButton_ = new QPushButton(QStringLiteral("停止板端 Agent"), connectionCard);
@@ -524,6 +524,11 @@ QWidget *MainWindow::wrapPage(const QString &title, const QString &subtitle, QWi
 
 void MainWindow::deploySelectedAgent()
 {
+    connectSelectedAgent(true);
+}
+
+void MainWindow::connectSelectedAgent(bool allowDeploy)
+{
     if (agentConnecting_ || agentClient_ || shuttingDown_) {
         return;
     }
@@ -540,46 +545,72 @@ void MainWindow::deploySelectedAgent()
         applicationDirectoryBytes.constData(), static_cast<std::size_t>(applicationDirectoryBytes.size()));
     const std::uint64_t generation = ++agentGeneration_;
     agentConnecting_ = true;
-    setAgentStatus(QStringLiteral("Agent · 部署中"), StatusTone::Neutral,
-                   QStringLiteral("正在准备真实板端 Agent"));
+    setAgentStatus(allowDeploy ? QStringLiteral("Agent · 连接中")
+                               : QStringLiteral("Agent · 正在发现"),
+                   StatusTone::Neutral,
+                   allowDeploy ? QStringLiteral("正在探测或部署真实板端 Agent")
+                               : QStringLiteral("正在探测板端已运行的 Agent"));
     updateAgentControls();
 
     QPointer<MainWindow> guard(this);
-    agentThreads_.emplace_back([guard, serial, applicationDirectory, generation] {
+    agentThreads_.emplace_back([guard, serial, applicationDirectory, generation, allowDeploy] {
         testtools::AgentDeployment deployment;
-        const auto progress = [guard, generation](const std::string &message) {
-            QMetaObject::invokeMethod(guard, [guard, generation, message] {
+        const auto progress = [guard, generation, allowDeploy](const std::string &message) {
+            QMetaObject::invokeMethod(guard, [guard, generation, message, allowDeploy] {
                 if (guard && !guard->shuttingDown_ && generation == guard->agentGeneration_) {
-                    guard->setAgentStatus(QStringLiteral("Agent · 部署中"), StatusTone::Neutral,
+                    guard->setAgentStatus(allowDeploy ? QStringLiteral("Agent · 连接中")
+                                                      : QStringLiteral("Agent · 正在发现"),
+                                          StatusTone::Neutral,
                                           fromUtf8(message));
                 }
             }, Qt::QueuedConnection);
         };
-        auto deploymentResult = deployment.deployAndForward(serial, applicationDirectory, progress);
+        auto deploymentResult = deployment.reconnect(serial, progress);
         auto client = std::make_shared<testtools::AgentClient>();
-        std::string error = deploymentResult.error;
+        std::string error;
         std::string hello;
         std::string capabilities;
         std::string systemInfo;
-        bool succeeded = deploymentResult.succeeded
-                         && client->connect("127.0.0.1", deploymentResult.localPort, error);
-        if (succeeded) {
-            succeeded = client->request(
-                "{\"protocol\":1,\"request_id\":\"ui-hello\","
-                "\"method\":\"session.hello\",\"params\":{}}",
-                hello, error);
-        }
-        if (succeeded) {
-            succeeded = client->request(
-                "{\"protocol\":1,\"request_id\":\"ui-capabilities\","
-                "\"method\":\"capability.list\",\"params\":{}}",
-                capabilities, error);
-        }
-        if (succeeded) {
-            succeeded = client->request(
-                "{\"protocol\":1,\"request_id\":\"ui-system-info\","
-                "\"method\":\"system.info\",\"params\":{}}",
-                systemInfo, error);
+        const auto connectAndDiscover = [&] {
+            if (!deploymentResult.succeeded) {
+                error = deploymentResult.error;
+                return false;
+            }
+            error.clear();
+            hello.clear();
+            capabilities.clear();
+            systemInfo.clear();
+            client = std::make_shared<testtools::AgentClient>();
+            if (!client->connect("127.0.0.1", deploymentResult.localPort, error)
+                || !client->request(
+                    "{\"protocol\":1,\"request_id\":\"ui-hello\","
+                    "\"method\":\"session.hello\",\"params\":{}}", hello, error)) {
+                return false;
+            }
+            const std::string requiredVersion = std::string("\"agent_version\":\"")
+                                                + testtools::AgentDeployment::RequiredAgentVersion
+                                                + "\"";
+            if (hello.find(requiredVersion) == std::string::npos) {
+                error = std::string("板端 Agent 版本不匹配，需要 ")
+                        + testtools::AgentDeployment::RequiredAgentVersion;
+                return false;
+            }
+            return client->request(
+                       "{\"protocol\":1,\"request_id\":\"ui-capabilities\","
+                       "\"method\":\"capability.list\",\"params\":{}}", capabilities, error)
+                   && client->request(
+                       "{\"protocol\":1,\"request_id\":\"ui-system-info\","
+                       "\"method\":\"system.info\",\"params\":{}}", systemInfo, error);
+        };
+        bool succeeded = connectAndDiscover();
+        if (!succeeded && allowDeploy) {
+            client->close();
+            if (deploymentResult.localPort != 0) {
+                deployment.removeForward(serial, deploymentResult.localPort);
+            }
+            progress("未发现可用 Agent，正在部署当前版本...");
+            deploymentResult = deployment.deployAndForward(serial, applicationDirectory, progress);
+            succeeded = connectAndDiscover();
         }
         if (!succeeded && deploymentResult.localPort != 0) {
             deployment.removeForward(serial, deploymentResult.localPort);
@@ -589,7 +620,7 @@ void MainWindow::deploySelectedAgent()
             [guard, client = std::move(client), hello = std::move(hello),
              capabilities = std::move(capabilities), systemInfo = std::move(systemInfo),
              error = std::move(error), deploymentResult = std::move(deploymentResult),
-             succeeded, serial, generation]() mutable {
+              succeeded, serial, generation, allowDeploy]() mutable {
                 if (!guard || guard->shuttingDown_ || generation != guard->agentGeneration_) {
                     client->close();
                     if (deploymentResult.localPort != 0) {
@@ -605,8 +636,12 @@ void MainWindow::deploySelectedAgent()
                         testtools::AgentDeployment().removeForward(serial,
                                                                   deploymentResult.localPort);
                     }
-                    guard->setAgentStatus(QStringLiteral("Agent · 连接失败"), StatusTone::Error,
-                                          fromUtf8(error));
+                    guard->setAgentStatus(
+                        allowDeploy ? QStringLiteral("Agent · 连接失败")
+                                    : QStringLiteral("Agent · 未发现"),
+                        allowDeploy ? StatusTone::Error : StatusTone::Neutral,
+                        allowDeploy ? fromUtf8(error)
+                                    : QStringLiteral("未发现兼容的板端 Agent；点击“连接 / 必要时部署”安装或升级"));
                     guard->updateAgentControls();
                     return;
                 }
@@ -647,7 +682,7 @@ void MainWindow::deploySelectedAgent()
                              architecture.isEmpty() ? fromUtf8(deploymentResult.abi) : architecture,
                              release.isEmpty() ? QStringLiteral("未知") : release));
                 guard->agentSystemInfoValue_->setToolTip(fromUtf8(systemInfo));
-                guard->setActivity(QStringLiteral("真实板端 Agent 部署、握手与能力发现完成"));
+                guard->setActivity(QStringLiteral("真实板端 Agent 连接、握手与能力发现完成"));
                 guard->updateAgentControls();
             }, Qt::QueuedConnection);
     });
@@ -758,7 +793,7 @@ void MainWindow::updateAgentControls()
     disconnectAgentButton_->setEnabled(connected && !serialBusy_);
     stopAgentButton_->setEnabled(online && !agentConnecting_ && !serialBusy_);
     deployAgentButton_->setText(agentConnecting_ ? QStringLiteral("正在处理...")
-                                                  : QStringLiteral("部署 / 更新并连接"));
+                                                  : QStringLiteral("连接 / 必要时部署"));
     if (agentDeviceValue_) {
         agentDeviceValue_->setText(online
             ? QStringLiteral("目标设备：%1 · %2").arg(fromUtf8(device.serial),
@@ -871,6 +906,10 @@ void MainWindow::applySelectedDevice()
     serialWorkspace_->setAdbDevice(device);
     updateOverview();
     updateAgentControls();
+    if (!agentClient_ && !agentConnecting_ && device.state == "device"
+        && !device.serial.empty()) {
+        connectSelectedAgent(false);
+    }
 }
 
 void MainWindow::showPage(int pageIndex)

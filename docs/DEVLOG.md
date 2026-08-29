@@ -220,3 +220,19 @@ Agent 留出稳定边界。
 
 - 尚未向 4G 模块发送 AT 指令；真实命令收发留给用户在已知安全场景下验收。
 - 下一阶段应先实现 Agent 多会话资源表和心跳/断线恢复，再扩展并发测试项与任务历史。
+
+### Debug 运行目录与 ttyUSB2 速率复查
+
+- 用户从 Visual Studio 运行的是 `test/x64/Debug/test.exe`，而先前 Android Agent 只生成在 Release
+  目录；Debug 运行时找不到本地部署产物，这是“无法发现并连接 Agent”的直接原因。
+- 主工程现在在发现 NDK 时自动构建 Agent，并复制到当前 Debug/Release 运行目录。Debug 实测生成
+  `agents/android/armeabi-v7a/testtools-agent`，部署、串口保持和现有 Agent 重连均为 PASS。
+- 连接流程先探测 PID 文件与板端现有进程并尝试握手；只有未运行或握手失败时才重新部署，避免把
+  “发现”错误地等同于每次覆盖安装。
+- 界面启动或切换 ADB 设备后会安全探测现有 Agent；串口页发现多个板端节点时，优先选中未占用且
+  可读写的 AT 接口。本板实测默认落在 `/dev/ttyUSB2 — Mobile AT Interface`，并避开 `rild`
+  占用的 `/dev/ttyUSB1`。
+- `/dev/ttyUSB2` 确认为 `option1` USB 串口驱动的 `Mobile AT Interface`。Agent 请求 115200 后，
+  Agent 文件描述符和板端 `stty` 均报告 9600；这说明 115200 没有作为可验证的物理速率生效。
+  对该 USB AT 接口，通信走 USB bulk，波特率为兼容参数而非 USB 链路速率。界面状态现会同时显示
+  请求值和内核报告值，避免误导。

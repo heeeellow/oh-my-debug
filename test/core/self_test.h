@@ -12,5 +12,6 @@ int runAgentSerialSmokeTest(const std::string &serial, std::uint16_t agentContro
                             const std::string &endpoint);
 int runAgentDeploymentSmokeTest(const std::string &serial,
                                 const std::string &applicationDirectory);
+int runAgentReconnectSmokeTest(const std::string &serial);
 
 } // namespace serialdemo

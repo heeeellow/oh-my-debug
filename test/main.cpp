@@ -22,6 +22,7 @@ int main(int argc, char *argv[])
     std::string agentSerialSmokeEndpoint;
     std::uint16_t agentSerialSmokePort = 0;
     std::string agentDeploySmokeSerial;
+    std::string agentReconnectSmokeSerial;
     for (int index = 1; index < argc; ++index) {
         if (std::string_view(argv[index]) == "--self-test") {
             return serialdemo::runSelfTest();
@@ -59,6 +60,9 @@ int main(int argc, char *argv[])
         if (std::string_view(argv[index]) == "--agent-deploy-smoke" && index + 1 < argc) {
             agentDeploySmokeSerial = argv[++index];
         }
+        if (std::string_view(argv[index]) == "--agent-reconnect-smoke" && index + 1 < argc) {
+            agentReconnectSmokeSerial = argv[++index];
+        }
     }
     if (!agentSmokeHost.empty()) {
         return serialdemo::runAgentSmokeTest(agentSmokeHost, agentSmokePort);
@@ -76,6 +80,9 @@ int main(int argc, char *argv[])
             std::filesystem::absolute(std::filesystem::u8path(argv[0])).parent_path().u8string();
         return serialdemo::runAgentDeploymentSmokeTest(agentDeploySmokeSerial,
                                                        applicationDirectory);
+    }
+    if (!agentReconnectSmokeSerial.empty()) {
+        return serialdemo::runAgentReconnectSmokeTest(agentReconnectSmokeSerial);
     }
     QApplication app(argc, argv);
     MainWindow window;

@@ -345,4 +345,33 @@ int runAgentDeploymentSmokeTest(const std::string &serial,
     return 0;
 }
 
+int runAgentReconnectSmokeTest(const std::string &serial)
+{
+    testtools::AgentDeployment deployment;
+    const auto result = deployment.reconnect(serial,
+        [](const std::string &message) { std::cout << message << '\n'; });
+    if (!result.succeeded) {
+        std::cerr << "FAIL Agent reconnect: " << result.error << '\n';
+        return 73;
+    }
+    testtools::AgentClient client;
+    std::string response;
+    std::string error;
+    const bool connected = client.connect("127.0.0.1", result.localPort, error)
+        && client.request("{\"protocol\":1,\"request_id\":\"reconnect-hello\","
+                          "\"method\":\"session.hello\",\"params\":{}}",
+                          response, error)
+        && response.find("\"agent_version\":\"0.2.1\"") != std::string::npos;
+    client.close();
+    deployment.removeForward(serial, result.localPort);
+    if (!connected) {
+        std::cerr << "FAIL existing Agent handshake: "
+                  << (error.empty() ? response : error) << '\n';
+        return 74;
+    }
+    std::cout << "PASS existing-agent-reconnect abi=" << result.abi
+              << " serial=" << serial << '\n';
+    return 0;
+}
+
 } // namespace serialdemo

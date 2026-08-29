@@ -48,7 +48,9 @@ test/
   /p:QtMsBuild='C:\Users\26613\AppData\Local\QtMsBuild'
 ```
 
-Android Agent 使用仓库脚本构建并复制到主程序运行目录。以当前 `armeabi-v7a` 板卡为例：
+Visual Studio 构建主程序时，如果能从 `TestToolsNdkRoot`、`ANDROID_NDK_ROOT`、
+`ANDROID_NDK_HOME` 或本机 Android SDK 目录找到 NDK，会自动构建 Agent 并复制到与主程序相同的
+Debug/Release 运行目录。也可单独运行仓库脚本；以当前 `armeabi-v7a` 板卡为例：
 
 ```powershell
 .\scripts\build-android-agent.ps1 `
@@ -66,6 +68,7 @@ Android Agent 使用仓库脚本构建并复制到主程序运行目录。以当
 - `--agent-smoke <host> <port>`：验证真实或测试 Agent 的 hello 与能力发现。
 - `--agent-deploy-smoke <adb-serial>`：执行真实 ABI 识别、部署、启动、控制转发、`system.info`
   和 `serial.list`；不发送串口数据。
+- `--agent-reconnect-smoke <adb-serial>`：不重新部署，探测并连接板端现有 Agent，验证握手和转发。
 - `--agent-serial-smoke <adb-serial> <control-port> <endpoint>`：经真实 Agent 打开指定串口并保持
   5 秒，验证数据通道不会立即 EOF；不发送任何字节。
 - `--adb-serial-smoke` 仅保留用于复现旧固件 ADB 设备节点转发问题，不是产品串口路径。

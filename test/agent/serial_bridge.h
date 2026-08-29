@@ -29,7 +29,8 @@ public:
     SerialBridge &operator=(const SerialBridge &) = delete;
 
     bool start(const serialdemo::SerialConfig &config, std::uint16_t &port,
-               std::string &sessionId, std::string &error);
+               std::string &sessionId, int &effectiveBaudRate,
+               bool &baudRateApplied, std::string &error);
     void stop();
     bool isRunning() const;
 

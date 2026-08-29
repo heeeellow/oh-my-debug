@@ -199,14 +199,24 @@ AgentDeploymentResult AgentDeployment::reconnect(const std::string &serial,
         return result;
     }
     serialdemo::AdbTransport adb;
+    if (progress) {
+        progress("正在探测已运行的板端 Agent...");
+    }
+    const std::string pidFile = std::string(RemoteDirectory) + "/agent.pid";
     const auto probe = adb.runCommand(serial,
-        {"shell", "cat " + std::string(RemoteDirectory) + "/agent.log 2>/dev/null"},
+        {"shell", "if [ -r " + pidFile + " ]; then pid=$(cat " + pidFile
+                      + "); if kill -0 $pid 2>/dev/null && grep -q testtools-agent "
+                        "/proc/$pid/cmdline 2>/dev/null; then echo RUNNING; fi; fi"},
         std::chrono::seconds(3));
-    if (probe.standardOutput.find("LISTENING 27183") == std::string::npos) {
+    if (probe.standardOutput.find("RUNNING") == std::string::npos) {
         result.error = "板端 Agent 未运行，请重新部署";
         return result;
     }
-    return createForward(adb, serial, {}, RemoteBinary, progress);
+    const auto abiResult = adb.runCommand(serial,
+        {"shell", "getprop ro.product.cpu.abi"}, std::chrono::seconds(3));
+    const std::string abi = abiResult.exitCode == 0 && !abiResult.timedOut
+                                ? normalizeAbi(abiResult.standardOutput) : std::string{};
+    return createForward(adb, serial, abi, RemoteBinary, progress);
 }
 
 void AgentDeployment::removeForward(const std::string &serial, std::uint16_t localPort) const

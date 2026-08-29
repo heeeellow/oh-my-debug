@@ -26,7 +26,7 @@ SerialBridge::~SerialBridge()
 }
 
 bool SerialBridge::start(const serialdemo::SerialConfig &, std::uint16_t &,
-                         std::string &, std::string &error)
+                         std::string &, int &, bool &, std::string &error)
 {
     error = "Managed serial streams are only available on Linux and Android agents";
     return false;
@@ -147,7 +147,43 @@ speed_t baudConstant(int baudRate)
     }
 }
 
-bool configureSerial(int descriptor, const serialdemo::SerialConfig &config, std::string &error)
+int baudValue(speed_t speed)
+{
+    switch (speed) {
+    case B1200: return 1200;
+    case B2400: return 2400;
+    case B4800: return 4800;
+    case B9600: return 9600;
+    case B19200: return 19200;
+    case B38400: return 38400;
+    case B57600: return 57600;
+    case B115200: return 115200;
+#ifdef B230400
+    case B230400: return 230400;
+#endif
+#ifdef B460800
+    case B460800: return 460800;
+#endif
+#ifdef B921600
+    case B921600: return 921600;
+#endif
+    default: return 0;
+    }
+}
+
+void readEffectiveBaud(int descriptor, int requested, int &effective, bool &applied)
+{
+    termios current{};
+    effective = 0;
+    applied = false;
+    if (tcgetattr(descriptor, &current) == 0) {
+        effective = baudValue(cfgetospeed(&current));
+        applied = effective == requested;
+    }
+}
+
+bool configureSerial(int descriptor, const serialdemo::SerialConfig &config,
+                     int &effectiveBaudRate, bool &baudRateApplied, std::string &error)
 {
     termios original{};
     if (tcgetattr(descriptor, &original) != 0) {
@@ -205,6 +241,7 @@ bool configureSerial(int descriptor, const serialdemo::SerialConfig &config, std
     cfsetispeed(&settings, speed);
     cfsetospeed(&settings, speed);
     if (tcsetattr(descriptor, TCSANOW, &settings) == 0) {
+        readEffectiveBaud(descriptor, config.baudRate, effectiveBaudRate, baudRateApplied);
         return true;
     }
 
@@ -213,6 +250,7 @@ bool configureSerial(int descriptor, const serialdemo::SerialConfig &config, std
     cfsetispeed(&settings, cfgetispeed(&original));
     cfsetospeed(&settings, cfgetospeed(&original));
     if (tcsetattr(descriptor, TCSANOW, &settings) == 0) {
+        readEffectiveBaud(descriptor, config.baudRate, effectiveBaudRate, baudRateApplied);
         return true;
     }
     error = "tcsetattr failed: " + std::string(std::strerror(errno));
@@ -277,7 +315,8 @@ SerialBridge::~SerialBridge()
 }
 
 bool SerialBridge::start(const serialdemo::SerialConfig &config, std::uint16_t &port,
-                         std::string &sessionId, std::string &error)
+                         std::string &sessionId, int &effectiveBaudRate,
+                         bool &baudRateApplied, std::string &error)
 {
     stop();
     if (!allowedEndpoint(config.endpoint)) {
@@ -305,7 +344,7 @@ bool SerialBridge::start(const serialdemo::SerialConfig &config, std::uint16_t &
         ::close(serialDescriptor);
         return false;
     }
-    if (!configureSerial(serialDescriptor, config, error)) {
+    if (!configureSerial(serialDescriptor, config, effectiveBaudRate, baudRateApplied, error)) {
         ::close(serialDescriptor);
         return false;
     }

@@ -256,6 +256,9 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
                                  QStringLiteral("115200"), QStringLiteral("921600")});
     channel.baudCombo->setMinimumWidth(88);
     channel.baudCombo->setCurrentText(QStringLiteral("115200"));
+    channel.baudCombo->setToolTip(
+        QStringLiteral("物理 UART 使用该波特率；ttyUSB/ttyACM 是 USB 虚拟串口，驱动可能忽略该数值，"
+                       "它不代表 USB 链路速率。"));
     channel.baudCombo->lineEdit()->setCursorPosition(0);
 
     const auto fieldLabel = [&channel](const QString &text) {
@@ -507,8 +510,21 @@ void SerialWorkspace::applyPorts(int index)
     if (restoreIndex < 0) {
         restoreIndex = channel.portCombo->findData(previousText);
     }
+    if (restoreIndex < 0 && channelUsesAgent(index)) {
+        const auto preferred = std::find_if(agentPorts_.begin(), agentPorts_.end(),
+            [](const AgentSerialPort &port) {
+                return port.occupiedBy.empty() && port.readable && port.writable
+                       && port.interfaceName.find("AT") != std::string::npos;
+            });
+        if (preferred != agentPorts_.end()) {
+            restoreIndex = channel.portCombo->findData(fromUtf8(preferred->endpoint));
+        }
+    }
     if (restoreIndex >= 0) {
         channel.portCombo->setCurrentIndex(restoreIndex);
+    }
+    if (channel.portCombo->lineEdit()) {
+        channel.portCombo->lineEdit()->setCursorPosition(0);
     }
     updateRouteSummary();
 }

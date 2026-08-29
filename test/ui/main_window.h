@@ -57,6 +57,7 @@ private:
 
     void refreshDevices();
     void deploySelectedAgent();
+    void connectSelectedAgent(bool allowDeploy);
     void stopSelectedAgent();
     void disconnectAgent(const QString &reason = {});
     void setAgentStatus(const QString &text, StatusTone tone, const QString &detail = {});

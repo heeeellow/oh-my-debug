@@ -153,4 +153,22 @@
   </ImportGroup>
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
+  <PropertyGroup Label="TestToolsAndroidAgent">
+    <TestToolsNdkRoot Condition="'$(TestToolsNdkRoot)'=='' AND '$(ANDROID_NDK_ROOT)'!=''">$(ANDROID_NDK_ROOT)</TestToolsNdkRoot>
+    <TestToolsNdkRoot Condition="'$(TestToolsNdkRoot)'=='' AND '$(ANDROID_NDK_HOME)'!=''">$(ANDROID_NDK_HOME)</TestToolsNdkRoot>
+    <TestToolsNdkRoot Condition="'$(TestToolsNdkRoot)'=='' AND Exists('$(LOCALAPPDATA)\Android\Sdk\ndk\27.3.13750724\build\cmake\android.toolchain.cmake')">$(LOCALAPPDATA)\Android\Sdk\ndk\27.3.13750724</TestToolsNdkRoot>
+    <TestToolsCMakeProgram Condition="'$(TestToolsCMakeProgram)'=='' AND Exists('C:\software\QT\Tools\CMake_64\bin\cmake.exe')">C:\software\QT\Tools\CMake_64\bin\cmake.exe</TestToolsCMakeProgram>
+    <TestToolsCMakeProgram Condition="'$(TestToolsCMakeProgram)'==''">cmake</TestToolsCMakeProgram>
+    <TestToolsNinjaProgram Condition="'$(TestToolsNinjaProgram)'=='' AND Exists('C:\software\QT\Tools\Ninja\ninja.exe')">C:\software\QT\Tools\Ninja\ninja.exe</TestToolsNinjaProgram>
+    <TestToolsNinjaProgram Condition="'$(TestToolsNinjaProgram)'==''">ninja</TestToolsNinjaProgram>
+  </PropertyGroup>
+  <Target Name="BuildTestToolsAndroidAgent" AfterTargets="Build"
+          Condition="'$(DesignTimeBuild)'!='true' AND Exists('$(TestToolsNdkRoot)\build\cmake\android.toolchain.cmake')">
+    <Message Importance="High" Text="Building Android Agent for $(Configuration) output..." />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)..\scripts\build-android-agent.ps1&quot; -NdkRoot &quot;$(TestToolsNdkRoot)&quot; -Configuration &quot;$(Configuration)&quot; -CMakeProgram &quot;$(TestToolsCMakeProgram)&quot; -NinjaProgram &quot;$(TestToolsNinjaProgram)&quot;" />
+  </Target>
+  <Target Name="WarnMissingTestToolsAndroidAgent" AfterTargets="Build"
+          Condition="'$(DesignTimeBuild)'!='true' AND !Exists('$(TestToolsNdkRoot)\build\cmake\android.toolchain.cmake')">
+    <Warning Text="Android NDK not found; TestTools can connect an existing Agent, but cannot deploy a new one. Set TestToolsNdkRoot or ANDROID_NDK_ROOT." />
+  </Target>
 </Project>

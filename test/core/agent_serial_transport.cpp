@@ -203,6 +203,10 @@ void AgentSerialTransport::workerMain(SerialConfig config)
     }
     const int streamPort = intField(response, "stream_port");
     const std::string sessionId = stringField(response, "session_id");
+    const int requestedBaudRate = intField(response, "baud_rate_requested");
+    const int effectiveBaudRate = intField(response, "baud_rate_effective");
+    const bool baudRateApplied = response.find("\"baud_rate_applied\":true")
+                                 != std::string::npos;
     if (streamPort <= 0 || streamPort > 65535 || sessionId.empty()) {
         publishStatus(TransportState::Error, "板端 Agent 返回了无效的串口会话");
         return;
@@ -245,8 +249,25 @@ void AgentSerialTransport::workerMain(SerialConfig config)
                               static_cast<unsigned short>(localPort)});
         }
         open_.store(true);
-        publishStatus(TransportState::Connected,
-                      "板端 Agent 串口已连接: " + config.endpoint);
+        std::string connectedMessage = "板端 Agent 串口已连接: " + config.endpoint;
+        const bool usbSerial = config.endpoint.rfind("/dev/ttyUSB", 0) == 0
+                               || config.endpoint.rfind("/dev/ttyACM", 0) == 0;
+        if (usbSerial && requestedBaudRate > 0) {
+            connectedMessage += "（USB 虚拟串口，速率由驱动管理；请求 "
+                                + std::to_string(requestedBaudRate);
+            if (effectiveBaudRate > 0) {
+                connectedMessage += "，内核报告 " + std::to_string(effectiveBaudRate);
+            }
+            connectedMessage += "）";
+        } else if (!baudRateApplied && requestedBaudRate > 0) {
+            connectedMessage += "（波特率未按请求生效";
+            connectedMessage += "，请求 " + std::to_string(requestedBaudRate);
+            if (effectiveBaudRate > 0) {
+                connectedMessage += "，内核报告 " + std::to_string(effectiveBaudRate);
+            }
+            connectedMessage += "）";
+        }
+        publishStatus(TransportState::Connected, connectedMessage);
 
         std::array<std::uint8_t, 16384> buffer{};
         while (!stopping_.load()) {
