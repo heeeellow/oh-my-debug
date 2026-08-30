@@ -1,12 +1,12 @@
 #pragma once
 
+#include "application/background_task_group.h"
 #include "application/device_discovery.h"
 
 #include <QtWidgets/QMainWindow>
 
 #include <cstdint>
 #include <memory>
-#include <thread>
 #include <vector>
 
 class QComboBox;
@@ -25,6 +25,7 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow() override;
     bool navigateTo(const QString &pageName);
+    bool setSerialModeForDiagnostics(const QString &modeName);
 
 private:
     enum class StatusTone {
@@ -92,8 +93,8 @@ private:
     QLabel *agentSystemInfoValue_ = nullptr;
     std::shared_ptr<testtools::AgentClient> agentClient_;
     std::vector<QPushButton *> navigationButtons_;
-    std::vector<std::thread> scanThreads_;
-    std::vector<std::thread> agentThreads_;
+    testtools::BackgroundTaskGroup scanTasks_;
+    testtools::BackgroundTaskGroup agentTasks_;
     QString agentSummary_ = QStringLiteral("未连接");
     std::string agentAdbSerial_;
     std::uint16_t agentForwardPort_ = 0;

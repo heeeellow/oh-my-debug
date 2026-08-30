@@ -1,15 +1,20 @@
-#include "self_test.h"
+  #include "self_test.h"
 
 #include "core/adb_transport.h"
 #include "core/agent_client.h"
 #include "core/agent_protocol.h"
+#include "core/agent_version.h"
 #include "core/agent_serial_transport.h"
 #include "core/async_serial_sender.h"
 #include "core/codec.h"
+#include "core/command_line.h"
 #include "core/process_runner.h"
 #include "core/serial_test_engine.h"
 #include "application/agent_deployment.h"
+#include "application/background_task_group.h"
+#include "application/serial_workspace_state.h"
 
+#include <atomic>
 #include <chrono>
 #include <algorithm>
 #include <iostream>
@@ -34,6 +39,14 @@ int runSelfTest()
 {
     ByteBuffer bytes;
     std::string error;
+    std::uint16_t parsedPort = 0;
+    if (!testtools::parseTcpPort("27183", parsedPort) || parsedPort != 27183
+        || testtools::parseTcpPort("not-a-port", parsedPort)
+        || testtools::parseTcpPort("70000", parsedPort)
+        || testtools::parseTcpPort("0", parsedPort)) {
+        std::cerr << "FAIL command line port validation\n";
+        return 9;
+    }
     if (!parseHex("55 AA 01 0d 0A", bytes, error) || toHex(bytes) != "55 AA 01 0D 0A") {
         std::cerr << "FAIL codec: " << error << '\n';
         return 10;
@@ -121,6 +134,47 @@ int runSelfTest()
         || testtools::agentFrameText(agentFrames.front()).find("request_id") == std::string::npos) {
         std::cerr << "FAIL agent frame split/coalesce codec: " << agentFrameError << '\n';
         return 17;
+    }
+
+    testtools::SerialWorkspaceState workspaceState;
+    testtools::SerialWorkspaceActivity workspaceActivity;
+    if (!workspaceState.applyMode(testtools::SerialWorkspaceMode::Dual, workspaceActivity)) {
+        std::cerr << "FAIL serial workspace mode transition\n";
+        return 18;
+    }
+    workspaceActivity.channelActive[0] = true;
+    const auto blockedMode = workspaceState.evaluateModeSwitch(
+        testtools::SerialWorkspaceMode::Single, workspaceActivity);
+    if (blockedMode.allowed
+        || blockedMode.blockedBy != testtools::SerialModeSwitchBlock::HiddenChannelActive) {
+        std::cerr << "FAIL serial workspace hidden connection guard\n";
+        return 19;
+    }
+    testtools::SerialEndpointSelection localA{
+        true, testtools::SerialEndpointKind::Local, "COM3", {}};
+    testtools::SerialEndpointSelection localB = localA;
+    testtools::SerialEndpointSelection agentA{
+        true, testtools::SerialEndpointKind::Agent, "/dev/ttyUSB2", "device-a"};
+    testtools::SerialEndpointSelection agentB{
+        true, testtools::SerialEndpointKind::Agent, "/dev/ttyS2", "device-a"};
+    if (testtools::SerialWorkspaceState::endpointConflict(localA, localB)
+            != testtools::SerialEndpointConflict::SameResource
+        || testtools::SerialWorkspaceState::endpointConflict(agentA, agentB)
+            != testtools::SerialEndpointConflict::AgentSingleSession
+        || testtools::SerialWorkspaceState::endpointConflict(localA, agentA)
+            != testtools::SerialEndpointConflict::None) {
+        std::cerr << "FAIL serial workspace endpoint conflict rules\n";
+        return 23;
+    }
+
+    std::atomic<int> completedTasks{0};
+    testtools::BackgroundTaskGroup taskGroup;
+    taskGroup.start([&completedTasks] { ++completedTasks; });
+    taskGroup.start([&completedTasks] { ++completedTasks; });
+    taskGroup.wait();
+    if (completedTasks != 2 || taskGroup.retainedTaskCount() != 0) {
+        std::cerr << "FAIL background task ownership\n";
+        return 24;
     }
 
     AdbTransport adb;
@@ -361,7 +415,8 @@ int runAgentReconnectSmokeTest(const std::string &serial)
         && client.request("{\"protocol\":1,\"request_id\":\"reconnect-hello\","
                           "\"method\":\"session.hello\",\"params\":{}}",
                           response, error)
-        && response.find("\"agent_version\":\"0.2.1\"") != std::string::npos;
+        && response.find(std::string("\"agent_version\":\"") + testtools::AgentVersion + "\"")
+           != std::string::npos;
     client.close();
     deployment.removeForward(serial, result.localPort);
     if (!connected) {

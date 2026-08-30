@@ -17,14 +17,6 @@
 
 namespace serialdemo {
 
-struct AgentSerialPort {
-    std::string endpoint;
-    std::string interfaceName;
-    std::string occupiedBy;
-    bool readable = false;
-    bool writable = false;
-};
-
 class AgentSerialTransport final : public ISerialTransport {
 public:
     AgentSerialTransport(std::string adbSerial, std::uint16_t agentControlPort);

@@ -1,4 +1,5 @@
 #include "agent_service.h"
+#include "core/agent_version.h"
 
 #include <algorithm>
 #include <cctype>
@@ -50,8 +51,11 @@ std::string stringField(const std::string &json, const std::string &name)
     if (position == std::string::npos) {
         return {};
     }
-    position = json.find('"', position + 1);
-    if (position == std::string::npos) {
+    ++position;
+    while (position < json.size() && std::isspace(static_cast<unsigned char>(json[position]))) {
+        ++position;
+    }
+    if (position >= json.size() || json[position] != '"') {
         return {};
     }
     std::string result;
@@ -63,50 +67,100 @@ std::string stringField(const std::string &json, const std::string &name)
             case 'n': result.push_back('\n'); break;
             case 'r': result.push_back('\r'); break;
             case 't': result.push_back('\t'); break;
-            default: result.push_back(ch); break;
+            case 'b': result.push_back('\b'); break;
+            case 'f': result.push_back('\f'); break;
+            case '"': result.push_back('"'); break;
+            case '\\': result.push_back('\\'); break;
+            case '/': result.push_back('/'); break;
+            default: return {};
             }
             escaped = false;
         } else if (ch == '\\') {
             escaped = true;
         } else if (ch == '"') {
             return result;
-        } else {
+        } else if (static_cast<unsigned char>(ch) >= 0x20) {
             result.push_back(ch);
+        } else {
+            return {};
         }
     }
     return {};
 }
 
-int intField(const std::string &json, const std::string &name, int fallback)
+bool objectField(const std::string &json, const std::string &name)
 {
     const std::string key = "\"" + name + "\"";
     std::size_t position = json.find(key);
     if (position == std::string::npos) {
-        return fallback;
+        return false;
     }
     position = json.find(':', position + key.size());
     if (position == std::string::npos) {
-        return fallback;
+        return false;
+    }
+    ++position;
+    while (position < json.size() && std::isspace(static_cast<unsigned char>(json[position]))) {
+        ++position;
+    }
+    return position < json.size() && json[position] == '{';
+}
+
+enum class IntFieldStatus {
+    Missing,
+    Valid,
+    Invalid,
+};
+
+IntFieldStatus intField(const std::string &json, const std::string &name, int &value)
+{
+    const std::string key = "\"" + name + "\"";
+    std::size_t position = json.find(key);
+    if (position == std::string::npos) {
+        return IntFieldStatus::Missing;
+    }
+    position = json.find(':', position + key.size());
+    if (position == std::string::npos) {
+        return IntFieldStatus::Invalid;
     }
     ++position;
     while (position < json.size() && std::isspace(static_cast<unsigned char>(json[position]))) {
         ++position;
     }
     std::size_t end = position;
-    if (end < json.size() && (json[end] == '-' || json[end] == '+')) {
+    if (end < json.size() && json[end] == '-') {
         ++end;
     }
+    const std::size_t digitsBegin = end;
     while (end < json.size() && std::isdigit(static_cast<unsigned char>(json[end]))) {
         ++end;
     }
-    if (end == position) {
-        return fallback;
+    if (end == digitsBegin) {
+        return IntFieldStatus::Invalid;
+    }
+    std::size_t delimiter = end;
+    while (delimiter < json.size()
+           && std::isspace(static_cast<unsigned char>(json[delimiter]))) {
+        ++delimiter;
+    }
+    if (delimiter < json.size() && json[delimiter] != ',' && json[delimiter] != '}'
+        && json[delimiter] != ']') {
+        return IntFieldStatus::Invalid;
     }
     try {
-        return std::stoi(json.substr(position, end - position));
+        value = std::stoi(json.substr(position, end - position));
+        return IntFieldStatus::Valid;
     } catch (...) {
-        return fallback;
+        return IntFieldStatus::Invalid;
     }
+}
+
+bool optionalIntField(const std::string &json, const std::string &name,
+                      int fallback, int &value)
+{
+    value = fallback;
+    const auto status = intField(json, name, value);
+    return status != IntFieldStatus::Invalid;
 }
 
 std::string readLine(const std::string &path)
@@ -215,12 +269,23 @@ std::string AgentService::handleRequest(const std::string &request)
 {
     const std::string requestId = stringField(request, "request_id");
     const std::string method = stringField(request, "method");
-    if (requestId.empty() || method.empty()) {
-        return errorResponse(requestId, "invalid_request", "request_id and method are required");
+    if (requestId.empty() || method.empty() || !objectField(request, "params")) {
+        return errorResponse(requestId, "invalid_request",
+                             "request_id, method and params object are required");
+    }
+    int protocol = 0;
+    const auto protocolStatus = intField(request, "protocol", protocol);
+    if (protocolStatus != IntFieldStatus::Valid) {
+        return errorResponse(requestId, "invalid_request", "protocol must be an integer");
+    }
+    if (protocol != AgentProtocolVersion) {
+        return errorResponse(requestId, "unsupported_protocol",
+                             "only protocol version 1 is supported");
     }
     if (method == "session.hello") {
         return resultResponse(requestId,
-            "{\"agent\":\"testtools-agent\",\"agent_version\":\"0.2.1\","
+            std::string("{\"agent\":\"testtools-agent\",\"agent_version\":\"")
+            + AgentVersion + "\","
             "\"protocol_min\":1,\"protocol_max\":1,\"platform\":\""
             + platformName() + "\"}");
     }
@@ -272,14 +337,33 @@ std::string AgentService::serialOpenResponse(const std::string &requestId,
 {
     serialdemo::SerialConfig config;
     config.endpoint = stringField(request, "endpoint");
-    config.baudRate = intField(request, "baud_rate", 115200);
-    config.dataBits = intField(request, "data_bits", 8);
+    int stopBits = 1;
+    if (config.endpoint.empty()) {
+        return errorResponse(requestId, "invalid_params", "endpoint is required");
+    }
+    if (!optionalIntField(request, "baud_rate", 115200, config.baudRate)
+        || !optionalIntField(request, "data_bits", 8, config.dataBits)
+        || !optionalIntField(request, "stop_bits", 1, stopBits)) {
+        return errorResponse(requestId, "invalid_params",
+                             "baud_rate, data_bits and stop_bits must be integers");
+    }
+    if (config.baudRate <= 0 || config.dataBits < 5 || config.dataBits > 8
+        || (stopBits != 1 && stopBits != 2)) {
+        return errorResponse(requestId, "invalid_params",
+                             "serial framing parameters are out of range");
+    }
     const std::string parity = stringField(request, "parity");
+    if (!parity.empty() && parity != "none" && parity != "odd" && parity != "even") {
+        return errorResponse(requestId, "invalid_params", "unsupported parity value");
+    }
     config.parity = parity == "odd" ? serialdemo::Parity::Odd
                     : parity == "even" ? serialdemo::Parity::Even : serialdemo::Parity::None;
-    config.stopBits = intField(request, "stop_bits", 1) == 2
+    config.stopBits = stopBits == 2
                         ? serialdemo::StopBits::Two : serialdemo::StopBits::One;
     const std::string flow = stringField(request, "flow_control");
+    if (!flow.empty() && flow != "none" && flow != "hardware" && flow != "software") {
+        return errorResponse(requestId, "invalid_params", "unsupported flow_control value");
+    }
     config.flowControl = flow == "hardware" ? serialdemo::FlowControl::Hardware
                          : flow == "software" ? serialdemo::FlowControl::Software
                                                : serialdemo::FlowControl::None;

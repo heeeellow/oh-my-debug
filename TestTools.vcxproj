@@ -114,12 +114,16 @@
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\application\device_discovery.cpp" />
     <ClCompile Include="src\application\agent_deployment.cpp" />
+    <ClCompile Include="src\application\background_task_group.cpp" />
+    <ClCompile Include="src\application\serial_transport_service.cpp" />
+    <ClCompile Include="src\application\serial_workspace_state.cpp" />
     <ClCompile Include="src\core\agent_client.cpp" />
     <ClCompile Include="src\core\agent_protocol.cpp" />
     <ClCompile Include="src\core\agent_serial_transport.cpp" />
     <ClCompile Include="src\core\async_serial_sender.cpp" />
     <ClCompile Include="src\core\adb_transport.cpp" />
     <ClCompile Include="src\core\codec.cpp" />
+    <ClCompile Include="src\core\command_line.cpp" />
     <ClCompile Include="src\core\cserialport_transport.cpp" />
     <ClCompile Include="src\core\process_runner.cpp" />
     <ClCompile Include="src\core\serial_test_engine.cpp" />
@@ -140,12 +144,17 @@
   <ItemGroup>
     <ClInclude Include="src\application\device_discovery.h" />
     <ClInclude Include="src\application\agent_deployment.h" />
+    <ClInclude Include="src\application\background_task_group.h" />
+    <ClInclude Include="src\application\serial_transport_service.h" />
+    <ClInclude Include="src\application\serial_workspace_state.h" />
     <ClInclude Include="src\core\agent_client.h" />
     <ClInclude Include="src\core\agent_protocol.h" />
+    <ClInclude Include="src\core\agent_version.h" />
     <ClInclude Include="src\core\agent_serial_transport.h" />
     <ClInclude Include="src\core\async_serial_sender.h" />
     <ClInclude Include="src\core\adb_transport.h" />
     <ClInclude Include="src\core\codec.h" />
+    <ClInclude Include="src\core\command_line.h" />
     <ClInclude Include="src\core\cserialport_transport.h" />
     <ClInclude Include="src\core\process_runner.h" />
     <ClInclude Include="src\core\serial_transport.h" />

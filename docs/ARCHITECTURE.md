@@ -1,99 +1,125 @@
 # TestTools 总体架构
 
-## 1. 目标与边界
+[返回项目首页](../README.md)
 
-TestTools 从串口助手演进为设备中心的调试与测试工作台。架构必须同时满足：
+## 1. 架构目标
 
-- Qt 只进入表现层和线程桥接层；协议、任务模型、设备操作和结果模型使用标准 C++。
-- ADB 是可替换的连接与部署通道，不承载业务语义。
-- 板端操作由无 Qt 依赖的 Agent 统一提供，Windows 端不拼接任意 shell 命令实现测试项。
-- 简单测试可以声明式接入，复杂测试可以提供专用界面。
-- 长任务支持进度、取消、断线恢复、板端重启恢复和产物下载。
-- 当前串口功能在演进过程中保持可用。
+TestTools 从串口助手演进为设备中心的调试与测试工作台。架构需要同时保证：
 
-当前阶段已落地最小真实板端 Agent 和托管串口流；仍不引入大型 UI 框架、不提供开放网络监听，
-也不一次性迁移所有测试项。
+- Qt 限于 Windows 表现层和 GUI 线程桥接，核心逻辑可在没有 Qt 的环境复用和测试。
+- ADB 是可替换的发现、部署和隧道通道，不承载设备能力的业务语义。
+- 板端操作由无 Qt Agent 统一提供，不以 Windows 端拼接任意 shell 命令实现测试项。
+- 简单测试可以使用通用运行页，串口、音频、图像等复杂能力可以绑定专用界面。
+- 长任务最终支持进度、取消、资源互斥、断线恢复、板端重启恢复和产物下载。
+- 演进过程中保持已落地串口能力可用，并通过明确兼容边界逐步替换临时实现。
 
-## 2. 分层与依赖方向
+产品范围见 [`PRODUCT.md`](PRODUCT.md)，当前实现与架构债务见 [`STATUS.md`](STATUS.md)。
+
+## 2. 依赖方向
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
 │ Qt Presentation                                             │
-│ MainWindow / Navigation / Feature Pages / Dialogs           │
+│ MainWindow / Pages / Dialogs / Qt thread dispatch           │
 └──────────────────────────────┬───────────────────────────────┘
-                               │ view models and adapters
+                               │ user intent + view state
 ┌──────────────────────────────▼───────────────────────────────┐
 │ Application                                                  │
-│ DeviceSession / FeatureRegistry / JobCoordinator / History   │
+│ Device session / serial use cases / jobs / history          │
 └──────────────────────────────┬───────────────────────────────┘
-                               │ interfaces and value objects
+                               │ interfaces + value objects
 ┌──────────────────────────────▼───────────────────────────────┐
 │ Core                                                         │
-│ BoardClient / Protocol / Job Model / Resource Model          │
-└──────────────┬──────────────────────┬────────────────────────┘
-               │                      │
-┌──────────────▼────────────┐ ┌───────▼────────────────────────┐
-│ Host Transports           │ │ Local Device Adapters          │
-│ ADB tunnel / TCP / USB    │ │ CSerialPort / process runner   │
-└──────────────┬────────────┘ └────────────────────────────────┘
-               │
+│ Protocol / codec / serial model / queues / test engine       │
+└──────────────┬───────────────────────────┬───────────────────┘
+               │                           │
+┌──────────────▼──────────────┐ ┌──────────▼──────────────────┐
+│ Host transports/adapters   │ │ Local device adapters       │
+│ ADB / TCP / Agent client   │ │ Windows COM / process       │
+└──────────────┬──────────────┘ └─────────────────────────────┘
+               │ loopback tunnel
 ┌──────────────▼───────────────────────────────────────────────┐
-│ Board Agent, no Qt                                          │
-│ Session / Capability / Job / Resource / Artifact managers   │
+│ Board Agent, standard C++17 + platform APIs                 │
+│ session / capability / resource / job / artifact managers  │
 ├──────────────────────────────────────────────────────────────┤
-│ Test runners: serial, DDR, storage, audio, network, GPIO...  │
+│ serial and future DDR/storage/audio/network/GPIO runners    │
 ├──────────────────────────────────────────────────────────────┤
-│ Android/Linux platform adapters                              │
+│ Android / Linux platform adapters                           │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-依赖只能向下。`src/core/` 和 `src/application/` 不得出现 `QString`、`QByteArray`、`QObject`、
-Qt 容器或 Qt 线程类型。Qt 回调通过 `src/ui/` 投递到 GUI 线程。
+依赖只能向下。`src/core/`、`src/application/` 和 `src/agent/` 不得出现 `QString`、`QByteArray`、
+`QObject`、Qt 容器或 Qt 线程类型。UI 可以依赖 core/application 接口，反向依赖不允许。
 
-## 3. Windows 端职责
+## 3. 源码所有权映射
 
-### 3.1 Presentation
+架构图包含稳定职责和演进目标，不能把目标类名写成当前事实。源码所有权按以下路径划分；具体完成度
+和开放债务只在 [`STATUS.md`](STATUS.md) 维护：
 
-- 显示当前设备、连接状态、Agent 兼容性和全局风险提示。
-- 按用户任务组织功能页，不把底层命令暴露为主要操作路径。
-- 将领域状态映射为 Qt 控件，不拥有测试业务状态机。
-- 为串口、音频波形、摄像头等复杂能力提供专用页面。
+| 层 | 源码所有权 | 边界 |
+| --- | --- | --- |
+| Presentation | `src/ui/main_window.*`、`src/ui/pages/serial_workspace.*`、`src/ui/theme.*` | Qt 控件、文案和 GUI 线程映射 |
+| Application | `src/application/` | 设备发现、部署、串口工作区状态、传输创建边界和后台任务所有权 |
+| Core | `src/core/` 中的协议、值对象、接口、编解码、发送与测试逻辑 | 标准 C++，不得依赖 Qt |
+| Host adapters | 当前位于 `src/core/` 的串口、Agent、ADB 和进程适配器 | 通过接口或 application 服务进入 UI；后续迁目录不改变行为 |
+| Board Agent | `src/agent/agent_service.*`、`serial_bridge.*` | 固定能力、参数校验和板端资源访问 |
+| 通用任务/历史/产物 | 规划中的 application/core 职责 | 不为匹配架构图创建空类型 |
 
-### 3.2 Application
+`DeviceSession`、`FeatureRegistry`、`JobCoordinator`、`HistoryStore` 等名称只表示规划中的职责，
+不是已经存在的类。新增代码应优先按职责补齐，不为匹配文档一次性创建空类型。
 
-- `DeviceSession`：一个物理板卡的一次逻辑会话。
-- `FeatureRegistry`：合并 Agent 声明能力和上位机已安装的专用页面。
-- `JobCoordinator`：发起、取消、恢复任务，并将事件归一化。
-- `HistoryStore`：保存运行参数、板卡信息、结果摘要和产物索引。
+## 4. Windows 端职责
 
-### 3.3 Core
+### 4.1 Presentation
 
-- 只定义值对象、接口、协议帧和可单元测试的状态转换。
-- 错误使用稳定错误码和面向人的消息，不用日志文本推断状态。
-- 所有外部输入均有长度、枚举和版本校验。
+- 显示当前设备、连接状态、Agent 兼容性和全局风险。
+- 把用户意图转换为 application 用例，不拥有协议和测试业务状态机。
+- 将异步领域状态映射到 Qt 控件，并只在 GUI 线程更新界面。
+- 为复杂能力提供专用页面；界面模式不应通过隐式端口名称推断。
 
-## 4. 板端 Agent
+页面拆分必须先提取状态模型和用例，再按单串口与双端调试拆分视图；不能只把同一逻辑移动到更多
+QWidget 类中。阶段完成度和剩余提取项见 `STATUS.md`。
 
-Agent 建议使用 C++17 与 POSIX API 实现，不依赖 Qt。它默认只监听 `127.0.0.1`，Windows 端
-通过 ADB 动态端口转发连接。允许直接 TCP 时必须由显式配置开启，并在产品层补充认证和网络策略。
+### 4.2 Application
 
-Agent 内部组件：
+Application 层负责跨接口用例和生命周期，目标职责包括：
 
-- `SessionManager`：协议协商、心跳、会话恢复。
-- `CapabilityRegistry`：列出能力、参数模式、风险、资源和版本。
-- `JobManager`：任务状态机、超时、取消、结果归一化。
-- `ResourceManager`：裁决 UART、音频、摄像头、存储写入等独占资源。
-- `RunnerSupervisor`：以独立进程运行测试，管理进程组和输出限流。
+- 设备会话：把一个物理设备、ADB 状态、Agent 状态和能力快照关联起来。
+- 串口会话：连接代次、端点配置、计划发送状态和断线收敛。
+- 任务协调：启动、取消、恢复、进度和资源冲突的上位机映射。
+- 运行历史：保存参数、设备快照、结果摘要和产物索引。
+
+该层只能依赖 core 接口和值对象，不包含 Qt 或具体 ADB 命令。
+
+### 4.3 Core
+
+- 定义稳定值对象、传输接口、协议帧和可独立测试的状态转换。
+- 错误使用稳定分类和面向人的上下文，不用日志文本前缀推断状态。
+- 所有外部输入均校验长度、枚举、路径、版本和数值范围。
+- 队列有容量、关闭和背压语义；不能把无限缓存当作可靠性。
+
+## 5. 板端 Agent
+
+Agent 使用 C++17 与平台 API 实现，不依赖 Qt。开发期默认只监听板端 `127.0.0.1`，Windows 通过
+ADB 动态端口转发连接。直接 TCP 必须由显式产品配置开启，并先补充认证、授权和网络暴露策略。
+
+Agent v1 的最小能力族包含会话握手、能力查询、系统信息、串口枚举和串口托管；实际开放范围见
+`STATUS.md`。扩展能力时按需要逐步加入：
+
+- `SessionManager`：协议协商、心跳和会话恢复。
+- `CapabilityRegistry`：稳定能力 ID、参数、风险、资源和版本。
+- `JobManager`：任务状态、超时、取消和结果归一化。
+- `ResourceManager`：UART、音频、摄像头和存储写入等资源裁决。
+- `RunnerSupervisor`：隔离测试进程、管理进程组和输出限流。
 - `ArtifactStore`：管理短期日志、报告、图片和校验信息。
-- `PlatformAdapter`：隔离 Android、Buildroot 和其他 Linux 差异。
+- `PlatformAdapter`：隔离 Android、Buildroot 和通用 Linux 差异。
 
-Agent 不提供任意 shell RPC。每个能力必须有稳定 ID，并映射到允许的内置实现或可执行程序。
+Agent 不提供任意 shell RPC。每项能力必须映射到受控实现或允许的测试程序，并声明参数、资源、
+风险、超时和取消能力。
 
-## 5. 协议
+## 6. 协议与数据通道
 
-### 5.1 帧格式
-
-控制连接使用 TCP：
+控制连接使用长度前缀帧：
 
 ```text
 4-byte big-endian payload length
@@ -101,124 +127,54 @@ Agent 不提供任意 shell RPC。每个能力必须有稳定 ID，并映射到�
 payload
 ```
 
-`frame kind` 第一阶段包含 JSON 控制帧和二进制数据帧。控制 JSON 使用 UTF-8。长度前缀解决
-TCP 粘包、拆包和固定缓冲区浪费问题。
+控制 JSON 使用 UTF-8，请求至少包含协议版本、请求 ID、方法和参数。协议和串口数据通道定义以
+[`AGENT_PROTOCOL_V1.md`](AGENT_PROTOCOL_V1.md) 为准。
 
-控制请求至少包含：
+串口等持续数据不与控制 JSON 混流：`serial.open` 返回只监听回环地址的临时数据端口，上位机为其
+建立独立 ADB 转发。未来任务事件和产物若共享控制连接，必须使用通道 ID、有界队列和公平调度；
+结果与控制事件不能因日志流量被静默丢弃。
 
-```json
-{
-  "protocol": 1,
-  "request_id": "host-generated-id",
-  "method": "job.start",
-  "params": {}
-}
-```
+ADB `forward dev:/dev/...` 不属于产品串口路径。目标 Android 上的实机证据表明它会在连接后立即
+EOF，即使节点权限满足也不能形成稳定数据流；产品统一通过 Agent 托管串口。
 
-长任务使用独立 `job_id`。响应、事件和二进制流都携带对应标识，不以连接本身作为任务所有权。
+## 7. 任务、资源与能力
 
-### 5.2 最小方法集
-
-- `session.hello`
-- `capability.list`
-- `job.start`
-- `job.status`
-- `job.cancel`
-- `artifact.list`
-- `artifact.open`
-- `serial.open`、`serial.close`
-
-Agent 可主动发送 `job.started`、`job.progress`、`job.log`、`job.completed`、`job.failed`、
-`device.restarting` 等事件。
-
-### 5.3 流量隔离
-
-控制事件与串口/文件数据共享连接时必须使用独立通道 ID、每通道有界队列和公平调度，避免持续串口
-数据阻塞取消与心跳。超过阈值时优先丢弃可重建的调试日志，并明确上报丢弃计数；任务结果和控制
-事件不可静默丢弃。大产物可升级为 Agent 分配的临时数据连接。
-
-## 6. 能力描述与界面生成
-
-能力描述包含：
-
-- 稳定 ID、显示名称、版本和类别；
-- 参数类型、范围、默认值和帮助文本；
-- 风险等级、是否破坏数据、是否触发重启；
-- 所需权限和独占资源；
-- 默认超时、是否支持取消和恢复；
-- 结果字段和可下载产物类型。
-
-简单参数型测试使用通用运行页。串口、音频、摄像头、曲线监控等能力通过相同 ID 绑定专用页面。
-能力描述负责数据合同，不试图用一个通用表单覆盖所有交互。
-
-## 7. 任务与资源模型
-
-任务状态：
+目标任务状态模型：
 
 ```text
 created -> queued -> running -> succeeded
-                         \----> failed
-             \---------------> cancelling -> cancelled
-             \---------------> interrupted -> recovering
+                         |----> failed
+             |----------> cancelling -> cancelled
+             |----------> interrupted -> recovering
 ```
 
-板端 `ResourceManager` 是资源冲突的唯一裁决者；Windows 端预检查只用于提前提示。资源租约绑定
-`job_id`，Agent 异常退出后由启动恢复流程清理或重建。
+任务 ID 独立于 TCP 连接。板端资源管理器是资源冲突的唯一裁决者，Windows 预检查只负责提前提示。
+新增并发测试项前必须具备通用任务和资源管理；当前支持范围见 `STATUS.md`。
 
-产品界面已移除 `adb forward dev:/dev/...` 直连模式。现场验证表明目标 Android adbd 会在建立
-设备节点转发后立即 EOF，即使节点权限足够也无法形成稳定串口流。板端串口统一通过 Agent 的
-`serial.open` 和独立原始数据端口访问；旧 ADB 传输类只保留为诊断兼容代码。
+能力描述至少包含稳定 ID、显示名称、版本、参数约束、风险、权限、独占资源、默认超时、取消/恢复
+支持、结果字段和产物类型。简单参数测试可使用通用运行页；串口、波形和图像通过同一能力 ID 绑定
+专用页面，不能用自动表单覆盖所有交互。
 
 ## 8. 线程与生命周期
 
-- GUI 线程只更新界面，不执行 ADB、网络、串口阻塞操作。
-- 每个长连接由明确拥有者管理；关闭顺序为停止新请求、取消读写、等待工作线程、释放回调。
-- 后台回调不能捕获裸 Qt 控件指针；Qt 适配器使用受控生命周期并投递到 GUI 线程。
-- 所有队列有容量和关闭语义，析构不能依赖无限等待。
+- GUI 线程只处理界面和轻量状态映射，不执行阻塞式 ADB、网络或串口操作。
+- 每个长连接和线程有明确所有者；关闭顺序为停止新请求、取消读写、等待工作线程、释放回调。
+- 回调携带会话或连接代次，过期结果不得覆盖新状态。
+- 后台回调不能捕获无生命周期保护的 Qt 控件指针。
+- 所有队列和等待都有容量或超时，析构不能依赖无限等待。
 
-## 9. 界面架构
+## 9. 部署与安全
 
-主窗口采用稳定工作台布局：
+- 开发期：上位机探测 Agent，必要时通过 ADB 推送到受控临时目录并启动。
+- 稳定期：Android 使用受控 init/service 集成，Buildroot 使用包配置安装。
+- 上位机与 Agent 独立版本，握手协商协议范围和能力版本。
+- 升级失败不能破坏 ADB；需要保留版本查询、产物校验和回退入口。
+- 当前安全依赖已有 ADB 授权和回环监听；网络认证、包签名和量产权限仍是开放项。
 
-- 顶部设备栏：设备选择、ADB/Agent 状态、刷新和主要连接动作。
-- 左侧功能导航：概览、串口、测试中心、运行记录、设置。
-- 中央工作区：当前功能的主要操作。
-- 底部活动面板：当前任务、结构化事件和诊断日志，可折叠但不默认占据主要空间。
+## 10. 演进规则
 
-第一阶段不开放任意拖拽布局。调试工具的默认布局应可预测，避免不同使用者打开后界面状态不可复现。
-当波形、图像、多个监控器同时显示成为真实需求时，再引入 Docking。
-
-## 10. 部署策略
-
-- 开发期：上位机检测 Agent，必要时通过 ADB 推送到临时目录并按需启动。
-- 稳定期：Android 通过受控 init/service 集成，Buildroot 通过包配置安装。
-- 上位机与 Agent 独立版本，连接时协商协议范围和能力版本。
-- Agent 升级失败不得影响 ADB 本身；保留版本查询、校验和回退路径。
-
-## 11. 阶段计划
-
-1. 已完成：工作台外壳、串口页面拆分和轻量视觉基线。
-2. 已完成：纯 C++ 协议、真实 Android Agent 部署、`system.info` 与 `serial.stream`。
-3. 已完成：板端串口迁移到 Agent 原始数据通道，计划发送与可靠性压测在交互上分离。
-4. 下一步：多串口会话表、资源锁、心跳、取消和断线恢复。
-5. 随后：首批真实测试项、历史、产物、测试方案和批量执行。
-
-## 12. 架构自审结论
-
-本轮在编码前检查了以下风险，并已形成约束：
-
-| 风险 | 原始问题 | 设计结论 |
-| --- | --- | --- |
-| Qt 渗透 | Qt 类型容易进入协议和业务模型 | 设立单向依赖和 `ui/adapters` 边界 |
-| 控制饿死 | 串口或产物流量可能阻塞取消、心跳 | 通道 ID、有界队列、公平调度；大产物可分连接 |
-| 断线丢任务 | TCP 断开不代表板端任务结束 | `job_id` 独立于连接，支持恢复查询 |
-| 资源冲突 | 多测试同时操作 UART/音频/存储 | Agent 作为唯一资源裁决者 |
-| 通用 UI 失控 | 自动表单无法覆盖串口、波形、图像 | 简单能力通用页，复杂能力专用页 |
-| 安全边界 | 任意 shell RPC 会扩大攻击面 | 只允许稳定能力 ID，不提供通用 shell 接口 |
-| 版本漂移 | 上位机与 Agent 不同步 | hello 协商协议范围与能力版本 |
-| 迁移回归 | 旧 adbd 设备转发会立即 EOF | Agent 原始数据端口替代产品直连；保留无发送保持测试 |
-| UI 可复现性 | 过早 Docking 导致布局不可预测 | 首阶段固定布局，真实多视图需求出现后再引入 |
-
-本阶段实机验证支持原分层：ADB 适合部署和转发，设备 I/O 语义应由 Agent 承担。当前主要架构债务
-是 Agent 仍只有单串口会话，且缺少心跳、认证、任务恢复和正式 Android service 集成；这些不会
-阻断单路 4G 模块 AT 调试，但在开放多测试并发前必须补齐。
+- 先定义用户任务和功能契约，再决定 Qt 页面、application 用例和 Agent 能力。
+- 先在 core/application 建立可测试状态，再连接 Qt；不得把新增业务状态继续堆入 QWidget。
+- 新 Agent 能力先定义固定协议和安全边界，再实现部署与界面。
+- 重大设计决定记录在 `docs/decisions/`；当前进度只写入 `STATUS.md`，历史证据写入 `DEVLOG.md`。
+- 当前优先级、验证和交付状态不得写入本架构文档，以免稳定规则与动态事实混合。

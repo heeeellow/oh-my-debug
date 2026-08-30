@@ -1,9 +1,10 @@
 #pragma once
 
+#include "application/background_task_group.h"
+#include "application/serial_workspace_state.h"
 #include "core/serial_transport.h"
 #include "core/serial_test_engine.h"
 #include "core/async_serial_sender.h"
-#include "core/agent_serial_transport.h"
 
 #include <QtCore/QString>
 #include <QtWidgets/QWidget>
@@ -12,15 +13,17 @@
 #include <cstdint>
 #include <memory>
 #include <string>
-#include <thread>
 #include <vector>
 
 class QCheckBox;
 class QComboBox;
+class QEvent;
+class QFrame;
 class QGroupBox;
 class QLabel;
 class QPlainTextEdit;
 class QPushButton;
+class QSplitter;
 class QSpinBox;
 class QTimer;
 class QWidget;
@@ -38,14 +41,19 @@ public:
     void refreshTargets();
     void prepareForShutdown();
     bool hasActiveConnections() const;
+    bool setWorkspaceModeForDiagnostics(const QString &modeName);
 
 signals:
     void busyChanged(bool busy);
     void activityChanged(const QString &message);
 
 private:
+    using WorkspaceMode = testtools::SerialWorkspaceMode;
+
     struct ChannelUi {
         QGroupBox *group = nullptr;
+        QLabel *badgeLabel = nullptr;
+        QLabel *titleLabel = nullptr;
         QComboBox *sourceCombo = nullptr;
         QComboBox *portCombo = nullptr;
         QComboBox *baudCombo = nullptr;
@@ -53,6 +61,8 @@ private:
         QComboBox *parityCombo = nullptr;
         QComboBox *stopBitsCombo = nullptr;
         QComboBox *flowControlCombo = nullptr;
+        QPushButton *advancedSettingsButton = nullptr;
+        QWidget *advancedSettingsArea = nullptr;
         QPushButton *connectButton = nullptr;
         QPlainTextEdit *receiveEdit = nullptr;
         QPlainTextEdit *sendEdit = nullptr;
@@ -64,6 +74,8 @@ private:
         QPushButton *autoSendButton = nullptr;
         QLabel *statusLabel = nullptr;
         QLabel *counterLabel = nullptr;
+        QLabel *sendShortcutHint = nullptr;
+        QWidget *manualSendArea = nullptr;
 
         std::unique_ptr<serialdemo::ISerialTransport> transport;
         serialdemo::AsyncSerialSender sender;
@@ -77,7 +89,6 @@ private:
         int autoIntervalMs = 1000;
         std::uint64_t autoTargetCount = 100;
         bool autoEcho = true;
-        bool lineEndingCustomized = false;
         std::uint64_t senderGeneration = 0;
     };
 
@@ -93,6 +104,10 @@ private:
 
     void buildUi();
     QWidget *buildChannelPanel(int index);
+    bool eventFilter(QObject *watched, QEvent *event) override;
+    void setWorkspaceMode(WorkspaceMode mode);
+    bool canSwitchWorkspaceMode(WorkspaceMode mode);
+    void applyWorkspaceMode();
     void refreshAgentPorts();
     void applyPorts(int index);
     void connectChannel(int index);
@@ -104,9 +119,11 @@ private:
     void updateGlobalControls();
     void setChannelStatus(int index, const QString &message, bool error = false);
     void updateRouteSummary();
+    QString channelDisplayName(int index) const;
     bool channelUsesAgent(int index) const;
     bool selectedAgentIsOnline() const;
     bool validateChannel(int index, QString &error) const;
+    testtools::SerialEndpointSelection endpointSelection(int index) const;
     serialdemo::SerialConfig channelConfig(int index) const;
     serialdemo::ByteBuffer manualPayload(int index, bool &ok);
     bool sendBytes(int index, const serialdemo::ByteBuffer &data, bool echo = true);
@@ -133,15 +150,19 @@ private:
     QLabel *testResultLabel_ = nullptr;
     QLabel *stressResultLabel_ = nullptr;
     QLabel *routeLabel_ = nullptr;
+    QLabel *modeDescriptionLabel_ = nullptr;
+    QFrame *linkBar_ = nullptr;
+    QSplitter *channelSplitter_ = nullptr;
     QTimer *scheduleTimer_ = nullptr;
 
+    std::array<QPushButton *, 2> modeButtons_{};
     std::array<ChannelUi, 2> channels_;
     serialdemo::AdbDevice currentAdbDevice_;
     std::vector<serialdemo::PortInfo> localPorts_;
     std::vector<serialdemo::AgentSerialPort> agentPorts_;
     std::string agentAdbSerial_;
     std::uint16_t agentControlPort_ = 0;
-    std::vector<std::thread> scanThreads_;
+    testtools::BackgroundTaskGroup scanTasks_;
     bool scanning_ = false;
     bool aToBPassed_ = false;
     bool bToAPassed_ = false;
@@ -149,6 +170,7 @@ private:
     bool stressTestRunning_ = false;
     bool stressAwaitingReceive_ = false;
     bool shuttingDown_ = false;
+    testtools::SerialWorkspaceState workspaceState_;
     std::array<StressDirection, 2> stressDirections_;
     std::uint64_t testGeneration_ = 0;
     std::uint64_t stressGeneration_ = 0;

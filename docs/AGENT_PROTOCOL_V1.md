@@ -1,18 +1,21 @@
 # TestTools Agent 协议 v1
 
+[返回项目首页](../README.md)
+
 ## 当前实现
 
 Agent 是运行在安卓或 Linux 板端的无 Qt C++17 服务。上位机通过 ADB 把它部署到
 `/data/local/tmp/testtools-agent/`，Agent 只监听板端 `127.0.0.1:27183`，控制和数据端口都通过
 ADB 转发到 Windows。本机假 Agent 只保留为协议测试夹具，不出现在产品界面，也不参与正常构建。
 
-当前 Agent 版本为 `0.2.1`，实现：
+当前程序版本和验证边界见 [`STATUS.md`](STATUS.md)。协议 v1 的仓库实现包括：
 
 - `session.hello`：协议范围、Agent 版本和平台。
 - `capability.list`：`system.info` 与 `serial.stream`。
 - `system.info`：系统、内核、架构、板型、系统版本和有效 UID。
 - `serial.list`：设备节点、USB 接口名称、读写权限和占用进程。
 - `serial.open` / `serial.close`：由 Agent 独占打开串口并分配临时原始数据端口。
+- 强制协议版本、请求 ID、方法和串口参数类型、范围与枚举校验。
 
 ## 传输帧
 
@@ -24,6 +27,9 @@ payload                    当前最大 1 MiB
 
 解码器支持 TCP 拆包和粘包，拒绝零长度、超限长度和未知帧类型。JSON 请求包含 `protocol`、
 `request_id`、`method` 和 `params`，响应回显 `request_id`。
+
+实现必须拒绝缺失或不支持的协议版本、错误字段类型、越界串口格式和未知枚举，不能静默回退为
+另一组串口参数。协议解析保持有界输入；完整 JSON 结构化解析属于后续协议加固项。
 
 ## 串口数据通道
 

@@ -1,3 +1,4 @@
+#include "core/command_line.h"
 #include "core/agent_protocol.h"
 
 #include <asio/ip/tcp.hpp>
@@ -62,12 +63,10 @@ int main(int argc, char **argv)
     std::uint16_t port = 27183;
     for (int index = 1; index + 1 < argc; ++index) {
         if (std::string(argv[index]) == "--port") {
-            const int parsed = std::stoi(argv[++index]);
-            if (parsed < 0 || parsed > 65535) {
+            if (!testtools::parseTcpPort(argv[++index], port, true)) {
                 std::cerr << "invalid port\n";
                 return 2;
             }
-            port = static_cast<std::uint16_t>(parsed);
         }
     }
 

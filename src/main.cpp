@@ -1,5 +1,6 @@
 #include "ui/main_window.h"
 #include "diagnostics/self_test.h"
+#include "core/command_line.h"
 #include <QtCore/QStringList>
 #include <QtCore/QTimer>
 #include <QtGui/QPixmap>
@@ -14,6 +15,7 @@ int main(int argc, char *argv[])
     std::string snapshotPath;
     std::string initialPage;
     std::string initialSize;
+    std::string initialSerialMode;
     std::string agentSmokeHost;
     std::uint16_t agentSmokePort = 0;
     std::string adbSerialSmokeSerial;
@@ -38,13 +40,14 @@ int main(int argc, char *argv[])
         if (std::string_view(argv[index]) == "--ui-size" && index + 1 < argc) {
             initialSize = argv[++index];
         }
+        if (std::string_view(argv[index]) == "--ui-serial-mode" && index + 1 < argc) {
+            initialSerialMode = argv[++index];
+        }
         if (std::string_view(argv[index]) == "--agent-smoke" && index + 2 < argc) {
             agentSmokeHost = argv[++index];
-            const int port = std::stoi(argv[++index]);
-            if (port <= 0 || port > 65535) {
+            if (!testtools::parseTcpPort(argv[++index], agentSmokePort)) {
                 return 2;
             }
-            agentSmokePort = static_cast<std::uint16_t>(port);
         }
         if (std::string_view(argv[index]) == "--adb-serial-smoke" && index + 2 < argc) {
             adbSerialSmokeSerial = argv[++index];
@@ -52,11 +55,9 @@ int main(int argc, char *argv[])
         }
         if (std::string_view(argv[index]) == "--agent-serial-smoke" && index + 3 < argc) {
             agentSerialSmokeSerial = argv[++index];
-            const int port = std::stoi(argv[++index]);
-            if (port <= 0 || port > 65535) {
+            if (!testtools::parseTcpPort(argv[++index], agentSerialSmokePort)) {
                 return 2;
             }
-            agentSerialSmokePort = static_cast<std::uint16_t>(port);
             agentSerialSmokeEndpoint = argv[++index];
         }
         if (std::string_view(argv[index]) == "--agent-deploy-smoke" && index + 1 < argc) {
@@ -97,6 +98,10 @@ int main(int argc, char *argv[])
     MainWindow window;
     if (!initialPage.empty()) {
         window.navigateTo(QString::fromUtf8(initialPage));
+    }
+    if (!initialSerialMode.empty()
+        && !window.setSerialModeForDiagnostics(QString::fromUtf8(initialSerialMode))) {
+        return 2;
     }
     if (!initialSize.empty()) {
         const QStringList dimensions = QString::fromUtf8(initialSize).split(QLatin1Char('x'));

@@ -40,6 +40,14 @@ struct PortInfo {
     std::string hardwareId;
 };
 
+struct AgentSerialPort {
+    std::string endpoint;
+    std::string interfaceName;
+    std::string occupiedBy;
+    bool readable = false;
+    bool writable = false;
+};
+
 struct AdbDevice {
     std::string serial;
     std::string state;

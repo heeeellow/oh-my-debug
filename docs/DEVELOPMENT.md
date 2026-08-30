@@ -1,5 +1,7 @@
 # TestTools 开发手册
 
+[返回项目首页](../README.md)
+
 ## 1. 当前环境
 
 - Windows 10/11
@@ -32,6 +34,9 @@ build/             所有生成物，不提交 Git
 
 目录随代码实际出现创建，不提前放空目录。
 
+仓库根目录 `AGENTS.md` 是工具无关的接手入口；`docs/features/` 保存功能行为契约，
+`docs/decisions/` 只保存影响长期维护的重要决策，不为每次修改创建文档。
+
 ## 3. 强制边界
 
 - `src/core/`、`src/application/` 不得包含 Qt 头文件。
@@ -40,19 +45,28 @@ build/             所有生成物，不提交 Git
 - 设备节点、测试 ID 和外部参数必须校验。
 - 不提供任意 shell RPC。
 - 新增长任务必须定义超时、取消、资源占用和关闭行为。
+- UI 不直接包含 `agent_serial_transport.h` 或 `cserialport_transport.h`；具体适配器通过 application
+  服务创建。
+
+仓库使用 `.editorconfig`、`.gitattributes` 和 `.clang-format` 固定 UTF-8、LF、缩进和 C++ 基础
+格式。格式化只作用于本次修改的第一方文件，不批量改写第三方依赖或无关用户改动。
 
 ## 4. 构建
 
 在已配置 Qt VS Tools 的 Visual Studio 中打开根目录 `TestTools.slnx`，选择 `x64` 和
 Debug/Release 构建。
 
-命令行构建时需要让 MSBuild 找到 QtMsBuild，并确保 Qt 安装已注册：
+命令行构建建议在 Visual Studio Developer PowerShell 中运行，并确保 Qt 安装已注册。不要把个人
+账户目录写入共享脚本；当前机器可使用：
 
 ```powershell
-& 'C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe' `
-  '.\TestTools.vcxproj' /m /p:Configuration=Release /p:Platform=x64 `
-  /p:QtMsBuild='C:\Users\26613\AppData\Local\QtMsBuild'
+$qtMsBuild = Join-Path $env:LOCALAPPDATA 'QtMsBuild'
+msbuild '.\TestTools.vcxproj' /m /p:Configuration=Release /p:Platform=x64 `
+  /p:QtMsBuild="$qtMsBuild"
 ```
+
+如果 Developer PowerShell 中找不到 `msbuild`，应通过 Visual Studio Installer 或 `vswhere` 定位
+实际安装，不在项目文档中假定固定版本号和安装盘符。
 
 Visual Studio 构建主程序时，如果能从 `TestToolsNdkRoot`、`ANDROID_NDK_ROOT`、
 `ANDROID_NDK_HOME` 或本机 Android SDK 目录找到 NDK，会自动构建 Agent 并复制到与主程序相同的
@@ -70,7 +84,25 @@ Debug/Release 运行目录。也可单独运行仓库脚本；以当前 `armeabi
 
 ## 5. 验证层级
 
+日常修改先运行统一静态入口：
+
+```powershell
+.\scripts\check-baseline.ps1
+```
+
+交付前可由该入口定位 MSBuild，构建 Debug/Release，并运行无设备依赖的 Agent 协议契约测试：
+
+```powershell
+.\scripts\check-baseline.ps1 -Build -Configuration All
+```
+
+`-RunSelfTest` 会执行需要在线 ADB 设备的安全自检，不应在无设备环境中默认启用。构建目标正在运行
+时链接器无法覆盖程序，应先正常关闭 TestTools，而不是强制终止未知用户进程。
+
 - 核心静态检查：依赖方向、输入校验、线程关闭和错误边界。
+- Core/Application 主机契约测试：由 `tests/CMakeLists.txt` 构建，不依赖 Qt、ADB 或串口设备，覆盖
+  编解码、发送计划、异步队列、工作区状态、资源冲突和后台任务所有权。
+- Agent 主机契约测试：由 CTest 验证协议版本、字段类型、枚举和范围拒绝路径，不访问真实设备。
 - `--self-test`：编码、异步发送队列、串口可靠性帧、Agent 帧、ADB 枚举和安全转发冒烟检查。
 - `--agent-smoke <host> <port>`：验证真实或测试 Agent 的 hello 与能力发现。
 - `--agent-deploy-smoke <adb-serial>`：执行真实 ABI 识别、部署、启动、控制转发、`system.info`
@@ -82,26 +114,42 @@ Debug/Release 运行目录。也可单独运行仓库脚本；以当前 `armeabi
   5 秒，验证数据通道不会立即 EOF；不发送任何字节。
 - `--adb-serial-smoke` 仅保留用于复现旧固件 ADB 设备节点转发问题，不是产品串口路径。
 - `--ui-snapshot <png>`：保存概览页快照；可加 `--ui-page serial`、`tests`、`history`
-  或 `settings` 选择待验收页面，并用 `--ui-size 1366x768` 指定逻辑窗口尺寸。
-- UI 快照：检查主要分辨率下的裁切、重叠和状态层级。
+  或 `settings` 选择待验收页面，并用 `--ui-size 1366x768` 指定逻辑窗口尺寸。串口页可再加
+  `--ui-serial-mode single|dual` 验收两种调试方式；可靠性压测位于双端调试中。
+- UI 快照：检查主要分辨率和 DPI 下的裁切、重叠、文字清晰度、状态层级和主动作。
 - 实机验证：串口连接、收发、双向验证和异常断开。
 - Agent 阶段：协议单元测试、真实板端部署、能力枚举、稳定保持，再进行已知安全指令的收发测试。
 
-构建通过不等于实机通过；验证记录写入 `DEVLOG.md`。
+构建通过不等于实机通过。当前验证摘要更新到 `STATUS.md`；只有会影响后续判断的里程碑和决定性
+证据才写入 `DEVLOG.md`，避免把每次命令输出变成永久文档。
 
 ## 6. 新增功能
 
-1. 先在架构中确认能力属于上位机、Agent 还是测试执行程序。
-2. 定义稳定能力 ID、参数、结果、资源和风险。
-3. 为简单能力使用通用页；复杂交互再创建专用页面。
-4. 核心逻辑先通过非 Qt 测试，再连接 Qt 适配器。
-5. 验证取消、超时、断线和退出，不只验证成功路径。
+1. 在 `PRODUCT.md` 或对应 `features/` 契约中确认用户任务、非目标、状态和验收条件。
+2. 在架构中确认能力属于 Qt UI、application、core、传输适配器、Agent 或测试执行程序。
+3. 板端能力定义稳定 ID、参数、结果、资源、风险、超时和取消语义。
+4. 核心状态和数据转换先通过无 Qt 测试，再连接 Qt 适配器。
+5. 简单参数能力使用通用页；复杂交互只有在真实需求出现时创建专用页面。
+6. 验证成功、取消、超时、断线、退出、权限和资源冲突，不用单一路径代替回归。
+7. 行为、架构或当前状态变化时，在同一工作批次更新对应权威文档。
 
 ## 7. 文档职责
 
-- `ARCHITECTURE.md`：稳定分层、协议和设计决策。
-- `UI_DESIGN.md`：用户任务、布局与交互规则。
-- `DEVELOPMENT.md`：如何构建、扩展和验证。
-- `DEVLOG.md`：实际完成的里程碑、证据和剩余边界。
+- `README.md`：稳定项目入口和按目的分流，不保存动态开放项。
+- `AGENTS.md`：开发接手顺序和不可破坏边界，不复制项目状态。
+- `STATUS.md`：当前源码、验证、交付、债务和下一阶段的唯一汇总。
+- `PRODUCT.md`：用户、任务、术语和稳定产品规则。
+- `features/*.md`：单项功能的行为、状态、分层归属和验收契约。
+- `ARCHITECTURE.md`：稳定分层、依赖、协议和演进边界，不保存阶段进度。
+- `UI_DESIGN.md`：视觉 token、布局、组件、文案和可访问性规则。
+- `decisions/*.md`：少量重要决策及取舍，不复制完整功能说明。
+- `DEVELOPMENT.md`：构建、扩展和验证方法。
+- `DEVLOG.md`：带日期的里程碑和决定性历史证据，不承担当前状态。
 
-设计变化先更新权威文档，不在多个文件复制同一份当前状态。
+同一事实只保留一个权威来源，其他文档保留必要上下文并链接。完成文档结构或链接变更后运行：
+
+```powershell
+.\scripts\check-project-docs.ps1
+```
+
+脚本通过只证明必要入口和相对链接有效，不能替代内容审查、构建或实机验证。

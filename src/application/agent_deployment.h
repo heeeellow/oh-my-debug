@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/agent_version.h"
+
 #include "core/serial_types.h"
 
 #include <cstdint>
@@ -31,7 +33,7 @@ public:
     bool stopRemote(const std::string &serial, std::string &error) const;
 
     static constexpr std::uint16_t ControlPort = 27183;
-    static constexpr const char *RequiredAgentVersion = "0.2.1";
+    static constexpr const char *RequiredAgentVersion = AgentVersion;
     static constexpr const char *RemoteDirectory = "/data/local/tmp/testtools-agent";
     static constexpr const char *RemoteBinary = "/data/local/tmp/testtools-agent/testtools-agent";
 };

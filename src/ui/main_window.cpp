@@ -149,18 +149,8 @@ void MainWindow::prepareForShutdown()
     if (!agentSerial.empty() && agentPort != 0) {
         testtools::AgentDeployment().removeForward(agentSerial, agentPort);
     }
-    for (auto &thread : scanThreads_) {
-        if (thread.joinable()) {
-            thread.join();
-        }
-    }
-    scanThreads_.clear();
-    for (auto &thread : agentThreads_) {
-        if (thread.joinable()) {
-            thread.join();
-        }
-    }
-    agentThreads_.clear();
+    scanTasks_.wait();
+    agentTasks_.wait();
     // A deployment may have completed after the event loop began shutting
     // down, before its queued result could transfer ownership of the port.
     // Remove only forwards targeting this Agent's fixed control port.
@@ -188,6 +178,11 @@ bool MainWindow::navigateTo(const QString &pageName)
         return false;
     }
     return true;
+}
+
+bool MainWindow::setSerialModeForDiagnostics(const QString &modeName)
+{
+    return serialWorkspace_ && serialWorkspace_->setWorkspaceModeForDiagnostics(modeName);
 }
 
 void MainWindow::buildUi()
@@ -349,7 +344,9 @@ QWidget *MainWindow::buildOverviewPage()
     quickLayout->setContentsMargins(18, 16, 18, 16);
     auto *quickTitle = new QLabel(QStringLiteral("快速开始"), quickStart);
     quickTitle->setObjectName(QStringLiteral("sectionLabel"));
-    auto *quickBody = new QLabel(QStringLiteral("现有串口能力已经可用。选择设备后进入串口工作台，配置两个端点并进行双向验证。"), quickStart);
+    auto *quickBody = new QLabel(
+        QStringLiteral("选择设备后进入串口工作台，默认连接一个串口即可调试；需要链路验证或压测时再进入双端调试。"),
+        quickStart);
     quickBody->setObjectName(QStringLiteral("cardBody"));
     quickBody->setWordWrap(true);
     auto *quickActions = new QHBoxLayout;
@@ -381,7 +378,7 @@ QWidget *MainWindow::buildSerialPage()
         updateDeviceControls();
     });
     return wrapPage(QStringLiteral("串口工作台"),
-                    QStringLiteral("配置两个端点，进行收发监视和双向链路验证"),
+                    QStringLiteral("连接一个串口开始调试，需要链路验证或压测时切换到双端调试"),
                     serialWorkspace_, false);
 }
 
@@ -394,7 +391,7 @@ QWidget *MainWindow::buildTestCenterPage()
     layout->setVerticalSpacing(12);
 
     layout->addWidget(makeFeatureCard(content, QStringLiteral("串口"), QStringLiteral("可用"),
-                                      QStringLiteral("Windows 本地串口与 ADB 板端设备节点收发、监视和双向验证。"), true), 0, 0);
+                                      QStringLiteral("Windows 本地串口与板端串口调试、双端验证和可靠性压测。"), true), 0, 0);
     layout->addWidget(makeFeatureCard(content, QStringLiteral("DDR 稳定性"), QStringLiteral("需要 Agent"),
                                       QStringLiteral("容量、固定/动态频率压力、休眠、自刷新和重启恢复。"), false), 0, 1);
     layout->addWidget(makeFeatureCard(content, QStringLiteral("存储"), QStringLiteral("需要 Agent"),
@@ -553,7 +550,7 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
     updateAgentControls();
 
     QPointer<MainWindow> guard(this);
-    agentThreads_.emplace_back([guard, serial, applicationDirectory, generation, allowDeploy] {
+    agentTasks_.start([guard, serial, applicationDirectory, generation, allowDeploy] {
         testtools::AgentDeployment deployment;
         const auto progress = [guard, generation, allowDeploy](const std::string &message) {
             QMetaObject::invokeMethod(guard, [guard, generation, message, allowDeploy] {
@@ -707,7 +704,7 @@ void MainWindow::stopSelectedAgent()
     agentConnecting_ = true;
     updateAgentControls();
     QPointer<MainWindow> guard(this);
-    agentThreads_.emplace_back([guard, serial, generation] {
+    agentTasks_.start([guard, serial, generation] {
         std::string error;
         const bool stopped = testtools::AgentDeployment().stopRemote(serial, error);
         QMetaObject::invokeMethod(guard, [guard, stopped, error = std::move(error), generation] {
@@ -813,7 +810,7 @@ void MainWindow::refreshDevices()
     updateDeviceControls();
 
     QPointer<MainWindow> guard(this);
-    scanThreads_.emplace_back([guard] {
+    scanTasks_.start([guard] {
         testtools::DeviceDiscovery discovery;
         auto result = discovery.scanAdbDevices();
         QMetaObject::invokeMethod(guard, [guard, result = std::move(result)]() mutable {
