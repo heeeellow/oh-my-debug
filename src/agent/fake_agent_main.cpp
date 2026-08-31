@@ -1,5 +1,5 @@
-#include "core/command_line.h"
-#include "core/agent_protocol.h"
+#include "core/support/command_line.h"
+#include "core/protocol/agent_protocol.h"
 
 #include <asio/ip/tcp.hpp>
 #include <asio/write.hpp>

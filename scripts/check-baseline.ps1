@@ -16,7 +16,7 @@ try {
         throw 'git diff --check failed'
     }
 
-    $sourceFiles = Get-ChildItem 'src\core', 'src\application', 'src\agent' `
+    $sourceFiles = Get-ChildItem 'src\core', 'src\application', 'src\adapters', 'src\agent' `
         -Recurse -File -Include '*.h', '*.cpp' |
         Where-Object { $_.FullName -notmatch '\\(out|obj|x64)\\' }
     $qtMatches = $sourceFiles | Select-String -Pattern `
@@ -27,11 +27,10 @@ try {
     }
 
     $uiFiles = Get-ChildItem 'src\ui' -Recurse -File -Include '*.h', '*.cpp'
-    $adapterMatches = $uiFiles | Select-String -Pattern `
-        'core[\\/]agent_serial_transport\.h|core[\\/]cserialport_transport\.h'
+    $adapterMatches = $uiFiles | Select-String -Pattern '#include\s*[<"]adapters[\\/]'
     if ($adapterMatches) {
         $adapterMatches | ForEach-Object { Write-Error $_.ToString() }
-        throw 'UI directly includes a concrete serial adapter'
+        throw 'UI directly includes a concrete adapter'
     }
 
     $trackedGenerated = & git ls-files -- 'build/**' 'src/agent/out/**' `
@@ -42,7 +41,7 @@ try {
 
     $projectText = Get-Content -Raw 'TestTools.vcxproj'
     $missingProjectEntries = @()
-    Get-ChildItem 'src\application', 'src\core' -File |
+    Get-ChildItem 'src\application', 'src\core', 'src\adapters' -Recurse -File |
         Where-Object { $_.Extension -in @('.h', '.cpp') } |
         ForEach-Object {
             $relative = $_.FullName.Substring($repositoryRoot.Length + 1).Replace('/', '\')

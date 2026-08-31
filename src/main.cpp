@@ -1,6 +1,6 @@
 #include "ui/main_window.h"
 #include "diagnostics/self_test.h"
-#include "core/command_line.h"
+#include "core/support/command_line.h"
 #include <QtCore/QStringList>
 #include <QtCore/QTimer>
 #include <QtGui/QPixmap>

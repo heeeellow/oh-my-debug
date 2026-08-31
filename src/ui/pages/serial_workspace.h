@@ -1,10 +1,9 @@
 #pragma once
 
-#include "application/background_task_group.h"
-#include "application/serial_workspace_state.h"
-#include "core/serial_transport.h"
-#include "core/serial_test_engine.h"
-#include "core/async_serial_sender.h"
+#include "application/serial/serial_session.h"
+#include "application/serial/serial_workspace_state.h"
+#include "application/support/background_task_group.h"
+#include "core/serial/serial_test_engine.h"
 
 #include <QtCore/QString>
 #include <QtWidgets/QWidget>
@@ -28,68 +27,61 @@ class QSpinBox;
 class QTimer;
 class QWidget;
 
-class SerialWorkspace final : public QWidget
-{
+class SerialWorkspace final : public QWidget {
     Q_OBJECT
 
-public:
-    explicit SerialWorkspace(QWidget *parent = nullptr);
+  public:
+    explicit SerialWorkspace(QWidget* parent = nullptr);
     ~SerialWorkspace() override;
 
-    void setAdbDevice(const serialdemo::AdbDevice &device);
-    void setAgentConnection(const std::string &adbSerial, std::uint16_t localControlPort);
+    void setAdbDevice(const serialdemo::AdbDevice& device);
+    void setAgentConnection(const std::string& adbSerial, std::uint16_t localControlPort);
     void refreshTargets();
     void prepareForShutdown();
     bool hasActiveConnections() const;
-    bool setWorkspaceModeForDiagnostics(const QString &modeName);
+    bool setWorkspaceModeForDiagnostics(const QString& modeName);
 
-signals:
+  signals:
     void busyChanged(bool busy);
-    void activityChanged(const QString &message);
+    void activityChanged(const QString& message);
 
-private:
+  private:
     using WorkspaceMode = testtools::SerialWorkspaceMode;
 
     struct ChannelUi {
-        QGroupBox *group = nullptr;
-        QLabel *badgeLabel = nullptr;
-        QLabel *titleLabel = nullptr;
-        QComboBox *sourceCombo = nullptr;
-        QComboBox *portCombo = nullptr;
-        QComboBox *baudCombo = nullptr;
-        QComboBox *dataBitsCombo = nullptr;
-        QComboBox *parityCombo = nullptr;
-        QComboBox *stopBitsCombo = nullptr;
-        QComboBox *flowControlCombo = nullptr;
-        QPushButton *advancedSettingsButton = nullptr;
-        QWidget *advancedSettingsArea = nullptr;
-        QPushButton *connectButton = nullptr;
-        QPlainTextEdit *receiveEdit = nullptr;
-        QPlainTextEdit *sendEdit = nullptr;
-        QCheckBox *receiveHexCheck = nullptr;
-        QCheckBox *sendHexCheck = nullptr;
-        QCheckBox *timestampCheck = nullptr;
-        QComboBox *lineEndingCombo = nullptr;
-        QPushButton *sendButton = nullptr;
-        QPushButton *autoSendButton = nullptr;
-        QLabel *statusLabel = nullptr;
-        QLabel *counterLabel = nullptr;
-        QLabel *sendShortcutHint = nullptr;
-        QWidget *manualSendArea = nullptr;
+        QGroupBox* group = nullptr;
+        QLabel* badgeLabel = nullptr;
+        QLabel* titleLabel = nullptr;
+        QComboBox* sourceCombo = nullptr;
+        QComboBox* portCombo = nullptr;
+        QComboBox* baudCombo = nullptr;
+        QComboBox* dataBitsCombo = nullptr;
+        QComboBox* parityCombo = nullptr;
+        QComboBox* stopBitsCombo = nullptr;
+        QComboBox* flowControlCombo = nullptr;
+        QPushButton* advancedSettingsButton = nullptr;
+        QWidget* advancedSettingsArea = nullptr;
+        QPushButton* connectButton = nullptr;
+        QPlainTextEdit* receiveEdit = nullptr;
+        QPlainTextEdit* sendEdit = nullptr;
+        QCheckBox* receiveHexCheck = nullptr;
+        QCheckBox* sendHexCheck = nullptr;
+        QCheckBox* timestampCheck = nullptr;
+        QComboBox* lineEndingCombo = nullptr;
+        QPushButton* sendButton = nullptr;
+        QPushButton* autoSendButton = nullptr;
+        QLabel* statusLabel = nullptr;
+        QLabel* counterLabel = nullptr;
+        QLabel* sendShortcutHint = nullptr;
+        QWidget* manualSendArea = nullptr;
 
-        std::unique_ptr<serialdemo::ISerialTransport> transport;
-        serialdemo::AsyncSerialSender sender;
-        std::uint64_t receivedBytes = 0;
-        std::uint64_t sentBytes = 0;
-        bool connecting = false;
+        testtools::SerialSession session;
         std::string expectedFrame;
         std::string detectionBuffer;
-        serialdemo::ByteBuffer autoSendPayload;
-        serialdemo::PeriodicSendPlan autoSendPlan;
         int autoIntervalMs = 1000;
         std::uint64_t autoTargetCount = 100;
         bool autoEcho = true;
-        std::uint64_t senderGeneration = 0;
+        bool disconnectPending = false;
     };
 
     struct StressDirection {
@@ -103,8 +95,8 @@ private:
     };
 
     void buildUi();
-    QWidget *buildChannelPanel(int index);
-    bool eventFilter(QObject *watched, QEvent *event) override;
+    QWidget* buildChannelPanel(int index);
+    bool eventFilter(QObject* watched, QEvent* event) override;
     void setWorkspaceMode(WorkspaceMode mode);
     bool canSwitchWorkspaceMode(WorkspaceMode mode);
     void applyWorkspaceMode();
@@ -112,50 +104,53 @@ private:
     void applyPorts(int index);
     void connectChannel(int index);
     void disconnectChannel(int index, bool showClosedStatus = true);
+    void completeChannelDisconnect(int index, std::uint64_t generation, bool showClosedStatus);
     void disconnectAll();
-    void attachTransportCallbacks(int index);
-    void startSender(int index);
+    void attachSessionCallbacks(int index);
     void setChannelControlsEnabled(int index, bool enabled);
     void updateGlobalControls();
-    void setChannelStatus(int index, const QString &message, bool error = false);
+    void setChannelStatus(int index, const QString& message, bool error = false);
     void updateRouteSummary();
     QString channelDisplayName(int index) const;
+    bool channelActive(int index) const;
     bool channelUsesAgent(int index) const;
     bool selectedAgentIsOnline() const;
-    bool validateChannel(int index, QString &error) const;
+    bool validateChannel(int index, QString& error) const;
     testtools::SerialEndpointSelection endpointSelection(int index) const;
     serialdemo::SerialConfig channelConfig(int index) const;
-    serialdemo::ByteBuffer manualPayload(int index, bool &ok);
-    bool sendBytes(int index, const serialdemo::ByteBuffer &data, bool echo = true);
+    serialdemo::ByteBuffer manualPayload(int index, bool& ok);
+    bool sendBytes(int index, const serialdemo::ByteBuffer& data, bool echo = true);
     void sendManual(int index);
     void toggleAutoSend(int index);
     void stopAutoSend(int index, bool announce = false);
     void processScheduledSends();
-    void appendTransmitted(int index, const serialdemo::ByteBuffer &data);
-    void appendReceived(int index, const serialdemo::ByteBuffer &data);
+    void appendTransmitted(int index, const serialdemo::ByteBuffer& data);
+    void appendReceived(int index, const serialdemo::ByteBuffer& data);
     void updateCounter(int index);
     void runBidirectionalTest();
     void updateBidirectionalResult(bool timedOut = false);
     void showStressDialog();
-    void startStressTest(int direction, std::uint64_t frameCount,
-                         std::size_t payloadSize, int intervalMs);
-    void stopStressTest(const QString &reason, bool completed = false);
+    void startStressTest(int direction,
+                         std::uint64_t frameCount,
+                         std::size_t payloadSize,
+                         int intervalMs);
+    void stopStressTest(const QString& reason, bool completed = false);
     void finishStressTest(std::uint64_t generation);
-    QString stressDirectionSummary(const StressDirection &direction) const;
+    QString stressDirectionSummary(const StressDirection& direction) const;
 
-    QPushButton *connectBothButton_ = nullptr;
-    QPushButton *disconnectBothButton_ = nullptr;
-    QPushButton *bidirectionalTestButton_ = nullptr;
-    QPushButton *stressTestButton_ = nullptr;
-    QLabel *testResultLabel_ = nullptr;
-    QLabel *stressResultLabel_ = nullptr;
-    QLabel *routeLabel_ = nullptr;
-    QLabel *modeDescriptionLabel_ = nullptr;
-    QFrame *linkBar_ = nullptr;
-    QSplitter *channelSplitter_ = nullptr;
-    QTimer *scheduleTimer_ = nullptr;
+    QPushButton* connectBothButton_ = nullptr;
+    QPushButton* disconnectBothButton_ = nullptr;
+    QPushButton* bidirectionalTestButton_ = nullptr;
+    QPushButton* stressTestButton_ = nullptr;
+    QLabel* testResultLabel_ = nullptr;
+    QLabel* stressResultLabel_ = nullptr;
+    QLabel* routeLabel_ = nullptr;
+    QLabel* modeDescriptionLabel_ = nullptr;
+    QFrame* linkBar_ = nullptr;
+    QSplitter* channelSplitter_ = nullptr;
+    QTimer* scheduleTimer_ = nullptr;
 
-    std::array<QPushButton *, 2> modeButtons_{};
+    std::array<QPushButton*, 2> modeButtons_{};
     std::array<ChannelUi, 2> channels_;
     serialdemo::AdbDevice currentAdbDevice_;
     std::vector<serialdemo::PortInfo> localPorts_;

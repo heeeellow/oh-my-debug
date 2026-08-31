@@ -10,7 +10,7 @@
 - C++17
 
 Windows 上位机工程为根目录 `TestTools.vcxproj`；板端无 Qt Agent 位于 `src/agent/`，通过 CMake
-面向 Android/Linux 独立构建。产品程序不再依赖或启动本机假 Agent。
+面向 ARM Android/Linux 独立构建。产品程序不依赖协议测试夹具。
 
 主解决方案 `TestTools.slnx` 只包含 Qt GUI 工程，确保 Visual Studio 的“本地 Windows 调试器”
 始终启动界面程序。用于协议开发的 Windows Agent 工程保留在
@@ -20,9 +20,10 @@ Windows 上位机工程为根目录 `TestTools.vcxproj`；板端无 Qt Agent 位
 
 ```text
 src/
-├── agent/         无 Qt 的真实板端 Agent；假服务仅为可选测试夹具
-├── application/   用例、设备会话和任务协调
-├── core/          标准 C++ 核心、传输和平台无关逻辑
+├── adapters/      ADB、Agent TCP 和 Windows COM 等具体适配器
+├── agent/         无 Qt 的真实板端 Agent；本机服务仅为可选协议测试夹具
+├── application/   按 agent/device/serial/support 组织的用例和生命周期
+├── core/          按 protocol/serial/support 组织的平台无关逻辑
 ├── diagnostics/   内置自检和实机冒烟入口
 ├── ui/            Qt 界面与 GUI 线程桥接
 └── main.cpp       Windows 应用入口
@@ -39,14 +40,13 @@ build/             所有生成物，不提交 Git
 
 ## 3. 强制边界
 
-- `src/core/`、`src/application/` 不得包含 Qt 头文件。
+- `src/core/`、`src/application/`、`src/adapters/` 不得包含 Qt 头文件。
 - UI 不直接拼接 ADB shell 命令；通过核心接口调用。
 - 后台线程不得直接访问 Qt 控件。
 - 设备节点、测试 ID 和外部参数必须校验。
 - 不提供任意 shell RPC。
 - 新增长任务必须定义超时、取消、资源占用和关闭行为。
-- UI 不直接包含 `agent_serial_transport.h` 或 `cserialport_transport.h`；具体适配器通过 application
-  服务创建。
+- UI 不直接包含 `src/adapters/` 中的具体串口传输；具体适配器通过 application 服务创建。
 
 仓库使用 `.editorconfig`、`.gitattributes` 和 `.clang-format` 固定 UTF-8、LF、缩进和 C++ 基础
 格式。格式化只作用于本次修改的第一方文件，不批量改写第三方依赖或无关用户改动。
@@ -68,19 +68,53 @@ msbuild '.\TestTools.vcxproj' /m /p:Configuration=Release /p:Platform=x64 `
 如果 Developer PowerShell 中找不到 `msbuild`，应通过 Visual Studio Installer 或 `vswhere` 定位
 实际安装，不在项目文档中假定固定版本号和安装盘符。
 
+### 4.1 Android ARM Agent
+
 Visual Studio 构建主程序时，如果能从 `TestToolsNdkRoot`、`ANDROID_NDK_ROOT`、
 `ANDROID_NDK_HOME` 或本机 Android SDK 目录找到 NDK，会自动构建 Agent 并复制到与主程序相同的
-Debug/Release 运行目录。也可单独运行仓库脚本；以当前 `armeabi-v7a` 板卡为例：
+Debug/Release 运行目录。默认目标为 `armeabi-v7a`，可通过 MSBuild 属性
+`TestToolsAndroidAgentAbi=arm64-v8a` 切换。也可单独运行仓库脚本：
 
 ```powershell
 .\scripts\build-android-agent.ps1 `
   -NdkRoot 'C:\Android\Sdk\ndk\27.3.13750724' `
+  -Abi armeabi-v7a `
   -CMakeProgram 'cmake' -NinjaProgram 'ninja'
 ```
 
-主程序产物位置为 `build/windows/x64/Release/TestTools.exe`，对应 Android Agent 位于
-`build/windows/x64/Release/agents/android/armeabi-v7a/testtools-agent`。所有构建目录和二进制
-均不提交 Git；上位机根据 `ro.product.cpu.abi` 选择对应 Agent。
+`-Abi` 只接受 `armeabi-v7a` 和 `arm64-v8a`。主程序产物位于
+`build/windows/x64/Release/TestTools.exe`，Agent 位于同目录的
+`agents/android/<abi>/testtools-agent`。上位机根据 `ro.product.cpu.abi` 选择产物。
+
+Android 产物使用 NDK/Bionic，最低 API 为 23。同一 ABI 可以覆盖 Android 11、13、14 等更高版本；
+更换系统版本后仍需重新验证 SELinux、设备节点权限和系统服务占用。
+
+### 4.2 Linux ARM Agent
+
+Ubuntu 或其他 Linux 板卡使用 glibc 产物，不能复用 Android 二进制。在 ARM 板端取得仓库后可原生
+构建并运行主机契约测试：
+
+```bash
+bash ./scripts/build-linux-agent.sh Release
+```
+
+脚本只接受 `armv7/armv7l/armhf` 或 `aarch64/arm64` 主机，产物位于
+`build/agents/linux/<armv7|aarch64>/testtools-agent`。Windows 上已有 Linux ARM 交叉工具链时可运行：
+
+```powershell
+.\scripts\build-linux-agent.ps1 `
+  -ToolchainFile 'C:\toolchains\linux-aarch64.cmake' `
+  -Architecture aarch64
+```
+
+交叉工具链文件必须指定编译器和与目标系统兼容的 sysroot；交叉构建不代替板端契约测试。当前 GUI
+只实现 Android ADB 自动部署，Linux 产物需要手动启动；SSH 部署、systemd 服务和端口隧道仍是后续
+连接器工作。
+
+Kernel 5.10 与 6.1 通常共享同一用户空间产物。切换内核时重点回归串口驱动、节点名称、termios、
+`/proc`/`/sys` 可见性和权限策略，而不是为每个内核建立一套源码。
+
+所有构建目录和二进制均不提交 Git。
 
 ## 5. 验证层级
 
@@ -101,7 +135,7 @@ Debug/Release 运行目录。也可单独运行仓库脚本；以当前 `armeabi
 
 - 核心静态检查：依赖方向、输入校验、线程关闭和错误边界。
 - Core/Application 主机契约测试：由 `tests/CMakeLists.txt` 构建，不依赖 Qt、ADB 或串口设备，覆盖
-  编解码、发送计划、异步队列、工作区状态、资源冲突和后台任务所有权。
+  编解码、发送计划、异步队列、串口会话代次与关闭、工作区状态、资源冲突和后台任务所有权。
 - Agent 主机契约测试：由 CTest 验证协议版本、字段类型、枚举和范围拒绝路径，不访问真实设备。
 - `--self-test`：编码、异步发送队列、串口可靠性帧、Agent 帧、ADB 枚举和安全转发冒烟检查。
 - `--agent-smoke <host> <port>`：验证真实或测试 Agent 的 hello 与能力发现。
@@ -153,3 +187,12 @@ Debug/Release 运行目录。也可单独运行仓库脚本；以当前 `armeabi
 ```
 
 脚本通过只证明必要入口和相对链接有效，不能替代内容审查、构建或实机验证。
+
+## 8. 版本与标签
+
+根目录 `VERSION.txt` 保存 TestTools 产品版本，采用语义化版本号。Git 发布标签使用带 `v` 前缀的同一
+版本，例如 `VERSION.txt` 为 `0.1.0` 时标签为 `v0.1.0`。产品版本与 Agent 程序版本独立演进，兼容性
+由 Agent 握手中的协议范围和程序版本判断。
+
+建立版本基线前更新 `VERSION.txt` 和 `STATUS.md`，完成规定验证后创建源码提交与附注标签。标签只表示
+该提交的版本身份；是否推送、制作安装包或发布给使用者仍是独立交付动作。

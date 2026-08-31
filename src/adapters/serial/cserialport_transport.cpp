@@ -1,0 +1,137 @@
+#include "adapters/serial/cserialport_transport.h"
+
+#include "CSerialPort/SerialPortInfo.h"
+
+#include <algorithm>
+
+namespace serialdemo {
+
+namespace {
+
+itas109::Parity toLibraryParity(Parity value)
+{
+    switch (value) {
+    case Parity::Odd:
+        return itas109::ParityOdd;
+    case Parity::Even:
+        return itas109::ParityEven;
+    case Parity::None:
+    default:
+        return itas109::ParityNone;
+    }
+}
+
+itas109::StopBits toLibraryStopBits(StopBits value)
+{
+    return value == StopBits::Two ? itas109::StopTwo : itas109::StopOne;
+}
+
+itas109::FlowControl toLibraryFlowControl(FlowControl value)
+{
+    switch (value) {
+    case FlowControl::Hardware:
+        return itas109::FlowHardware;
+    case FlowControl::Software:
+        return itas109::FlowSoftware;
+    case FlowControl::None:
+    default:
+        return itas109::FlowNone;
+    }
+}
+
+} // namespace
+
+CSerialPortTransport::CSerialPortTransport()
+{
+    serialPort_.connectReadEvent(this);
+    serialPort_.setReadIntervalTimeout(10);
+}
+
+CSerialPortTransport::~CSerialPortTransport()
+{
+    close();
+    serialPort_.disconnectReadEvent();
+}
+
+std::vector<PortInfo> CSerialPortTransport::availablePorts()
+{
+    std::vector<PortInfo> result;
+    for (const auto &port : itas109::CSerialPortInfo::availablePortInfos()) {
+        result.push_back({port.portName, port.description, port.hardwareId});
+    }
+    return result;
+}
+
+void CSerialPortTransport::open(const SerialConfig &config)
+{
+    close();
+
+    serialPort_.init(config.endpoint.c_str(),
+                     config.baudRate,
+                     toLibraryParity(config.parity),
+                     static_cast<itas109::DataBits>(config.dataBits),
+                     toLibraryStopBits(config.stopBits),
+                     toLibraryFlowControl(config.flowControl),
+                     65536);
+    serialPort_.setReadIntervalTimeout(10);
+    serialPort_.setMinByteReadNotify(1);
+    serialPort_.setByteReadBufferFullNotify(49152);
+
+    if (!serialPort_.open()) {
+        open_.store(false);
+        publishStatus(TransportState::Error,
+                      "打开本地串口失败: " + std::string(serialPort_.getLastErrorMsg()));
+        return;
+    }
+
+    open_.store(true);
+    publishStatus(TransportState::Connected, "本地串口已连接: " + config.endpoint);
+}
+
+void CSerialPortTransport::close()
+{
+    const bool wasOpen = open_.exchange(false);
+    if (serialPort_.isOpen()) {
+        serialPort_.close();
+    }
+    if (wasOpen) {
+        publishStatus(TransportState::Closed, "本地串口已关闭");
+    }
+}
+
+bool CSerialPortTransport::write(const ByteBuffer &data)
+{
+    if (data.empty()) {
+        return true;
+    }
+
+    if (!open_.load() || !serialPort_.isOpen()) {
+        return false;
+    }
+    return serialPort_.writeData(data.data(), static_cast<int>(data.size())) == static_cast<int>(data.size());
+}
+
+bool CSerialPortTransport::isOpen() const
+{
+    return open_.load();
+}
+
+void CSerialPortTransport::onReadEvent(const char *, unsigned int readBufferLen)
+{
+    if (!open_.load() || readBufferLen == 0) {
+        return;
+    }
+
+    ByteBuffer data(std::min<unsigned int>(readBufferLen, 65536));
+    int received = 0;
+    if (!serialPort_.isOpen()) {
+        return;
+    }
+    received = serialPort_.readData(data.data(), static_cast<int>(data.size()));
+    if (received > 0) {
+        data.resize(static_cast<std::size_t>(received));
+        publishData(data);
+    }
+}
+
+} // namespace serialdemo

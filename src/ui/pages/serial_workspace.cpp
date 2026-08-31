@@ -1,7 +1,7 @@
 #include "serial_workspace.h"
 
-#include "application/serial_transport_service.h"
-#include "core/codec.h"
+#include "application/serial/serial_transport_service.h"
+#include "core/serial/codec.h"
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDateTime>
@@ -83,6 +83,9 @@ SerialWorkspace::SerialWorkspace(QWidget *parent)
     : QWidget(parent)
 {
     buildUi();
+    for (int index = 0; index < static_cast<int>(channels_.size()); ++index) {
+        attachSessionCallbacks(index);
+    }
     refreshTargets();
 }
 
@@ -207,12 +210,12 @@ void SerialWorkspace::buildUi()
     connect(connectBothButton_, &QPushButton::clicked, this, [this] {
         QString error;
         for (int index = 0; index < 2; ++index) {
-            if (!channels_[index].transport && !validateChannel(index, error)) {
+            if (!channelActive(index) && !validateChannel(index, error)) {
                 QMessageBox::warning(this, QStringLiteral("无法连接两路"), error);
                 return;
             }
         }
-        if (!channels_[0].transport && !channels_[1].transport) {
+        if (!channelActive(0) && !channelActive(1)) {
             auto first = endpointSelection(0);
             auto second = endpointSelection(1);
             first.active = true;
@@ -220,24 +223,30 @@ void SerialWorkspace::buildUi()
             const auto conflict = testtools::SerialWorkspaceState::endpointConflict(first, second);
             if (conflict == testtools::SerialEndpointConflict::AgentSingleSession) {
                 QMessageBox::information(
-                    this, QStringLiteral("当前为单板串口会话"),
-                    QStringLiteral("当前板端服务一次管理一个板端串口。可使用一路 Windows 串口和一路板端串口；多板端会话会在后续扩展。"));
+                    this,
+                    QStringLiteral("当前为单板串口会话"),
+                    QStringLiteral("当前板端服务一次管理一个板端串口。可使用一路 Windows "
+                                   "串口和一路板端串口；多板端会话会在后续扩展。"));
                 return;
             }
             if (conflict == testtools::SerialEndpointConflict::SameResource) {
-                QMessageBox::warning(this, QStringLiteral("无法连接两路"),
+                QMessageBox::warning(this,
+                                     QStringLiteral("无法连接两路"),
                                      QStringLiteral("端点 A 和 B 不能同时打开同一个串口。"));
                 return;
             }
         }
         for (int index = 0; index < 2; ++index) {
-            if (!channels_[index].transport) {
+            if (!channelActive(index)) {
                 connectChannel(index);
             }
         }
     });
     connect(disconnectBothButton_, &QPushButton::clicked, this, &SerialWorkspace::disconnectAll);
-    connect(bidirectionalTestButton_, &QPushButton::clicked, this, &SerialWorkspace::runBidirectionalTest);
+    connect(bidirectionalTestButton_,
+            &QPushButton::clicked,
+            this,
+            &SerialWorkspace::runBidirectionalTest);
     connect(stressTestButton_, &QPushButton::clicked, this, [this] {
         if (stressTestRunning_) {
             stopStressTest(QStringLiteral("用户已停止可靠性压测"));
@@ -276,17 +285,17 @@ bool SerialWorkspace::canSwitchWorkspaceMode(WorkspaceMode mode)
 {
     testtools::SerialWorkspaceActivity activity;
     for (int index = 0; index < 2; ++index) {
-        activity.channelActive[static_cast<std::size_t>(index)] =
-            channels_[index].transport || channels_[index].connecting;
+        activity.channelActive[static_cast<std::size_t>(index)] = channelActive(index);
         activity.scheduledSendRunning[static_cast<std::size_t>(index)] =
-            channels_[index].autoSendPlan.isRunning();
+            channels_[index].session.snapshot().scheduledSend.running;
     }
     activity.bidirectionalTestRunning = bidirectionalTestRunning_;
     activity.reliabilityTestRunning = stressTestRunning_;
     const auto decision = workspaceState_.evaluateModeSwitch(mode, activity);
     if (decision.blockedBy == testtools::SerialModeSwitchBlock::TaskRunning) {
         QMessageBox::information(
-            this, QStringLiteral("任务正在运行"),
+            this,
+            QStringLiteral("任务正在运行"),
             QStringLiteral("请先停止当前的计划发送、双向收发验证或可靠性压测，再切换调试方式。"));
         return false;
     }
@@ -522,14 +531,17 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
         updateRouteSummary();
         updateGlobalControls();
     });
-    connect(channel.baudCombo, &QComboBox::currentTextChanged, this, [this] { updateGlobalControls(); });
-    connect(channel.advancedSettingsButton, &QPushButton::toggled, this, [this, index](bool visible) {
-        channels_[index].advancedSettingsArea->setVisible(visible);
-        channels_[index].advancedSettingsButton->setText(
-            visible ? QStringLiteral("收起参数") : QStringLiteral("更多参数"));
+    connect(channel.baudCombo, &QComboBox::currentTextChanged, this, [this] {
+        updateGlobalControls();
     });
+    connect(
+        channel.advancedSettingsButton, &QPushButton::toggled, this, [this, index](bool visible) {
+            channels_[index].advancedSettingsArea->setVisible(visible);
+            channels_[index].advancedSettingsButton->setText(visible ? QStringLiteral("收起参数")
+                                                                     : QStringLiteral("更多参数"));
+        });
     connect(channel.connectButton, &QPushButton::clicked, this, [this, index] {
-        if (channels_[index].transport) {
+        if (channelActive(index)) {
             disconnectChannel(index);
         } else {
             connectChannel(index);
@@ -546,10 +558,10 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     return channel.group;
 }
 
-bool SerialWorkspace::eventFilter(QObject *watched, QEvent *event)
+bool SerialWorkspace::eventFilter(QObject* watched, QEvent* event)
 {
     if (event->type() == QEvent::KeyPress) {
-        auto *keyEvent = static_cast<QKeyEvent *>(event);
+        auto* keyEvent = static_cast<QKeyEvent*>(event);
         const bool enter = keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter;
         if (enter && !(keyEvent->modifiers() & Qt::ShiftModifier)) {
             for (int index = 0; index < 2; ++index) {
@@ -570,13 +582,13 @@ bool SerialWorkspace::channelUsesAgent(int index) const
 
 bool SerialWorkspace::selectedAgentIsOnline() const
 {
-    return currentAdbDevice_.state == "device" && !currentAdbDevice_.serial.empty()
-           && agentControlPort_ != 0 && agentAdbSerial_ == currentAdbDevice_.serial;
+    return currentAdbDevice_.state == "device" && !currentAdbDevice_.serial.empty() &&
+           agentControlPort_ != 0 && agentAdbSerial_ == currentAdbDevice_.serial;
 }
 
 void SerialWorkspace::refreshTargets()
 {
-    if (shuttingDown_ || channels_[0].transport || channels_[1].transport || scanning_) {
+    if (shuttingDown_ || channelActive(0) || channelActive(1) || scanning_) {
         return;
     }
 
@@ -610,26 +622,29 @@ void SerialWorkspace::refreshAgentPorts()
     scanTasks_.start([guard, controlPort] {
         std::string error;
         auto ports = testtools::SerialTransportService::agentPorts(controlPort, error);
-        QMetaObject::invokeMethod(guard, [guard, ports = std::move(ports), error = std::move(error)] {
-            if (!guard || guard->shuttingDown_) {
-                return;
-            }
-            guard->scanning_ = false;
-            guard->agentPorts_ = std::move(ports);
-            guard->applyPorts(0);
-            guard->applyPorts(1);
-            if (!error.empty()) {
-                emit guard->activityChanged(fromUtf8(error));
-            } else {
-                emit guard->activityChanged(QStringLiteral("Agent 已发现 %1 个板端串口")
-                                                .arg(guard->agentPorts_.size()));
-            }
-            guard->updateGlobalControls();
-        }, Qt::QueuedConnection);
+        QMetaObject::invokeMethod(
+            guard,
+            [guard, ports = std::move(ports), error = std::move(error)] {
+                if (!guard || guard->shuttingDown_) {
+                    return;
+                }
+                guard->scanning_ = false;
+                guard->agentPorts_ = std::move(ports);
+                guard->applyPorts(0);
+                guard->applyPorts(1);
+                if (!error.empty()) {
+                    emit guard->activityChanged(fromUtf8(error));
+                } else {
+                    emit guard->activityChanged(QStringLiteral("Agent 已发现 %1 个板端串口")
+                                                    .arg(guard->agentPorts_.size()));
+                }
+                guard->updateGlobalControls();
+            },
+            Qt::QueuedConnection);
     });
 }
 
-void SerialWorkspace::setAdbDevice(const AdbDevice &device)
+void SerialWorkspace::setAdbDevice(const AdbDevice& device)
 {
     if (hasActiveConnections()) {
         return;
@@ -639,7 +654,7 @@ void SerialWorkspace::setAdbDevice(const AdbDevice &device)
     updateRouteSummary();
 }
 
-void SerialWorkspace::setAgentConnection(const std::string &adbSerial,
+void SerialWorkspace::setAgentConnection(const std::string& adbSerial,
                                          std::uint16_t localControlPort)
 {
     if (hasActiveConnections()) {
@@ -653,14 +668,13 @@ void SerialWorkspace::setAgentConnection(const std::string &adbSerial,
 
 bool SerialWorkspace::hasActiveConnections() const
 {
-    return channels_[0].transport || channels_[1].transport
-           || channels_[0].connecting || channels_[1].connecting;
+    return channelActive(0) || channelActive(1);
 }
 
 void SerialWorkspace::applyPorts(int index)
 {
-    auto &channel = channels_[index];
-    if (!channel.portCombo || channel.transport) {
+    auto& channel = channels_[index];
+    if (!channel.portCombo || channelActive(index)) {
         return;
     }
     const QString previousData = channel.portCombo->currentData().toString();
@@ -669,7 +683,7 @@ void SerialWorkspace::applyPorts(int index)
     channel.portCombo->clear();
 
     if (channelUsesAgent(index)) {
-        for (const auto &port : agentPorts_) {
+        for (const auto& port : agentPorts_) {
             QString detail = fromUtf8(port.interfaceName);
             if (!port.occupiedBy.empty()) {
                 detail = QStringLiteral("占用中：%1").arg(fromUtf8(port.occupiedBy));
@@ -757,7 +771,7 @@ bool SerialWorkspace::validateChannel(int index, QString &error) const
 testtools::SerialEndpointSelection SerialWorkspace::endpointSelection(int index) const
 {
     testtools::SerialEndpointSelection selection;
-    selection.active = channels_[index].transport || channels_[index].connecting;
+    selection.active = channelActive(index);
     selection.kind = channelUsesAgent(index) ? testtools::SerialEndpointKind::Agent
                                              : testtools::SerialEndpointKind::Local;
     const auto config = channelConfig(index);
@@ -768,8 +782,8 @@ testtools::SerialEndpointSelection SerialWorkspace::endpointSelection(int index)
 
 void SerialWorkspace::connectChannel(int index)
 {
-    auto &channel = channels_[index];
-    if (channel.transport) {
+    auto& channel = channels_[index];
+    if (channelActive(index)) {
         return;
     }
 
@@ -780,139 +794,177 @@ void SerialWorkspace::connectChannel(int index)
     }
 
     const bool agent = channelUsesAgent(index);
+    std::unique_ptr<ISerialTransport> transport;
     if (agent) {
-        channel.transport = testtools::SerialTransportService::createAgent(
-            agentAdbSerial_, agentControlPort_);
+        transport =
+            testtools::SerialTransportService::createAgent(agentAdbSerial_, agentControlPort_);
     } else {
-        channel.transport = testtools::SerialTransportService::createLocal();
+        transport = testtools::SerialTransportService::createLocal();
     }
-    attachTransportCallbacks(index);
-    startSender(index);
-    channel.connecting = true;
     channel.connectButton->setText(QStringLiteral("取消 / 断开"));
     setChannelControlsEnabled(index, false);
     setChannelStatus(index, QStringLiteral("正在连接..."));
     updateGlobalControls();
-    channel.transport->open(channelConfig(index));
-
-    if (!agent && !channel.transport->isOpen()) {
-        disconnectChannel(index, false);
-    }
+    channel.session.open(std::move(transport), channelConfig(index));
+    updateGlobalControls();
 }
 
-void SerialWorkspace::attachTransportCallbacks(int index)
+void SerialWorkspace::attachSessionCallbacks(int index)
 {
     QPointer<SerialWorkspace> guard(this);
-    channels_[index].transport->setDataCallback([guard, index](const ByteBuffer &data) {
-        QMetaObject::invokeMethod(guard, [guard, index, data] {
-            if (guard && !guard->shuttingDown_) {
-                guard->appendReceived(index, data);
-            }
-        }, Qt::QueuedConnection);
-    });
-    channels_[index].transport->setStatusCallback([guard, index](TransportState state,
-                                                                 const std::string &message) {
-        QMetaObject::invokeMethod(guard, [guard, index, state, message] {
-            if (!guard || guard->shuttingDown_) {
-                return;
-            }
-            auto &channel = guard->channels_[index];
-            const QString status = fromUtf8(message);
-            emit guard->activityChanged(status);
-            const bool connected = state == TransportState::Connected;
-            const bool progress = state == TransportState::Progress;
-            const bool error = state == TransportState::Error;
-            guard->setChannelStatus(index, status, error);
-            if (connected) {
-                channel.connecting = false;
-                channel.connectButton->setText(QStringLiteral("断开"));
-                channel.sendButton->setEnabled(true);
-            } else if (!progress) {
-                channel.connecting = false;
-                if (channel.transport && !channel.transport->isOpen()) {
-                    guard->disconnectChannel(index, false);
+    channels_[index].session.setDataCallback(
+        [guard, index](std::uint64_t generation, const ByteBuffer& data) {
+            QMetaObject::invokeMethod(
+                guard,
+                [guard, index, generation, data] {
+                    if (guard && !guard->shuttingDown_ &&
+                        guard->channels_[index].session.generation() == generation) {
+                        guard->appendReceived(index, data);
+                    }
+                },
+                Qt::QueuedConnection);
+        });
+    channels_[index].session.setStatusCallback(
+        [guard, index](std::uint64_t generation, TransportState state, const std::string& message) {
+            QMetaObject::invokeMethod(
+                guard,
+                [guard, index, generation, state, message] {
+                    if (!guard || guard->shuttingDown_) {
+                        return;
+                    }
+                    if (guard->channels_[index].session.generation() != generation) {
+                        return;
+                    }
+                    auto& channel = guard->channels_[index];
+                    const QString status = fromUtf8(message);
+                    emit guard->activityChanged(status);
+                    const bool connected = state == TransportState::Connected;
+                    const bool progress = state == TransportState::Progress;
+                    const bool error = state == TransportState::Error;
                     guard->setChannelStatus(index, status, error);
-                }
-            }
-            guard->updateGlobalControls();
-        }, Qt::QueuedConnection);
-    });
-}
-
-void SerialWorkspace::startSender(int index)
-{
-    auto &channel = channels_[index];
-    const std::uint64_t generation = ++channel.senderGeneration;
-    QPointer<SerialWorkspace> guard(this);
-    channel.sender.start(
-        [this, index](const ByteBuffer &data) {
-            auto &current = channels_[index];
-            return current.transport && current.transport->isOpen() && current.transport->write(data);
-        },
-        [guard, index, generation](const ByteBuffer &data, std::uint64_t tag, bool succeeded) {
-            QMetaObject::invokeMethod(guard, [guard, index, generation, data, tag, succeeded] {
+                    if (connected) {
+                        channel.connectButton->setText(QStringLiteral("断开"));
+                        channel.sendButton->setEnabled(true);
+                    } else if (!progress) {
+                        if (!channel.session.isOpen()) {
+                            guard->disconnectChannel(index, false);
+                            guard->setChannelStatus(index, status, error);
+                        }
+                    }
+                    guard->updateGlobalControls();
+                },
+                Qt::QueuedConnection);
+        });
+    channels_[index].session.setSendCallback([guard, index](std::uint64_t generation,
+                                                            const ByteBuffer& data,
+                                                            std::uint64_t tag,
+                                                            bool succeeded,
+                                                            bool scheduledSendStopped) {
+        QMetaObject::invokeMethod(
+            guard,
+            [guard, index, generation, data, tag, succeeded, scheduledSendStopped] {
                 if (!guard || guard->shuttingDown_) {
                     return;
                 }
-                auto &current = guard->channels_[index];
-                if (current.senderGeneration != generation) {
+                auto& current = guard->channels_[index];
+                if (current.session.generation() != generation) {
                     return;
                 }
                 if (!succeeded) {
-                    guard->setChannelStatus(index, QStringLiteral("发送失败，连接可能已经断开"), true);
-                    guard->stopAutoSend(index, true);
+                    guard->setChannelStatus(
+                        index, QStringLiteral("发送失败，连接可能已经断开"), true);
+                    guard->stopAutoSend(index, false);
+                    emit guard->activityChanged(
+                        scheduledSendStopped
+                            ? QStringLiteral("%1 发送失败；计划发送已停止")
+                                  .arg(guard->channelDisplayName(index))
+                            : QStringLiteral("%1 发送失败").arg(guard->channelDisplayName(index)));
                     if (guard->stressTestRunning_) {
                         guard->stopStressTest(QStringLiteral("可靠性压测发送失败"));
                     }
+                    guard->updateGlobalControls();
                     return;
                 }
-                current.sentBytes += data.size();
                 if ((tag & 1u) != 0u) {
                     guard->appendTransmitted(index, data);
                 }
                 guard->updateCounter(index);
-            }, Qt::QueuedConnection);
-        });
+            },
+            Qt::QueuedConnection);
+    });
 }
 
 void SerialWorkspace::disconnectChannel(int index, bool showClosedStatus)
 {
-    auto &channel = channels_[index];
+    auto& channel = channels_[index];
+    const auto snapshot = channel.session.snapshot();
+    if (channel.disconnectPending ||
+        snapshot.state == testtools::SerialSessionState::Disconnecting) {
+        return;
+    }
     stopAutoSend(index);
     if (stressTestRunning_) {
         stopStressTest(QStringLiteral("串口连接已断开"));
     }
-    ++channel.senderGeneration;
-    channel.sender.stop(false);
-    if (channel.transport) {
-        channel.transport->setDataCallback({});
-        channel.transport->setStatusCallback({});
-        channel.transport->close();
-        channel.transport.reset();
-    }
-    channel.connecting = false;
     channel.expectedFrame.clear();
     channel.detectionBuffer.clear();
+    bidirectionalTestRunning_ = false;
+    ++testGeneration_;
+
+    if (!snapshot.active) {
+        completeChannelDisconnect(index, channel.session.generation(), showClosedStatus);
+        return;
+    }
+
+    channel.connectButton->setText(QStringLiteral("正在断开…"));
+    channel.connectButton->setEnabled(false);
+    channel.sendButton->setEnabled(false);
+    channel.disconnectPending = true;
+    setChannelControlsEnabled(index, false);
+    if (showClosedStatus) {
+        setChannelStatus(index, QStringLiteral("正在断开..."));
+    }
+    QPointer<SerialWorkspace> guard(this);
+    channel.session.closeAsync([guard, index, showClosedStatus](std::uint64_t generation) {
+        QMetaObject::invokeMethod(
+            guard,
+            [guard, index, generation, showClosedStatus] {
+                if (guard && !guard->shuttingDown_) {
+                    guard->completeChannelDisconnect(index, generation, showClosedStatus);
+                }
+            },
+            Qt::QueuedConnection);
+    });
+    updateGlobalControls();
+}
+
+void SerialWorkspace::completeChannelDisconnect(int index,
+                                                std::uint64_t generation,
+                                                bool showClosedStatus)
+{
+    auto& channel = channels_[index];
+    if (channel.session.generation() != generation || channel.session.isActive()) {
+        return;
+    }
+    channel.disconnectPending = false;
     channel.connectButton->setText(QStringLiteral("连接"));
     channel.sendButton->setEnabled(false);
     setChannelControlsEnabled(index, true);
     if (showClosedStatus) {
         setChannelStatus(index, QStringLiteral("已断开"));
     }
-    bidirectionalTestRunning_ = false;
-    ++testGeneration_;
     updateGlobalControls();
 }
 
 void SerialWorkspace::disconnectAll()
 {
-    disconnectChannel(0, channels_[0].transport != nullptr);
-    disconnectChannel(1, channels_[1].transport != nullptr);
+    disconnectChannel(0, channelActive(0));
+    disconnectChannel(1, channelActive(1));
 }
 
 void SerialWorkspace::setChannelControlsEnabled(int index, bool enabled)
 {
-    auto &channel = channels_[index];
+    auto& channel = channels_[index];
     channel.sourceCombo->setEnabled(enabled);
     channel.portCombo->setEnabled(enabled);
     channel.baudCombo->setEnabled(enabled);
@@ -924,66 +976,82 @@ void SerialWorkspace::setChannelControlsEnabled(int index, bool enabled)
 
 void SerialWorkspace::updateGlobalControls()
 {
-    const bool anyActive = channels_[0].transport || channels_[1].transport
-                           || channels_[0].connecting || channels_[1].connecting;
-    const bool bothOpen = channels_[0].transport && channels_[0].transport->isOpen()
-                          && channels_[1].transport && channels_[1].transport->isOpen();
-    const bool anyAutoSend = channels_[0].autoSendPlan.isRunning()
-                             || channels_[1].autoSendPlan.isRunning();
+    const auto firstSnapshot = channels_[0].session.snapshot();
+    const auto secondSnapshot = channels_[1].session.snapshot();
+    const bool firstActive = channelActive(0);
+    const bool secondActive = channelActive(1);
+    const bool anyActive = firstActive || secondActive;
+    const bool bothOpen = firstSnapshot.open && secondSnapshot.open;
+    const bool anyAutoSend =
+        firstSnapshot.scheduledSend.running || secondSnapshot.scheduledSend.running;
     const auto resourceConflict = [this] {
         auto first = endpointSelection(0);
         auto second = endpointSelection(1);
         first.active = true;
         second.active = true;
-        return !first.endpoint.empty() && !second.endpoint.empty()
-               && testtools::SerialWorkspaceState::endpointConflict(first, second)
-                      != testtools::SerialEndpointConflict::None;
+        return !first.endpoint.empty() && !second.endpoint.empty() &&
+               testtools::SerialWorkspaceState::endpointConflict(first, second) !=
+                   testtools::SerialEndpointConflict::None;
     };
     const auto channelReady = [this, &resourceConflict](int index) {
-        const auto &channel = channels_[index];
-        const bool basicReady = !channel.portCombo->currentText().trimmed().isEmpty()
-                                && channel.baudCombo->currentText().toInt() > 0
-                                && (!channelUsesAgent(index) || selectedAgentIsOnline());
+        const auto& channel = channels_[index];
+        const bool basicReady = !channel.portCombo->currentText().trimmed().isEmpty() &&
+                                channel.baudCombo->currentText().toInt() > 0 &&
+                                (!channelUsesAgent(index) || selectedAgentIsOnline());
         const int otherIndex = 1 - index;
-        const bool conflictsWithOpenChannel = channels_[otherIndex].transport && resourceConflict();
+        const bool conflictsWithOpenChannel = channelActive(otherIndex) && resourceConflict();
         return basicReady && !conflictsWithOpenChannel;
     };
     for (int index = 0; index < 2; ++index) {
-        const bool open = channels_[index].transport && channels_[index].transport->isOpen();
-        if (channels_[index].transport) {
+        const auto session = channels_[index].session.snapshot();
+        const bool open = session.open;
+        if (channels_[index].disconnectPending ||
+            session.state == testtools::SerialSessionState::Disconnecting) {
+            channels_[index].connectButton->setEnabled(false);
+        } else if (channelActive(index)) {
             channels_[index].connectButton->setEnabled(true);
         } else {
             channels_[index].connectButton->setEnabled(!scanning_ && channelReady(index));
         }
-        channels_[index].sendButton->setEnabled(open && !stressTestRunning_
-                                                && !channels_[index].autoSendPlan.isRunning());
+        channels_[index].sendButton->setEnabled(open && !stressTestRunning_ &&
+                                                !session.scheduledSend.running);
         channels_[index].autoSendButton->setEnabled(open && !stressTestRunning_);
     }
-    const bool missingChannelsReady = (channels_[0].transport || channelReady(0))
-                                      && (channels_[1].transport || channelReady(1));
-    const bool pairCompatible = channels_[0].transport || channels_[1].transport || !resourceConflict();
-    connectBothButton_->setEnabled(!scanning_ && !bothOpen && !channels_[0].connecting
-                                   && !channels_[1].connecting && missingChannelsReady && pairCompatible);
-    connectBothButton_->setText(bothOpen ? QStringLiteral("两端已连接")
-                                 : anyActive ? QStringLiteral("连接另一端") : QStringLiteral("连接两端"));
-    disconnectBothButton_->setEnabled(anyActive);
-    bidirectionalTestButton_->setEnabled(bothOpen && !bidirectionalTestRunning_
-                                         && !stressTestRunning_ && !anyAutoSend);
-    bidirectionalTestButton_->setText(bidirectionalTestRunning_
-                                          ? QStringLiteral("正在验证…") : QStringLiteral("双向收发验证"));
-    stressTestButton_->setEnabled(stressTestRunning_
-                                  || (bothOpen && !bidirectionalTestRunning_ && !anyAutoSend));
-    stressTestButton_->setText(stressTestRunning_
-                                   ? QStringLiteral("停止可靠性压测") : QStringLiteral("可靠性压测…"));
+    const bool missingChannelsReady =
+        (firstActive || channelReady(0)) && (secondActive || channelReady(1));
+    const bool pairCompatible = firstActive || secondActive || !resourceConflict();
+    const bool transitioning =
+        firstSnapshot.state == testtools::SerialSessionState::Connecting ||
+        secondSnapshot.state == testtools::SerialSessionState::Connecting ||
+        firstSnapshot.state == testtools::SerialSessionState::Disconnecting ||
+        secondSnapshot.state == testtools::SerialSessionState::Disconnecting ||
+        channels_[0].disconnectPending || channels_[1].disconnectPending;
+    connectBothButton_->setEnabled(!scanning_ && !bothOpen && !transitioning &&
+                                   missingChannelsReady && pairCompatible);
+    connectBothButton_->setText(bothOpen    ? QStringLiteral("两端已连接")
+                                : anyActive ? QStringLiteral("连接另一端")
+                                            : QStringLiteral("连接两端"));
+    disconnectBothButton_->setEnabled(anyActive && !transitioning);
+    bidirectionalTestButton_->setEnabled(bothOpen && !bidirectionalTestRunning_ &&
+                                         !stressTestRunning_ && !anyAutoSend);
+    bidirectionalTestButton_->setText(bidirectionalTestRunning_ ? QStringLiteral("正在验证…")
+                                                                : QStringLiteral("双向收发验证"));
+    stressTestButton_->setEnabled(stressTestRunning_ ||
+                                  (bothOpen && !bidirectionalTestRunning_ && !anyAutoSend));
+    stressTestButton_->setText(stressTestRunning_ ? QStringLiteral("停止可靠性压测")
+                                                  : QStringLiteral("可靠性压测…"));
     emit busyChanged(anyActive);
 }
 
-void SerialWorkspace::setChannelStatus(int index, const QString &message, bool error)
+void SerialWorkspace::setChannelStatus(int index, const QString& message, bool error)
 {
-    auto *label = channels_[index].statusLabel;
+    auto* label = channels_[index].statusLabel;
     QString display = message;
     QString role = QStringLiteral("connectionStatusIdle");
-    if (message.startsWith(QStringLiteral("正在"))) {
+    if (message.startsWith(QStringLiteral("正在断开"))) {
+        display = QStringLiteral("断开中");
+        role = QStringLiteral("connectionStatusWorking");
+    } else if (message.startsWith(QStringLiteral("正在"))) {
         display = QStringLiteral("连接中");
         role = QStringLiteral("connectionStatusWorking");
     } else if (!error && message.contains(QStringLiteral("已连接"))) {
@@ -1004,11 +1072,13 @@ void SerialWorkspace::updateRouteSummary()
         return;
     }
     const auto endpoint = [this](int index) {
-        const auto &channel = channels_[index];
-        const QString type = channelUsesAgent(index) ? QStringLiteral("板端") : QStringLiteral("Windows");
+        const auto& channel = channels_[index];
+        const QString type =
+            channelUsesAgent(index) ? QStringLiteral("板端") : QStringLiteral("Windows");
         const QString data = channel.portCombo->currentData().toString();
         const QString port = data.isEmpty() ? channel.portCombo->currentText() : data;
-        return QStringLiteral("%1 · %2").arg(type, port.isEmpty() ? QStringLiteral("未选择") : port);
+        return QStringLiteral("%1 · %2").arg(type,
+                                             port.isEmpty() ? QStringLiteral("未选择") : port);
     };
     routeLabel_->setText(QStringLiteral("A  %1     ⇄     B  %2").arg(endpoint(0), endpoint(1)));
 }
@@ -1021,9 +1091,14 @@ QString SerialWorkspace::channelDisplayName(int index) const
     return channelName(index);
 }
 
-ByteBuffer SerialWorkspace::manualPayload(int index, bool &ok)
+bool SerialWorkspace::channelActive(int index) const
 {
-    auto &channel = channels_[index];
+    return channels_[index].disconnectPending || channels_[index].session.isActive();
+}
+
+ByteBuffer SerialWorkspace::manualPayload(int index, bool& ok)
+{
+    auto& channel = channels_[index];
     ByteBuffer data;
     ok = true;
     const QString input = channel.sendEdit->toPlainText();
@@ -1040,21 +1115,21 @@ ByteBuffer SerialWorkspace::manualPayload(int index, bool &ok)
         }
     } else {
         const QByteArray text = input.toUtf8();
-        data.assign(reinterpret_cast<const std::uint8_t *>(text.constData()),
-                    reinterpret_cast<const std::uint8_t *>(text.constData()) + text.size());
+        data.assign(reinterpret_cast<const std::uint8_t*>(text.constData()),
+                    reinterpret_cast<const std::uint8_t*>(text.constData()) + text.size());
     }
     appendLineEnding(data, lineEndingFromIndex(channel.lineEndingCombo->currentIndex()));
     return data;
 }
 
-bool SerialWorkspace::sendBytes(int index, const ByteBuffer &data, bool echo)
+bool SerialWorkspace::sendBytes(int index, const ByteBuffer& data, bool echo)
 {
-    auto &channel = channels_[index];
-    if (!channel.transport || !channel.transport->isOpen()) {
+    auto& channel = channels_[index];
+    if (!channel.session.isOpen()) {
         setChannelStatus(index, QStringLiteral("尚未连接，无法发送"), true);
         return false;
     }
-    if (!channel.sender.isRunning() || !channel.sender.enqueue(data, echo ? 1u : 0u)) {
+    if (!channel.session.send(data, echo ? 1u : 0u)) {
         setChannelStatus(index, QStringLiteral("发送队列已满或不可用"), true);
         return false;
     }
@@ -1069,13 +1144,13 @@ void SerialWorkspace::sendManual(int index)
         return;
     }
     if (data.empty()) {
-        QMessageBox::information(this, QStringLiteral("没有发送内容"),
-                                 QStringLiteral("请输入要发送的数据。"));
+        QMessageBox::information(
+            this, QStringLiteral("没有发送内容"), QStringLiteral("请输入要发送的数据。"));
         return;
     }
-    if (!channels_[index].transport || !channels_[index].transport->isOpen()) {
-        QMessageBox::information(this, QStringLiteral("尚未连接"),
-                                 QStringLiteral("请先连接当前串口。"));
+    if (!channels_[index].session.isOpen()) {
+        QMessageBox::information(
+            this, QStringLiteral("尚未连接"), QStringLiteral("请先连接当前串口。"));
         return;
     }
     sendBytes(index, data);
@@ -1083,8 +1158,8 @@ void SerialWorkspace::sendManual(int index)
 
 void SerialWorkspace::toggleAutoSend(int index)
 {
-    auto &channel = channels_[index];
-    if (channel.autoSendPlan.isRunning()) {
+    auto& channel = channels_[index];
+    if (channel.session.snapshot().scheduledSend.running) {
         stopAutoSend(index, true);
         return;
     }
@@ -1094,36 +1169,36 @@ void SerialWorkspace::toggleAutoSend(int index)
         return;
     }
     if (payload.empty()) {
-        QMessageBox::information(this, QStringLiteral("没有发送内容"),
-                                 QStringLiteral("请输入要发送的数据。"));
+        QMessageBox::information(
+            this, QStringLiteral("没有发送内容"), QStringLiteral("请输入要发送的数据。"));
         return;
     }
-    if (!channel.transport || !channel.transport->isOpen()) {
-        QMessageBox::information(this, QStringLiteral("尚未连接"),
-                                 QStringLiteral("需要先连接该端点。"));
+    if (!channel.session.isOpen()) {
+        QMessageBox::information(
+            this, QStringLiteral("尚未连接"), QStringLiteral("需要先连接该端点。"));
         return;
     }
 
     QDialog dialog(this);
     dialog.setWindowTitle(channelDisplayName(index) + QStringLiteral(" · 定时 / 次数发送"));
-    auto *layout = new QVBoxLayout(&dialog);
-    auto *form = new QFormLayout;
-    auto *intervalSpin = new QSpinBox(&dialog);
+    auto* layout = new QVBoxLayout(&dialog);
+    auto* form = new QFormLayout;
+    auto* intervalSpin = new QSpinBox(&dialog);
     intervalSpin->setRange(10, 60000);
     intervalSpin->setValue(channel.autoIntervalMs);
     intervalSpin->setSuffix(QStringLiteral(" ms"));
-    auto *countSpin = new QSpinBox(&dialog);
+    auto* countSpin = new QSpinBox(&dialog);
     countSpin->setRange(0, 1000000);
     countSpin->setValue(static_cast<int>(channel.autoTargetCount));
     countSpin->setSpecialValueText(QStringLiteral("持续"));
-    auto *echoCheck = new QCheckBox(QStringLiteral("在收发监视中记录每次 TX"), &dialog);
+    auto* echoCheck = new QCheckBox(QStringLiteral("在收发监视中记录每次 TX"), &dialog);
     echoCheck->setChecked(channel.autoEcho);
     echoCheck->setToolTip(QStringLiteral("高频或长时间发送时可关闭，减少界面刷新开销"));
     form->addRow(QStringLiteral("发送间隔"), intervalSpin);
     form->addRow(QStringLiteral("发送次数"), countSpin);
     form->addRow(QString(), echoCheck);
     layout->addLayout(form);
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel | QDialogButtonBox::Ok, &dialog);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Cancel | QDialogButtonBox::Ok, &dialog);
     buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("开始"));
     buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
     connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
@@ -1139,11 +1214,12 @@ void SerialWorkspace::toggleAutoSend(int index)
     PeriodicSendConfig config;
     config.interval = std::chrono::milliseconds(channel.autoIntervalMs);
     config.targetCount = channel.autoTargetCount;
-    if (!channel.autoSendPlan.start(config)) {
-        QMessageBox::warning(this, QStringLiteral("参数无效"), QStringLiteral("发送间隔必须大于 0。"));
+    if (!channel.session.startScheduledSend(
+            std::move(payload), config, channel.autoEcho ? 1u : 0u)) {
+        QMessageBox::warning(
+            this, QStringLiteral("参数无效"), QStringLiteral("发送间隔必须大于 0。"));
         return;
     }
-    channel.autoSendPayload = std::move(payload);
     channel.autoSendButton->setText(QStringLiteral("停止计划发送"));
     channel.sendEdit->setEnabled(false);
     channel.sendHexCheck->setEnabled(false);
@@ -1154,21 +1230,19 @@ void SerialWorkspace::toggleAutoSend(int index)
 
 void SerialWorkspace::stopAutoSend(int index, bool announce)
 {
-    auto &channel = channels_[index];
-    const bool wasRunning = channel.autoSendPlan.isRunning();
-    const auto attempts = channel.autoSendPlan.attempts();
-    const auto successes = channel.autoSendPlan.successes();
-    channel.autoSendPlan.stop();
-    channel.autoSendPayload.clear();
+    auto& channel = channels_[index];
+    const auto summary = channel.session.stopScheduledSend();
     if (channel.autoSendButton) {
         channel.autoSendButton->setText(QStringLiteral("定时 / 次数…"));
         channel.sendEdit->setEnabled(true);
         channel.sendHexCheck->setEnabled(true);
         channel.lineEndingCombo->setEnabled(true);
     }
-    if (announce && wasRunning) {
+    if (announce && (summary.running || summary.attempts != 0)) {
         emit activityChanged(QStringLiteral("%1 计划发送结束：已提交 %2 / 尝试 %3")
-                                 .arg(channelDisplayName(index)).arg(successes).arg(attempts));
+                                 .arg(channelDisplayName(index))
+                                 .arg(summary.submitted)
+                                 .arg(summary.attempts));
     }
     updateGlobalControls();
 }
@@ -1180,14 +1254,11 @@ void SerialWorkspace::processScheduledSends()
     }
     const auto now = PeriodicSendPlan::Clock::now();
     for (int index = 0; index < 2; ++index) {
-        auto &channel = channels_[index];
-        if (!channel.autoSendPlan.isDue(now)) {
-            continue;
-        }
-        const bool sent = sendBytes(index, channel.autoSendPayload,
-                                    channel.autoEcho);
-        channel.autoSendPlan.recordAttempt(sent, now);
-        if (!sent || !channel.autoSendPlan.isRunning()) {
+        const auto result = channels_[index].session.processScheduledSend(now);
+        if (result == testtools::ScheduledSendTick::Failed) {
+            setChannelStatus(index, QStringLiteral("计划发送失败，连接或发送队列不可用"), true);
+            stopAutoSend(index, true);
+        } else if (result == testtools::ScheduledSendTick::Completed) {
             stopAutoSend(index, true);
         }
     }
@@ -1197,7 +1268,7 @@ void SerialWorkspace::processScheduledSends()
     }
     bool allSent = true;
     bool queuesDrained = true;
-    for (auto &direction : stressDirections_) {
+    for (auto& direction : stressDirections_) {
         if (!direction.active) {
             continue;
         }
@@ -1212,8 +1283,8 @@ void SerialWorkspace::processScheduledSends()
             ++direction.nextSequence;
         }
         allSent = allSent && !direction.sendPlan.isRunning();
-        queuesDrained = queuesDrained
-                        && channels_[direction.transmitter].sender.pendingCount() == 0;
+        queuesDrained =
+            queuesDrained && channels_[direction.transmitter].session.snapshot().pendingWrites == 0;
     }
 
     if (allSent && queuesDrained) {
@@ -1238,7 +1309,7 @@ void SerialWorkspace::appendTransmitted(int index, const ByteBuffer &data)
     if (channel.receiveHexCheck->isChecked()) {
         display += fromUtf8(toHex(data));
     } else {
-        QString payload = QString::fromUtf8(reinterpret_cast<const char *>(data.data()),
+        QString payload = QString::fromUtf8(reinterpret_cast<const char*>(data.data()),
                                             static_cast<qsizetype>(data.size()));
         payload.replace(QStringLiteral("\r"), QStringLiteral("\\r"));
         payload.replace(QStringLiteral("\n"), QStringLiteral("\\n"));
@@ -1250,13 +1321,12 @@ void SerialWorkspace::appendTransmitted(int index, const ByteBuffer &data)
     channel.receiveEdit->moveCursor(QTextCursor::End);
 }
 
-void SerialWorkspace::appendReceived(int index, const ByteBuffer &data)
+void SerialWorkspace::appendReceived(int index, const ByteBuffer& data)
 {
-    auto &channel = channels_[index];
-    channel.receivedBytes += data.size();
+    auto& channel = channels_[index];
 
     if (stressTestRunning_) {
-        for (auto &direction : stressDirections_) {
+        for (auto& direction : stressDirections_) {
             if (direction.active && direction.receiver == index) {
                 direction.verifier.push(data);
             }
@@ -1266,7 +1336,7 @@ void SerialWorkspace::appendReceived(int index, const ByteBuffer &data)
     }
 
     if (bidirectionalTestRunning_ && !channel.expectedFrame.empty()) {
-        channel.detectionBuffer.append(reinterpret_cast<const char *>(data.data()), data.size());
+        channel.detectionBuffer.append(reinterpret_cast<const char*>(data.data()), data.size());
         if (channel.detectionBuffer.find(channel.expectedFrame) != std::string::npos) {
             channel.expectedFrame.clear();
             if (index == 0) {
@@ -1288,7 +1358,7 @@ void SerialWorkspace::appendReceived(int index, const ByteBuffer &data)
     if (channel.receiveHexCheck->isChecked()) {
         display += fromUtf8(toHex(data));
     } else {
-        display += QString::fromUtf8(reinterpret_cast<const char *>(data.data()),
+        display += QString::fromUtf8(reinterpret_cast<const char*>(data.data()),
                                      static_cast<qsizetype>(data.size()));
     }
     if (!display.endsWith(QLatin1Char('\n'))) {
@@ -1302,16 +1372,17 @@ void SerialWorkspace::appendReceived(int index, const ByteBuffer &data)
 
 void SerialWorkspace::updateCounter(int index)
 {
-    const auto &channel = channels_[index];
-    channel.counterLabel->setText(QStringLiteral("RX: %1 B  TX: %2 B")
-                                      .arg(channel.receivedBytes).arg(channel.sentBytes));
+    auto& channel = channels_[index];
+    const auto snapshot = channel.session.snapshot();
+    channel.counterLabel->setText(
+        QStringLiteral("RX: %1 B  TX: %2 B").arg(snapshot.receivedBytes).arg(snapshot.sentBytes));
 }
 
 void SerialWorkspace::runBidirectionalTest()
 {
-    if (!channels_[0].transport || !channels_[0].transport->isOpen()
-        || !channels_[1].transport || !channels_[1].transport->isOpen()) {
-        QMessageBox::information(this, QStringLiteral("尚未连接"), QStringLiteral("需要先连接端点 A 和端点 B。"));
+    if (!channels_[0].session.isOpen() || !channels_[1].session.isOpen()) {
+        QMessageBox::information(
+            this, QStringLiteral("尚未连接"), QStringLiteral("需要先连接端点 A 和端点 B。"));
         return;
     }
 
@@ -1357,14 +1428,16 @@ void SerialWorkspace::updateBidirectionalResult(bool timedOut)
         setVisualRole(testResultLabel_, QStringLiteral("testStatusGood"));
     } else if (timedOut) {
         bidirectionalTestRunning_ = false;
-        testResultLabel_->setText(QStringLiteral("双向收发验证超时 · A→B %1  /  B→A %2")
-                                      .arg(aToBPassed_ ? QStringLiteral("PASS") : QStringLiteral("FAIL"))
-                                      .arg(bToAPassed_ ? QStringLiteral("PASS") : QStringLiteral("FAIL")));
+        testResultLabel_->setText(
+            QStringLiteral("双向收发验证超时 · A→B %1  /  B→A %2")
+                .arg(aToBPassed_ ? QStringLiteral("PASS") : QStringLiteral("FAIL"))
+                .arg(bToAPassed_ ? QStringLiteral("PASS") : QStringLiteral("FAIL")));
         setVisualRole(testResultLabel_, QStringLiteral("testStatusError"));
     } else {
-        testResultLabel_->setText(QStringLiteral("正在验证 · A→B %1  /  B→A %2")
-                                      .arg(aToBPassed_ ? QStringLiteral("PASS") : QStringLiteral("等待"))
-                                      .arg(bToAPassed_ ? QStringLiteral("PASS") : QStringLiteral("等待")));
+        testResultLabel_->setText(
+            QStringLiteral("正在验证 · A→B %1  /  B→A %2")
+                .arg(aToBPassed_ ? QStringLiteral("PASS") : QStringLiteral("等待"))
+                .arg(bToAPassed_ ? QStringLiteral("PASS") : QStringLiteral("等待")));
         setVisualRole(testResultLabel_, QStringLiteral("testStatusWorking"));
     }
     updateGlobalControls();
@@ -1372,24 +1445,28 @@ void SerialWorkspace::updateBidirectionalResult(bool timedOut)
 
 void SerialWorkspace::showStressDialog()
 {
-    if (!channels_[0].transport || !channels_[0].transport->isOpen()
-        || !channels_[1].transport || !channels_[1].transport->isOpen()) {
-        QMessageBox::information(this, QStringLiteral("尚未连接"),
+    if (!channels_[0].session.isOpen() || !channels_[1].session.isOpen()) {
+        QMessageBox::information(this,
+                                 QStringLiteral("尚未连接"),
                                  QStringLiteral("可靠性压测需要先连接端点 A 和端点 B。"));
         return;
     }
     if (channelConfig(0).dataBits != 8 || channelConfig(1).dataBits != 8) {
-        QMessageBox::information(this, QStringLiteral("串口格式不适合压测"),
-                                 QStringLiteral("可靠性压测帧包含完整 8 bit 二进制数据，请先将两个端点的数据位都设为 8。"));
+        QMessageBox::information(
+            this,
+            QStringLiteral("串口格式不适合压测"),
+            QStringLiteral(
+                "可靠性压测帧包含完整 8 bit 二进制数据，请先将两个端点的数据位都设为 8。"));
         return;
     }
 
     QDialog dialog(this);
     dialog.setWindowTitle(QStringLiteral("串口可靠性压测"));
     dialog.setMinimumWidth(420);
-    auto *layout = new QVBoxLayout(&dialog);
-    auto *description = new QLabel(
-        QStringLiteral("发送带序号、确定性载荷和 CRC32 的测试帧。BER 只统计已解析载荷，丢帧单独报告。"),
+    auto* layout = new QVBoxLayout(&dialog);
+    auto* description = new QLabel(
+        QStringLiteral(
+            "发送带序号、确定性载荷和 CRC32 的测试帧。BER 只统计已解析载荷，丢帧单独报告。"),
         &dialog);
     description->setWordWrap(true);
     description->setObjectName(QStringLiteral("cardBody"));

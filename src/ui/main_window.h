@@ -1,7 +1,7 @@
 #pragma once
 
-#include "application/background_task_group.h"
-#include "application/device_discovery.h"
+#include "application/device/device_discovery.h"
+#include "application/support/background_task_group.h"
 
 #include <QtWidgets/QMainWindow>
 
@@ -15,84 +15,78 @@ class QPushButton;
 class QStackedWidget;
 class QWidget;
 class SerialWorkspace;
-namespace testtools { class AgentClient; }
+namespace testtools {
+class IAgentConnection;
+}
 
-class MainWindow final : public QMainWindow
-{
+class MainWindow final : public QMainWindow {
     Q_OBJECT
 
-public:
-    explicit MainWindow(QWidget *parent = nullptr);
+  public:
+    explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow() override;
-    bool navigateTo(const QString &pageName);
-    bool setSerialModeForDiagnostics(const QString &modeName);
+    bool navigateTo(const QString& pageName);
+    bool setSerialModeForDiagnostics(const QString& modeName);
 
-private:
-    enum class StatusTone {
-        Neutral,
-        Good,
-        Warning,
-        Error
-    };
+  private:
+    enum class StatusTone { Neutral, Good, Warning, Error };
 
-    enum PageIndex {
-        OverviewPage = 0,
-        SerialPage,
-        TestCenterPage,
-        HistoryPage,
-        SettingsPage
-    };
+    enum PageIndex { OverviewPage = 0, SerialPage, TestCenterPage, HistoryPage, SettingsPage };
 
     void buildUi();
-    QWidget *buildTopBar();
-    QWidget *buildNavigation();
-    QWidget *buildOverviewPage();
-    QWidget *buildSerialPage();
-    QWidget *buildTestCenterPage();
-    QWidget *buildSettingsPage();
-    QWidget *buildEmptyPage(const QString &title, const QString &subtitle,
-                            const QString &heading, const QString &body);
-    QWidget *wrapPage(const QString &title, const QString &subtitle, QWidget *content,
+    QWidget* buildTopBar();
+    QWidget* buildNavigation();
+    QWidget* buildOverviewPage();
+    QWidget* buildSerialPage();
+    QWidget* buildTestCenterPage();
+    QWidget* buildSettingsPage();
+    QWidget* buildEmptyPage(const QString& title,
+                            const QString& subtitle,
+                            const QString& heading,
+                            const QString& body);
+    QWidget* wrapPage(const QString& title,
+                      const QString& subtitle,
+                      QWidget* content,
                       bool scrollable = true);
-    QPushButton *addNavigationButton(const QString &text, int pageIndex);
+    QPushButton* addNavigationButton(const QString& text, int pageIndex);
 
     void refreshDevices();
     void deploySelectedAgent();
     void connectSelectedAgent(bool allowDeploy);
     void stopSelectedAgent();
-    void disconnectAgent(const QString &reason = {});
-    void setAgentStatus(const QString &text, StatusTone tone, const QString &detail = {});
+    void disconnectAgent(const QString& reason = {});
+    void setAgentStatus(const QString& text, StatusTone tone, const QString& detail = {});
     void updateAgentControls();
     void prepareForShutdown();
     void applyDeviceScan(testtools::DeviceScanResult result);
     void applySelectedDevice();
     serialdemo::AdbDevice selectedDevice() const;
     void showPage(int pageIndex);
-    void setAdbStatus(const QString &text, StatusTone tone = StatusTone::Good);
-    void setActivity(const QString &message);
+    void setAdbStatus(const QString& text, StatusTone tone = StatusTone::Good);
+    void setActivity(const QString& message);
     void updateOverview();
     void updateDeviceControls();
 
-    QComboBox *deviceCombo_ = nullptr;
-    QLabel *adbStatusLabel_ = nullptr;
-    QLabel *agentStatusLabel_ = nullptr;
-    QPushButton *agentActionButton_ = nullptr;
-    QPushButton *refreshButton_ = nullptr;
-    QStackedWidget *pages_ = nullptr;
-    SerialWorkspace *serialWorkspace_ = nullptr;
-    QLabel *activityLabel_ = nullptr;
-    QLabel *overviewDeviceValue_ = nullptr;
-    QLabel *overviewAdbValue_ = nullptr;
-    QLabel *overviewAgentValue_ = nullptr;
-    QLabel *agentDeviceValue_ = nullptr;
-    QPushButton *deployAgentButton_ = nullptr;
-    QPushButton *disconnectAgentButton_ = nullptr;
-    QPushButton *stopAgentButton_ = nullptr;
-    QLabel *agentConnectionDetail_ = nullptr;
-    QLabel *agentCapabilitiesValue_ = nullptr;
-    QLabel *agentSystemInfoValue_ = nullptr;
-    std::shared_ptr<testtools::AgentClient> agentClient_;
-    std::vector<QPushButton *> navigationButtons_;
+    QComboBox* deviceCombo_ = nullptr;
+    QLabel* adbStatusLabel_ = nullptr;
+    QLabel* agentStatusLabel_ = nullptr;
+    QPushButton* agentActionButton_ = nullptr;
+    QPushButton* refreshButton_ = nullptr;
+    QStackedWidget* pages_ = nullptr;
+    SerialWorkspace* serialWorkspace_ = nullptr;
+    QLabel* activityLabel_ = nullptr;
+    QLabel* overviewDeviceValue_ = nullptr;
+    QLabel* overviewAdbValue_ = nullptr;
+    QLabel* overviewAgentValue_ = nullptr;
+    QLabel* agentDeviceValue_ = nullptr;
+    QPushButton* deployAgentButton_ = nullptr;
+    QPushButton* disconnectAgentButton_ = nullptr;
+    QPushButton* stopAgentButton_ = nullptr;
+    QLabel* agentConnectionDetail_ = nullptr;
+    QLabel* agentCapabilitiesValue_ = nullptr;
+    QLabel* agentSystemInfoValue_ = nullptr;
+    std::shared_ptr<testtools::IAgentConnection> agentClient_;
+    std::vector<QPushButton*> navigationButtons_;
     testtools::BackgroundTaskGroup scanTasks_;
     testtools::BackgroundTaskGroup agentTasks_;
     QString agentSummary_ = QStringLiteral("未连接");

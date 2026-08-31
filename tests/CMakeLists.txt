@@ -8,13 +8,15 @@ get_filename_component(TESTTOOLS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
 
 add_executable(testtools-core-tests
     core_application_tests.cpp
-    ${TESTTOOLS_ROOT}/src/application/background_task_group.cpp
-    ${TESTTOOLS_ROOT}/src/application/serial_workspace_state.cpp
-    ${TESTTOOLS_ROOT}/src/core/agent_protocol.cpp
-    ${TESTTOOLS_ROOT}/src/core/async_serial_sender.cpp
-    ${TESTTOOLS_ROOT}/src/core/codec.cpp
-    ${TESTTOOLS_ROOT}/src/core/command_line.cpp
-    ${TESTTOOLS_ROOT}/src/core/serial_test_engine.cpp
+    ${TESTTOOLS_ROOT}/src/application/agent/agent_target.cpp
+    ${TESTTOOLS_ROOT}/src/application/serial/serial_session.cpp
+    ${TESTTOOLS_ROOT}/src/application/serial/serial_workspace_state.cpp
+    ${TESTTOOLS_ROOT}/src/application/support/background_task_group.cpp
+    ${TESTTOOLS_ROOT}/src/core/protocol/agent_protocol.cpp
+    ${TESTTOOLS_ROOT}/src/core/serial/async_serial_sender.cpp
+    ${TESTTOOLS_ROOT}/src/core/serial/codec.cpp
+    ${TESTTOOLS_ROOT}/src/core/serial/serial_test_engine.cpp
+    ${TESTTOOLS_ROOT}/src/core/support/command_line.cpp
 )
 
 target_compile_features(testtools-core-tests PRIVATE cxx_std_17)

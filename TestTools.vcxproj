@@ -79,7 +79,7 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\core;$(ProjectDir)third_party\CSerialPort\include;$(ProjectDir)third_party\asio\include;$(ProjectDir)third_party\tiny-process-library;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)third_party\CSerialPort\include;$(ProjectDir)third_party\asio\include;$(ProjectDir)third_party\tiny-process-library;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>ASIO_STANDALONE;CSERIALPORT_USE_UTF8;NOMINMAX;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
@@ -97,7 +97,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\core;$(ProjectDir)third_party\CSerialPort\include;$(ProjectDir)third_party\asio\include;$(ProjectDir)third_party\tiny-process-library;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)third_party\CSerialPort\include;$(ProjectDir)third_party\asio\include;$(ProjectDir)third_party\tiny-process-library;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>ASIO_STANDALONE;CSERIALPORT_USE_UTF8;NOMINMAX;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
@@ -112,21 +112,24 @@
     <QtMoc Include="src\ui\main_window.h" />
     <QtMoc Include="src\ui\pages\serial_workspace.h" />
     <ClCompile Include="src\main.cpp" />
-    <ClCompile Include="src\application\device_discovery.cpp" />
-    <ClCompile Include="src\application\agent_deployment.cpp" />
-    <ClCompile Include="src\application\background_task_group.cpp" />
-    <ClCompile Include="src\application\serial_transport_service.cpp" />
-    <ClCompile Include="src\application\serial_workspace_state.cpp" />
-    <ClCompile Include="src\core\agent_client.cpp" />
-    <ClCompile Include="src\core\agent_protocol.cpp" />
-    <ClCompile Include="src\core\agent_serial_transport.cpp" />
-    <ClCompile Include="src\core\async_serial_sender.cpp" />
-    <ClCompile Include="src\core\adb_transport.cpp" />
-    <ClCompile Include="src\core\codec.cpp" />
-    <ClCompile Include="src\core\command_line.cpp" />
-    <ClCompile Include="src\core\cserialport_transport.cpp" />
-    <ClCompile Include="src\core\process_runner.cpp" />
-    <ClCompile Include="src\core\serial_test_engine.cpp" />
+    <ClCompile Include="src\application\agent\android_agent_deployment.cpp" />
+    <ClCompile Include="src\application\agent\agent_connection_service.cpp" />
+    <ClCompile Include="src\application\agent\agent_target.cpp" />
+    <ClCompile Include="src\application\device\device_discovery.cpp" />
+    <ClCompile Include="src\application\serial\serial_session.cpp" />
+    <ClCompile Include="src\application\serial\serial_transport_service.cpp" />
+    <ClCompile Include="src\application\serial\serial_workspace_state.cpp" />
+    <ClCompile Include="src\application\support\background_task_group.cpp" />
+    <ClCompile Include="src\adapters\adb\adb_transport.cpp" />
+    <ClCompile Include="src\adapters\adb\process_runner.cpp" />
+    <ClCompile Include="src\adapters\agent\agent_client.cpp" />
+    <ClCompile Include="src\adapters\agent\agent_serial_transport.cpp" />
+    <ClCompile Include="src\adapters\serial\cserialport_transport.cpp" />
+    <ClCompile Include="src\core\protocol\agent_protocol.cpp" />
+    <ClCompile Include="src\core\serial\async_serial_sender.cpp" />
+    <ClCompile Include="src\core\serial\codec.cpp" />
+    <ClCompile Include="src\core\serial\serial_test_engine.cpp" />
+    <ClCompile Include="src\core\support\command_line.cpp" />
     <ClCompile Include="src\diagnostics\self_test.cpp" />
     <ClCompile Include="src\ui\main_window.cpp" />
     <ClCompile Include="src\ui\pages\serial_workspace.cpp" />
@@ -142,24 +145,28 @@
     <ClCompile Include="third_party\tiny-process-library\process_win.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="src\application\device_discovery.h" />
-    <ClInclude Include="src\application\agent_deployment.h" />
-    <ClInclude Include="src\application\background_task_group.h" />
-    <ClInclude Include="src\application\serial_transport_service.h" />
-    <ClInclude Include="src\application\serial_workspace_state.h" />
-    <ClInclude Include="src\core\agent_client.h" />
-    <ClInclude Include="src\core\agent_protocol.h" />
-    <ClInclude Include="src\core\agent_version.h" />
-    <ClInclude Include="src\core\agent_serial_transport.h" />
-    <ClInclude Include="src\core\async_serial_sender.h" />
-    <ClInclude Include="src\core\adb_transport.h" />
-    <ClInclude Include="src\core\codec.h" />
-    <ClInclude Include="src\core\command_line.h" />
-    <ClInclude Include="src\core\cserialport_transport.h" />
-    <ClInclude Include="src\core\process_runner.h" />
-    <ClInclude Include="src\core\serial_transport.h" />
-    <ClInclude Include="src\core\serial_types.h" />
-    <ClInclude Include="src\core\serial_test_engine.h" />
+    <ClInclude Include="src\application\agent\android_agent_deployment.h" />
+    <ClInclude Include="src\application\agent\agent_connection_service.h" />
+    <ClInclude Include="src\application\agent\agent_target.h" />
+    <ClInclude Include="src\application\device\device_discovery.h" />
+    <ClInclude Include="src\application\serial\serial_session.h" />
+    <ClInclude Include="src\application\serial\serial_transport_service.h" />
+    <ClInclude Include="src\application\serial\serial_workspace_state.h" />
+    <ClInclude Include="src\application\support\background_task_group.h" />
+    <ClInclude Include="src\adapters\adb\adb_transport.h" />
+    <ClInclude Include="src\adapters\adb\process_runner.h" />
+    <ClInclude Include="src\adapters\agent\agent_client.h" />
+    <ClInclude Include="src\adapters\agent\agent_serial_transport.h" />
+    <ClInclude Include="src\adapters\serial\cserialport_transport.h" />
+    <ClInclude Include="src\core\protocol\agent_protocol.h" />
+    <ClInclude Include="src\core\protocol\agent_connection.h" />
+    <ClInclude Include="src\core\protocol\agent_version.h" />
+    <ClInclude Include="src\core\serial\async_serial_sender.h" />
+    <ClInclude Include="src\core\serial\codec.h" />
+    <ClInclude Include="src\core\serial\serial_test_engine.h" />
+    <ClInclude Include="src\core\serial\serial_transport.h" />
+    <ClInclude Include="src\core\serial\serial_types.h" />
+    <ClInclude Include="src\core\support\command_line.h" />
     <ClInclude Include="src\diagnostics\self_test.h" />
     <ClInclude Include="src\ui\theme.h" />
   </ItemGroup>
@@ -170,6 +177,7 @@
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
   <PropertyGroup Label="TestToolsAndroidAgent">
+    <TestToolsAndroidAgentAbi Condition="'$(TestToolsAndroidAgentAbi)'==''">armeabi-v7a</TestToolsAndroidAgentAbi>
     <TestToolsNdkRoot Condition="'$(TestToolsNdkRoot)'=='' AND '$(ANDROID_NDK_ROOT)'!=''">$(ANDROID_NDK_ROOT)</TestToolsNdkRoot>
     <TestToolsNdkRoot Condition="'$(TestToolsNdkRoot)'=='' AND '$(ANDROID_NDK_HOME)'!=''">$(ANDROID_NDK_HOME)</TestToolsNdkRoot>
     <TestToolsNdkRoot Condition="'$(TestToolsNdkRoot)'=='' AND Exists('$(LOCALAPPDATA)\Android\Sdk\ndk\27.3.13750724\build\cmake\android.toolchain.cmake')">$(LOCALAPPDATA)\Android\Sdk\ndk\27.3.13750724</TestToolsNdkRoot>
@@ -181,7 +189,7 @@
   <Target Name="BuildTestToolsAndroidAgent" AfterTargets="Build"
           Condition="'$(DesignTimeBuild)'!='true' AND Exists('$(TestToolsNdkRoot)\build\cmake\android.toolchain.cmake')">
     <Message Importance="High" Text="Building Android Agent for $(Configuration) output..." />
-    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)scripts\build-android-agent.ps1&quot; -NdkRoot &quot;$(TestToolsNdkRoot)&quot; -Configuration &quot;$(Configuration)&quot; -OutputDirectory &quot;$(OutDir).&quot; -CMakeProgram &quot;$(TestToolsCMakeProgram)&quot; -NinjaProgram &quot;$(TestToolsNinjaProgram)&quot;" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)scripts\build-android-agent.ps1&quot; -NdkRoot &quot;$(TestToolsNdkRoot)&quot; -Abi &quot;$(TestToolsAndroidAgentAbi)&quot; -Configuration &quot;$(Configuration)&quot; -OutputDirectory &quot;$(OutDir).&quot; -CMakeProgram &quot;$(TestToolsCMakeProgram)&quot; -NinjaProgram &quot;$(TestToolsNinjaProgram)&quot;" />
   </Target>
   <Target Name="WarnMissingTestToolsAndroidAgent" AfterTargets="Build"
           Condition="'$(DesignTimeBuild)'!='true' AND !Exists('$(TestToolsNdkRoot)\build\cmake\android.toolchain.cmake')">

@@ -1,18 +1,18 @@
   #include "self_test.h"
 
-#include "core/adb_transport.h"
-#include "core/agent_client.h"
-#include "core/agent_protocol.h"
-#include "core/agent_version.h"
-#include "core/agent_serial_transport.h"
-#include "core/async_serial_sender.h"
-#include "core/codec.h"
-#include "core/command_line.h"
-#include "core/process_runner.h"
-#include "core/serial_test_engine.h"
-#include "application/agent_deployment.h"
-#include "application/background_task_group.h"
-#include "application/serial_workspace_state.h"
+#include "adapters/adb/adb_transport.h"
+#include "adapters/adb/process_runner.h"
+#include "adapters/agent/agent_client.h"
+#include "adapters/agent/agent_serial_transport.h"
+#include "core/protocol/agent_protocol.h"
+#include "core/protocol/agent_version.h"
+#include "core/serial/async_serial_sender.h"
+#include "core/serial/codec.h"
+#include "core/serial/serial_test_engine.h"
+#include "core/support/command_line.h"
+#include "application/agent/android_agent_deployment.h"
+#include "application/serial/serial_workspace_state.h"
+#include "application/support/background_task_group.h"
 
 #include <atomic>
 #include <chrono>
@@ -359,7 +359,7 @@ int runAgentSerialSmokeTest(const std::string &serial, std::uint16_t agentContro
 int runAgentDeploymentSmokeTest(const std::string &serial,
                                 const std::string &applicationDirectory)
 {
-    testtools::AgentDeployment deployment;
+    testtools::AndroidAgentDeployment deployment;
     const auto result = deployment.deployAndForward(serial, applicationDirectory,
         [](const std::string &message) { std::cout << message << '\n'; });
     if (!result.succeeded) {
@@ -401,7 +401,7 @@ int runAgentDeploymentSmokeTest(const std::string &serial,
 
 int runAgentReconnectSmokeTest(const std::string &serial)
 {
-    testtools::AgentDeployment deployment;
+    testtools::AndroidAgentDeployment deployment;
     const auto result = deployment.reconnect(serial,
         [](const std::string &message) { std::cout << message << '\n'; });
     if (!result.succeeded) {
@@ -431,7 +431,7 @@ int runAgentReconnectSmokeTest(const std::string &serial)
 
 int runAgentAtSmokeTest(const std::string &serial, const std::string &endpoint)
 {
-    testtools::AgentDeployment deployment;
+    testtools::AndroidAgentDeployment deployment;
     const auto connection = deployment.reconnect(serial,
         [](const std::string &message) { std::cout << message << '\n'; });
     if (!connection.succeeded) {

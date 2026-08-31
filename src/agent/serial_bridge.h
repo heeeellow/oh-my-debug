@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/serial_types.h"
+#include "core/serial/serial_types.h"
 
 #include <atomic>
 #include <cstdint>

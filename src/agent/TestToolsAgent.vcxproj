@@ -41,13 +41,16 @@
     <ClCompile Include="agent_main.cpp" />
     <ClCompile Include="agent_service.cpp" />
     <ClCompile Include="serial_bridge.cpp" />
-    <ClCompile Include="..\core\agent_protocol.cpp" />
+    <ClCompile Include="..\core\protocol\agent_protocol.cpp" />
+    <ClCompile Include="..\core\support\command_line.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="agent_service.h" />
     <ClInclude Include="serial_bridge.h" />
-    <ClInclude Include="..\core\agent_protocol.h" />
-    <ClInclude Include="..\core\serial_types.h" />
+    <ClInclude Include="..\core\protocol\agent_protocol.h" />
+    <ClInclude Include="..\core\protocol\agent_version.h" />
+    <ClInclude Include="..\core\serial\serial_types.h" />
+    <ClInclude Include="..\core\support\command_line.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

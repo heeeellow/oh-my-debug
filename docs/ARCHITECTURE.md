@@ -35,7 +35,7 @@ TestTools 从串口助手演进为设备中心的调试与测试工作台。架�
                │                           │
 ┌──────────────▼──────────────┐ ┌──────────▼──────────────────┐
 │ Host transports/adapters   │ │ Local device adapters       │
-│ ADB / TCP / Agent client   │ │ Windows COM / process       │
+│ ADB / SSH / Agent client   │ │ Windows COM / process       │
 └──────────────┬──────────────┘ └─────────────────────────────┘
                │ loopback tunnel
 ┌──────────────▼───────────────────────────────────────────────┐
@@ -44,12 +44,12 @@ TestTools 从串口助手演进为设备中心的调试与测试工作台。架�
 ├──────────────────────────────────────────────────────────────┤
 │ serial and future DDR/storage/audio/network/GPIO runners    │
 ├──────────────────────────────────────────────────────────────┤
-│ Android / Linux platform adapters                           │
+│ ARM Android / ARM Linux platform adapters                   │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-依赖只能向下。`src/core/`、`src/application/` 和 `src/agent/` 不得出现 `QString`、`QByteArray`、
-`QObject`、Qt 容器或 Qt 线程类型。UI 可以依赖 core/application 接口，反向依赖不允许。
+依赖只能向下。`src/core/`、`src/application/`、`src/adapters/` 和 `src/agent/` 不得出现 `QString`、
+`QByteArray`、`QObject`、Qt 容器或 Qt 线程类型。UI 可以依赖 core/application 接口，反向依赖不允许。
 
 ## 3. 源码所有权映射
 
@@ -59,9 +59,9 @@ TestTools 从串口助手演进为设备中心的调试与测试工作台。架�
 | 层 | 源码所有权 | 边界 |
 | --- | --- | --- |
 | Presentation | `src/ui/main_window.*`、`src/ui/pages/serial_workspace.*`、`src/ui/theme.*` | Qt 控件、文案和 GUI 线程映射 |
-| Application | `src/application/` | 设备发现、部署、串口工作区状态、传输创建边界和后台任务所有权 |
-| Core | `src/core/` 中的协议、值对象、接口、编解码、发送与测试逻辑 | 标准 C++，不得依赖 Qt |
-| Host adapters | 当前位于 `src/core/` 的串口、Agent、ADB 和进程适配器 | 通过接口或 application 服务进入 UI；后续迁目录不改变行为 |
+| Application | `src/application/{agent,device,serial,support}/` | 设备发现、部署、串口工作区状态、传输创建边界和后台任务所有权 |
+| Core | `src/core/{protocol,serial,support}/` | 协议、值对象、接口、编解码、发送与测试逻辑；标准 C++，不得依赖 Qt |
+| Host adapters | `src/adapters/{adb,agent,serial}/` | ADB、进程、Agent TCP 和 Windows COM 的具体实现；不保存产品用例状态 |
 | Board Agent | `src/agent/agent_service.*`、`serial_bridge.*` | 固定能力、参数校验和板端资源访问 |
 | 通用任务/历史/产物 | 规划中的 application/core 职责 | 不为匹配架构图创建空类型 |
 
@@ -100,8 +100,13 @@ Application 层负责跨接口用例和生命周期，目标职责包括：
 
 ## 5. 板端 Agent
 
-Agent 使用 C++17 与平台 API 实现，不依赖 Qt。开发期默认只监听板端 `127.0.0.1`，Windows 通过
-ADB 动态端口转发连接。直接 TCP 必须由显式产品配置开启，并先补充认证、授权和网络暴露策略。
+Agent 使用 C++17 与平台 API 实现，不依赖 Qt。开发期默认只监听板端 `127.0.0.1`。Android 使用
+ADB 动态端口转发；Linux 采用 SSH 隧道和受控服务部署。直接 TCP 必须由显式产品配置开启，并先
+补充认证、授权和网络暴露策略。
+
+Agent 产物由“操作系统用户空间 + ARM 架构”确定：Android 使用 NDK/Bionic 的 `armeabi-v7a` 或
+`arm64-v8a`，Linux 使用 glibc 工具链的 `armv7` 或 `aarch64`。内核版本不作为产物目录维度；
+更换内核后重新验证设备节点、驱动、termios、权限和安全策略。
 
 Agent v1 的最小能力族包含会话握手、能力查询、系统信息、串口枚举和串口托管；实际开放范围见
 `STATUS.md`。扩展能力时按需要逐步加入：
@@ -130,8 +135,8 @@ payload
 控制 JSON 使用 UTF-8，请求至少包含协议版本、请求 ID、方法和参数。协议和串口数据通道定义以
 [`AGENT_PROTOCOL_V1.md`](AGENT_PROTOCOL_V1.md) 为准。
 
-串口等持续数据不与控制 JSON 混流：`serial.open` 返回只监听回环地址的临时数据端口，上位机为其
-建立独立 ADB 转发。未来任务事件和产物若共享控制连接，必须使用通道 ID、有界队列和公平调度；
+串口等持续数据不与控制 JSON 混流：`serial.open` 返回只监听回环地址的临时数据端口，上位机通过
+当前设备连接器建立独立隧道。未来任务事件和产物若共享控制连接，必须使用通道 ID、有界队列和公平调度；
 结果与控制事件不能因日志流量被静默丢弃。
 
 ADB `forward dev:/dev/...` 不属于产品串口路径。目标 Android 上的实机证据表明它会在连接后立即
@@ -165,8 +170,8 @@ created -> queued -> running -> succeeded
 
 ## 9. 部署与安全
 
-- 开发期：上位机探测 Agent，必要时通过 ADB 推送到受控临时目录并启动。
-- 稳定期：Android 使用受控 init/service 集成，Buildroot 使用包配置安装。
+- 开发期：Android 通过 ADB 部署和转发；Linux 可在板端原生构建，后续由 SSH 部署和转发。
+- 稳定期：Android 使用受控 init/service 集成，Linux/Buildroot 使用 systemd 或包配置安装。
 - 上位机与 Agent 独立版本，握手协商协议范围和能力版本。
 - 升级失败不能破坏 ADB；需要保留版本查询、产物校验和回退入口。
 - 当前安全依赖已有 ADB 授权和回环监听；网络认证、包签名和量产权限仍是开放项。

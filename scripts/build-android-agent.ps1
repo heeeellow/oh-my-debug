@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$NdkRoot,
-    [ValidateSet('armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64')]
+    [ValidateSet('armeabi-v7a', 'arm64-v8a')]
     [string]$Abi = 'armeabi-v7a',
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',

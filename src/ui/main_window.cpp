@@ -1,7 +1,7 @@
 #include "main_window.h"
 
-#include "application/agent_deployment.h"
-#include "core/agent_client.h"
+#include "application/agent/agent_connection_service.h"
+#include "application/agent/android_agent_deployment.h"
 #include "theme.h"
 #include "ui/pages/serial_workspace.h"
 
@@ -27,12 +27,12 @@
 
 namespace {
 
-QString fromUtf8(const std::string &text)
+QString fromUtf8(const std::string& text)
 {
     return QString::fromUtf8(text.data(), static_cast<qsizetype>(text.size()));
 }
 
-QString jsonStringValue(const std::string &json, const std::string &key)
+QString jsonStringValue(const std::string& json, const std::string& key)
 {
     const std::string marker = "\"" + key + "\":\"";
     const std::size_t start = json.find(marker);
@@ -41,14 +41,15 @@ QString jsonStringValue(const std::string &json, const std::string &key)
     }
     const std::size_t valueStart = start + marker.size();
     const std::size_t end = json.find('"', valueStart);
-    return end == std::string::npos ? QString{} : fromUtf8(json.substr(valueStart, end - valueStart));
+    return end == std::string::npos ? QString{}
+                                    : fromUtf8(json.substr(valueStart, end - valueStart));
 }
 
-QString deviceDisplayName(const serialdemo::AdbDevice &device)
+QString deviceDisplayName(const serialdemo::AdbDevice& device)
 {
     const QString description = fromUtf8(device.description);
     const QStringList fields = description.split(QLatin1Char(' '), Qt::SkipEmptyParts);
-    for (const QString &field : fields) {
+    for (const QString& field : fields) {
         if (field.startsWith(QStringLiteral("model:"))) {
             QString model = field.mid(6);
             model.replace(QLatin1Char('_'), QLatin1Char(' '));
@@ -58,21 +59,21 @@ QString deviceDisplayName(const serialdemo::AdbDevice &device)
     return fromUtf8(device.serial);
 }
 
-QFrame *makeSummaryCard(QWidget *parent, const QString &eyebrow, QLabel *&valueLabel,
-                        const QString &body)
+QFrame*
+makeSummaryCard(QWidget* parent, const QString& eyebrow, QLabel*& valueLabel, const QString& body)
 {
-    auto *card = new QFrame(parent);
+    auto* card = new QFrame(parent);
     card->setObjectName(QStringLiteral("summaryCard"));
-    auto *layout = new QVBoxLayout(card);
+    auto* layout = new QVBoxLayout(card);
     layout->setContentsMargins(16, 14, 16, 14);
     layout->setSpacing(5);
 
-    auto *eyebrowLabel = new QLabel(eyebrow, card);
+    auto* eyebrowLabel = new QLabel(eyebrow, card);
     eyebrowLabel->setObjectName(QStringLiteral("cardEyebrow"));
     valueLabel = new QLabel(QStringLiteral("—"), card);
     valueLabel->setObjectName(QStringLiteral("cardValue"));
     valueLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    auto *bodyLabel = new QLabel(body, card);
+    auto* bodyLabel = new QLabel(body, card);
     bodyLabel->setObjectName(QStringLiteral("cardBody"));
     bodyLabel->setWordWrap(true);
 
@@ -82,26 +83,29 @@ QFrame *makeSummaryCard(QWidget *parent, const QString &eyebrow, QLabel *&valueL
     return card;
 }
 
-QFrame *makeFeatureCard(QWidget *parent, const QString &title, const QString &status,
-                        const QString &description, bool available)
+QFrame* makeFeatureCard(QWidget* parent,
+                        const QString& title,
+                        const QString& status,
+                        const QString& description,
+                        bool available)
 {
-    auto *card = new QFrame(parent);
+    auto* card = new QFrame(parent);
     card->setObjectName(QStringLiteral("featureCard"));
-    auto *layout = new QVBoxLayout(card);
+    auto* layout = new QVBoxLayout(card);
     layout->setContentsMargins(16, 14, 16, 14);
     layout->setSpacing(7);
 
-    auto *top = new QHBoxLayout;
-    auto *titleLabel = new QLabel(title, card);
+    auto* top = new QHBoxLayout;
+    auto* titleLabel = new QLabel(title, card);
     titleLabel->setObjectName(QStringLiteral("sectionLabel"));
-    auto *statusLabel = new QLabel(status, card);
+    auto* statusLabel = new QLabel(status, card);
     statusLabel->setObjectName(available ? QStringLiteral("topStatusGood")
                                          : QStringLiteral("topStatusWarn"));
     top->addWidget(titleLabel);
     top->addStretch();
     top->addWidget(statusLabel);
 
-    auto *body = new QLabel(description, card);
+    auto* body = new QLabel(description, card);
     body->setObjectName(QStringLiteral("cardBody"));
     body->setWordWrap(true);
     layout->addLayout(top);
@@ -112,12 +116,14 @@ QFrame *makeFeatureCard(QWidget *parent, const QString &title, const QString &st
 
 } // namespace
 
-MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent)
+MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 {
     buildUi();
-    connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit,
-            this, &MainWindow::prepareForShutdown, Qt::DirectConnection);
+    connect(QCoreApplication::instance(),
+            &QCoreApplication::aboutToQuit,
+            this,
+            &MainWindow::prepareForShutdown,
+            Qt::DirectConnection);
     refreshDevices();
 }
 
@@ -147,21 +153,21 @@ void MainWindow::prepareForShutdown()
     agentAdbSerial_.clear();
     agentForwardPort_ = 0;
     if (!agentSerial.empty() && agentPort != 0) {
-        testtools::AgentDeployment().removeForward(agentSerial, agentPort);
+        testtools::AndroidAgentDeployment().removeForward(agentSerial, agentPort);
     }
     scanTasks_.wait();
     agentTasks_.wait();
     // A deployment may have completed after the event loop began shutting
     // down, before its queued result could transfer ownership of the port.
     // Remove only forwards targeting this Agent's fixed control port.
-    testtools::AgentDeployment().removeControlForwards(selectedSerial);
+    testtools::AndroidAgentDeployment().removeControlForwards(selectedSerial);
     if (!agentSerial.empty() && agentSerial != selectedSerial) {
-        testtools::AgentDeployment().removeControlForwards(agentSerial);
+        testtools::AndroidAgentDeployment().removeControlForwards(agentSerial);
     }
     QCoreApplication::removePostedEvents(this);
 }
 
-bool MainWindow::navigateTo(const QString &pageName)
+bool MainWindow::navigateTo(const QString& pageName)
 {
     const QString normalized = pageName.trimmed().toLower();
     if (normalized == QStringLiteral("overview")) {
@@ -180,7 +186,7 @@ bool MainWindow::navigateTo(const QString &pageName)
     return true;
 }
 
-bool MainWindow::setSerialModeForDiagnostics(const QString &modeName)
+bool MainWindow::setSerialModeForDiagnostics(const QString& modeName)
 {
     return serialWorkspace_ && serialWorkspace_->setWorkspaceModeForDiagnostics(modeName);
 }
@@ -192,15 +198,15 @@ void MainWindow::buildUi()
     setMinimumSize(1120, 720);
     setStyleSheet(testtools::ui::applicationStyleSheet());
 
-    auto *surface = new QWidget(this);
+    auto* surface = new QWidget(this);
     surface->setObjectName(QStringLiteral("appSurface"));
-    auto *root = new QVBoxLayout(surface);
+    auto* root = new QVBoxLayout(surface);
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
     root->addWidget(buildTopBar());
 
-    auto *body = new QWidget(surface);
-    auto *bodyLayout = new QHBoxLayout(body);
+    auto* body = new QWidget(surface);
+    auto* bodyLayout = new QHBoxLayout(body);
     bodyLayout->setContentsMargins(0, 0, 0, 0);
     bodyLayout->setSpacing(0);
     bodyLayout->addWidget(buildNavigation());
@@ -209,19 +215,21 @@ void MainWindow::buildUi()
     pages_->addWidget(buildOverviewPage());
     pages_->addWidget(buildSerialPage());
     pages_->addWidget(buildTestCenterPage());
-    pages_->addWidget(buildEmptyPage(QStringLiteral("运行记录"),
-                                     QStringLiteral("按设备和任务回看参数、结果与产物"),
-                                     QStringLiteral("尚无运行记录"),
-                                     QStringLiteral("Agent 任务模型接入后，这里会保存每次运行的设备快照、参数、结果和产物索引。")));
+    pages_->addWidget(buildEmptyPage(
+        QStringLiteral("运行记录"),
+        QStringLiteral("按设备和任务回看参数、结果与产物"),
+        QStringLiteral("尚无运行记录"),
+        QStringLiteral(
+            "Agent 任务模型接入后，这里会保存每次运行的设备快照、参数、结果和产物索引。")));
     pages_->addWidget(buildSettingsPage());
     bodyLayout->addWidget(pages_, 1);
     root->addWidget(body, 1);
 
-    auto *activity = new QFrame(surface);
+    auto* activity = new QFrame(surface);
     activity->setObjectName(QStringLiteral("activityBar"));
-    auto *activityLayout = new QHBoxLayout(activity);
+    auto* activityLayout = new QHBoxLayout(activity);
     activityLayout->setContentsMargins(18, 9, 18, 9);
-    auto *activityTitle = new QLabel(QStringLiteral("活动"), activity);
+    auto* activityTitle = new QLabel(QStringLiteral("活动"), activity);
     activityTitle->setObjectName(QStringLiteral("activityTitle"));
     activityLabel_ = new QLabel(QStringLiteral("正在初始化设备列表"), activity);
     activityLabel_->setObjectName(QStringLiteral("activityMessage"));
@@ -234,26 +242,26 @@ void MainWindow::buildUi()
     showPage(OverviewPage);
 }
 
-QWidget *MainWindow::buildTopBar()
+QWidget* MainWindow::buildTopBar()
 {
-    auto *bar = new QFrame(this);
+    auto* bar = new QFrame(this);
     bar->setObjectName(QStringLiteral("topBar"));
-    auto *layout = new QHBoxLayout(bar);
+    auto* layout = new QHBoxLayout(bar);
     layout->setContentsMargins(18, 11, 16, 11);
     layout->setSpacing(12);
 
-    auto *brand = new QHBoxLayout;
+    auto* brand = new QHBoxLayout;
     brand->setSpacing(8);
-    auto *title = new QLabel(QStringLiteral("TestTools"), bar);
+    auto* title = new QLabel(QStringLiteral("TestTools"), bar);
     title->setObjectName(QStringLiteral("appTitle"));
-    auto *subtitle = new QLabel(QStringLiteral("板卡调试与测试工作台"), bar);
+    auto* subtitle = new QLabel(QStringLiteral("板卡调试与测试工作台"), bar);
     subtitle->setObjectName(QStringLiteral("appSubtitle"));
     brand->addWidget(title);
     brand->addWidget(subtitle);
     layout->addLayout(brand);
     layout->addSpacing(20);
 
-    auto *caption = new QLabel(QStringLiteral("设备"), bar);
+    auto* caption = new QLabel(QStringLiteral("设备"), bar);
     caption->setObjectName(QStringLiteral("topCaption"));
     deviceCombo_ = new QComboBox(bar);
     deviceCombo_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
@@ -280,12 +288,12 @@ QWidget *MainWindow::buildTopBar()
     return bar;
 }
 
-QWidget *MainWindow::buildNavigation()
+QWidget* MainWindow::buildNavigation()
 {
-    auto *rail = new QFrame(this);
+    auto* rail = new QFrame(this);
     rail->setObjectName(QStringLiteral("navigationRail"));
     rail->setFixedWidth(164);
-    auto *layout = new QVBoxLayout(rail);
+    auto* layout = new QVBoxLayout(rail);
     layout->setContentsMargins(10, 16, 10, 12);
     layout->setSpacing(4);
 
@@ -298,9 +306,9 @@ QWidget *MainWindow::buildNavigation()
     return rail;
 }
 
-QPushButton *MainWindow::addNavigationButton(const QString &text, int pageIndex)
+QPushButton* MainWindow::addNavigationButton(const QString& text, int pageIndex)
 {
-    auto *button = new QPushButton(text, this);
+    auto* button = new QPushButton(text, this);
     button->setObjectName(QStringLiteral("navigationButton"));
     button->setCheckable(true);
     button->setCursor(Qt::PointingHandCursor);
@@ -309,50 +317,59 @@ QPushButton *MainWindow::addNavigationButton(const QString &text, int pageIndex)
     return button;
 }
 
-QWidget *MainWindow::buildOverviewPage()
+QWidget* MainWindow::buildOverviewPage()
 {
-    auto *content = new QWidget(this);
-    auto *layout = new QVBoxLayout(content);
+    auto* content = new QWidget(this);
+    auto* layout = new QVBoxLayout(content);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(14);
 
-    auto *contextPanel = new QFrame(content);
+    auto* contextPanel = new QFrame(content);
     contextPanel->setObjectName(QStringLiteral("contextPanel"));
-    auto *summaries = new QHBoxLayout(contextPanel);
+    auto* summaries = new QHBoxLayout(contextPanel);
     summaries->setContentsMargins(4, 0, 4, 0);
     summaries->setSpacing(0);
     const auto addDivider = [contextPanel, summaries] {
-        auto *divider = new QFrame(contextPanel);
+        auto* divider = new QFrame(contextPanel);
         divider->setObjectName(QStringLiteral("summaryDivider"));
         divider->setFixedWidth(1);
         divider->setMinimumHeight(54);
         summaries->addWidget(divider);
     };
-    summaries->addWidget(makeSummaryCard(contextPanel, QStringLiteral("当前设备"), overviewDeviceValue_,
-                                         QStringLiteral("所有操作都会作用于这台板卡")), 1);
+    summaries->addWidget(makeSummaryCard(contextPanel,
+                                         QStringLiteral("当前设备"),
+                                         overviewDeviceValue_,
+                                         QStringLiteral("所有操作都会作用于这台板卡")),
+                         1);
     addDivider();
-    summaries->addWidget(makeSummaryCard(contextPanel, QStringLiteral("ADB"), overviewAdbValue_,
-                                         QStringLiteral("负责发现、部署和安全隧道")), 1);
+    summaries->addWidget(makeSummaryCard(contextPanel,
+                                         QStringLiteral("ADB"),
+                                         overviewAdbValue_,
+                                         QStringLiteral("负责发现、部署和安全隧道")),
+                         1);
     addDivider();
-    summaries->addWidget(makeSummaryCard(contextPanel, QStringLiteral("板端 Agent"), overviewAgentValue_,
-                                         QStringLiteral("后续测试能力的统一入口")), 1);
+    summaries->addWidget(makeSummaryCard(contextPanel,
+                                         QStringLiteral("板端 Agent"),
+                                         overviewAgentValue_,
+                                         QStringLiteral("后续测试能力的统一入口")),
+                         1);
     layout->addWidget(contextPanel);
 
-    auto *quickStart = new QFrame(content);
+    auto* quickStart = new QFrame(content);
     quickStart->setObjectName(QStringLiteral("featureCard"));
-    auto *quickLayout = new QVBoxLayout(quickStart);
+    auto* quickLayout = new QVBoxLayout(quickStart);
     quickLayout->setContentsMargins(18, 16, 18, 16);
-    auto *quickTitle = new QLabel(QStringLiteral("快速开始"), quickStart);
+    auto* quickTitle = new QLabel(QStringLiteral("快速开始"), quickStart);
     quickTitle->setObjectName(QStringLiteral("sectionLabel"));
-    auto *quickBody = new QLabel(
-        QStringLiteral("选择设备后进入串口工作台，默认连接一个串口即可调试；需要链路验证或压测时再进入双端调试。"),
-        quickStart);
+    auto* quickBody = new QLabel(QStringLiteral("选择设备后进入串口工作台，默认连接一个串口即可调试"
+                                                "；需要链路验证或压测时再进入双端调试。"),
+                                 quickStart);
     quickBody->setObjectName(QStringLiteral("cardBody"));
     quickBody->setWordWrap(true);
-    auto *quickActions = new QHBoxLayout;
-    auto *openSerial = new QPushButton(QStringLiteral("打开串口工作台"), quickStart);
+    auto* quickActions = new QHBoxLayout;
+    auto* openSerial = new QPushButton(QStringLiteral("打开串口工作台"), quickStart);
     openSerial->setObjectName(QStringLiteral("primaryButton"));
-    auto *openTests = new QPushButton(QStringLiteral("查看测试演进"), quickStart);
+    auto* openTests = new QPushButton(QStringLiteral("查看测试演进"), quickStart);
     quickActions->addWidget(openSerial);
     quickActions->addWidget(openTests);
     quickActions->addStretch();
@@ -366,10 +383,11 @@ QWidget *MainWindow::buildOverviewPage()
     connect(openSerial, &QPushButton::clicked, this, [this] { showPage(SerialPage); });
     connect(openTests, &QPushButton::clicked, this, [this] { showPage(TestCenterPage); });
     return wrapPage(QStringLiteral("设备概览"),
-                    QStringLiteral("先确认操作对象和连接健康，再进入具体调试任务"), content);
+                    QStringLiteral("先确认操作对象和连接健康，再进入具体调试任务"),
+                    content);
 }
 
-QWidget *MainWindow::buildSerialPage()
+QWidget* MainWindow::buildSerialPage()
 {
     serialWorkspace_ = new SerialWorkspace(this);
     connect(serialWorkspace_, &SerialWorkspace::activityChanged, this, &MainWindow::setActivity);
@@ -379,48 +397,73 @@ QWidget *MainWindow::buildSerialPage()
     });
     return wrapPage(QStringLiteral("串口工作台"),
                     QStringLiteral("连接一个串口开始调试，需要链路验证或压测时切换到双端调试"),
-                    serialWorkspace_, false);
+                    serialWorkspace_,
+                    false);
 }
 
-QWidget *MainWindow::buildTestCenterPage()
+QWidget* MainWindow::buildTestCenterPage()
 {
-    auto *content = new QWidget(this);
-    auto *layout = new QGridLayout(content);
+    auto* content = new QWidget(this);
+    auto* layout = new QGridLayout(content);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setHorizontalSpacing(12);
     layout->setVerticalSpacing(12);
 
-    layout->addWidget(makeFeatureCard(content, QStringLiteral("串口"), QStringLiteral("可用"),
-                                      QStringLiteral("Windows 本地串口与板端串口调试、双端验证和可靠性压测。"), true), 0, 0);
-    layout->addWidget(makeFeatureCard(content, QStringLiteral("DDR 稳定性"), QStringLiteral("需要 Agent"),
-                                      QStringLiteral("容量、固定/动态频率压力、休眠、自刷新和重启恢复。"), false), 0, 1);
-    layout->addWidget(makeFeatureCard(content, QStringLiteral("存储"), QStringLiteral("需要 Agent"),
-                                      QStringLiteral("eMMC/UFS 身份、寿命、性能和数据完整性验证。"), false), 1, 0);
-    layout->addWidget(makeFeatureCard(content, QStringLiteral("音频与摄像头"), QStringLiteral("需要 Agent"),
-                                      QStringLiteral("设备枚举、采集、回放、波形和图像产物。"), false), 1, 1);
+    layout->addWidget(
+        makeFeatureCard(content,
+                        QStringLiteral("串口"),
+                        QStringLiteral("可用"),
+                        QStringLiteral("Windows 本地串口与板端串口调试、双端验证和可靠性压测。"),
+                        true),
+        0,
+        0);
+    layout->addWidget(
+        makeFeatureCard(content,
+                        QStringLiteral("DDR 稳定性"),
+                        QStringLiteral("需要 Agent"),
+                        QStringLiteral("容量、固定/动态频率压力、休眠、自刷新和重启恢复。"),
+                        false),
+        0,
+        1);
+    layout->addWidget(makeFeatureCard(content,
+                                      QStringLiteral("存储"),
+                                      QStringLiteral("需要 Agent"),
+                                      QStringLiteral("eMMC/UFS 身份、寿命、性能和数据完整性验证。"),
+                                      false),
+                      1,
+                      0);
+    layout->addWidget(makeFeatureCard(content,
+                                      QStringLiteral("音频与摄像头"),
+                                      QStringLiteral("需要 Agent"),
+                                      QStringLiteral("设备枚举、采集、回放、波形和图像产物。"),
+                                      false),
+                      1,
+                      1);
     layout->setRowStretch(2, 1);
     layout->setColumnStretch(0, 1);
     layout->setColumnStretch(1, 1);
     return wrapPage(QStringLiteral("测试中心"),
-                    QStringLiteral("能力将由板端 Agent 发现；复杂测试保留专用交互"), content);
+                    QStringLiteral("能力将由板端 Agent 发现；复杂测试保留专用交互"),
+                    content);
 }
 
-QWidget *MainWindow::buildSettingsPage()
+QWidget* MainWindow::buildSettingsPage()
 {
-    auto *content = new QWidget(this);
-    auto *layout = new QVBoxLayout(content);
+    auto* content = new QWidget(this);
+    auto* layout = new QVBoxLayout(content);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(12);
 
-    auto *connectionCard = new QFrame(content);
+    auto* connectionCard = new QFrame(content);
     connectionCard->setObjectName(QStringLiteral("featureCard"));
-    auto *connectionLayout = new QVBoxLayout(connectionCard);
+    auto* connectionLayout = new QVBoxLayout(connectionCard);
     connectionLayout->setContentsMargins(18, 16, 18, 16);
     connectionLayout->setSpacing(10);
-    auto *connectionTitle = new QLabel(QStringLiteral("板端 Agent"), connectionCard);
+    auto* connectionTitle = new QLabel(QStringLiteral("板端 Agent"), connectionCard);
     connectionTitle->setObjectName(QStringLiteral("sectionLabel"));
-    auto *connectionBody = new QLabel(
-        QStringLiteral("优先连接板端已运行的 Agent；未发现时再自动识别 ABI、部署当前版本并发现能力。"),
+    auto* connectionBody = new QLabel(
+        QStringLiteral(
+            "优先连接板端已运行的 Agent；未发现时再自动识别 ABI、部署当前版本并发现能力。"),
         connectionCard);
     connectionBody->setObjectName(QStringLiteral("cardBody"));
     connectionBody->setWordWrap(true);
@@ -431,7 +474,7 @@ QWidget *MainWindow::buildSettingsPage()
     agentDeviceValue_->setObjectName(QStringLiteral("cardBody"));
     connectionLayout->addWidget(agentDeviceValue_);
 
-    auto *actions = new QHBoxLayout;
+    auto* actions = new QHBoxLayout;
     deployAgentButton_ = new QPushButton(QStringLiteral("连接 / 必要时部署"), connectionCard);
     deployAgentButton_->setObjectName(QStringLiteral("primaryButton"));
     disconnectAgentButton_ = new QPushButton(QStringLiteral("断开本机连接"), connectionCard);
@@ -467,20 +510,22 @@ QWidget *MainWindow::buildSettingsPage()
     });
     connect(stopAgentButton_, &QPushButton::clicked, this, &MainWindow::stopSelectedAgent);
     updateAgentControls();
-    return wrapPage(QStringLiteral("设置"),
-                    QStringLiteral("管理真实板端 Agent、协议版本和设备能力"), content);
+    return wrapPage(
+        QStringLiteral("设置"), QStringLiteral("管理真实板端 Agent、协议版本和设备能力"), content);
 }
 
-QWidget *MainWindow::buildEmptyPage(const QString &title, const QString &subtitle,
-                                    const QString &heading, const QString &body)
+QWidget* MainWindow::buildEmptyPage(const QString& title,
+                                    const QString& subtitle,
+                                    const QString& heading,
+                                    const QString& body)
 {
-    auto *content = new QFrame(this);
+    auto* content = new QFrame(this);
     content->setObjectName(QStringLiteral("featureCard"));
-    auto *layout = new QVBoxLayout(content);
+    auto* layout = new QVBoxLayout(content);
     layout->setContentsMargins(20, 18, 20, 18);
-    auto *headingLabel = new QLabel(heading, content);
+    auto* headingLabel = new QLabel(heading, content);
     headingLabel->setObjectName(QStringLiteral("sectionLabel"));
-    auto *bodyLabel = new QLabel(body, content);
+    auto* bodyLabel = new QLabel(body, content);
     bodyLabel->setObjectName(QStringLiteral("cardBody"));
     bodyLabel->setWordWrap(true);
     layout->addWidget(headingLabel);
@@ -489,25 +534,27 @@ QWidget *MainWindow::buildEmptyPage(const QString &title, const QString &subtitl
     return wrapPage(title, subtitle, content);
 }
 
-QWidget *MainWindow::wrapPage(const QString &title, const QString &subtitle, QWidget *content,
+QWidget* MainWindow::wrapPage(const QString& title,
+                              const QString& subtitle,
+                              QWidget* content,
                               bool scrollable)
 {
-    auto *page = new QWidget(this);
+    auto* page = new QWidget(this);
     page->setObjectName(QStringLiteral("pageSurface"));
-    auto *layout = new QVBoxLayout(page);
+    auto* layout = new QVBoxLayout(page);
     layout->setContentsMargins(20, 18, 20, 18);
     layout->setSpacing(13);
 
-    auto *titleLabel = new QLabel(title, page);
+    auto* titleLabel = new QLabel(title, page);
     titleLabel->setObjectName(QStringLiteral("pageTitle"));
-    auto *subtitleLabel = new QLabel(subtitle, page);
+    auto* subtitleLabel = new QLabel(subtitle, page);
     subtitleLabel->setObjectName(QStringLiteral("pageSubtitle"));
     subtitleLabel->setWordWrap(true);
     layout->addWidget(titleLabel);
     layout->addWidget(subtitleLabel);
 
     if (scrollable) {
-        auto *scroll = new QScrollArea(page);
+        auto* scroll = new QScrollArea(page);
         scroll->setObjectName(QStringLiteral("pageScroll"));
         scroll->setWidgetResizable(true);
         scroll->setFrameShape(QFrame::NoFrame);
@@ -531,7 +578,8 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
     }
     const auto device = selectedDevice();
     if (device.serial.empty() || device.state != "device") {
-        setAgentStatus(QStringLiteral("Agent · 无可用设备"), StatusTone::Error,
+        setAgentStatus(QStringLiteral("Agent · 无可用设备"),
+                       StatusTone::Error,
                        QStringLiteral("请先在顶部选择在线的 ADB 设备"));
         return;
     }
@@ -539,7 +587,8 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
     const std::string serial = device.serial;
     const QByteArray applicationDirectoryBytes = QCoreApplication::applicationDirPath().toUtf8();
     const std::string applicationDirectory(
-        applicationDirectoryBytes.constData(), static_cast<std::size_t>(applicationDirectoryBytes.size()));
+        applicationDirectoryBytes.constData(),
+        static_cast<std::size_t>(applicationDirectoryBytes.size()));
     const std::uint64_t generation = ++agentGeneration_;
     agentConnecting_ = true;
     setAgentStatus(allowDeploy ? QStringLiteral("Agent · 连接中")
@@ -551,19 +600,22 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
 
     QPointer<MainWindow> guard(this);
     agentTasks_.start([guard, serial, applicationDirectory, generation, allowDeploy] {
-        testtools::AgentDeployment deployment;
-        const auto progress = [guard, generation, allowDeploy](const std::string &message) {
-            QMetaObject::invokeMethod(guard, [guard, generation, message, allowDeploy] {
-                if (guard && !guard->shuttingDown_ && generation == guard->agentGeneration_) {
-                    guard->setAgentStatus(allowDeploy ? QStringLiteral("Agent · 连接中")
-                                                      : QStringLiteral("Agent · 正在发现"),
-                                          StatusTone::Neutral,
-                                          fromUtf8(message));
-                }
-            }, Qt::QueuedConnection);
+        testtools::AndroidAgentDeployment deployment;
+        const auto progress = [guard, generation, allowDeploy](const std::string& message) {
+            QMetaObject::invokeMethod(
+                guard,
+                [guard, generation, message, allowDeploy] {
+                    if (guard && !guard->shuttingDown_ && generation == guard->agentGeneration_) {
+                        guard->setAgentStatus(allowDeploy ? QStringLiteral("Agent · 连接中")
+                                                          : QStringLiteral("Agent · 正在发现"),
+                                              StatusTone::Neutral,
+                                              fromUtf8(message));
+                    }
+                },
+                Qt::QueuedConnection);
         };
         auto deploymentResult = deployment.reconnect(serial, progress);
-        auto client = std::make_shared<testtools::AgentClient>();
+        auto client = testtools::AgentConnectionService::createClient();
         std::string error;
         std::string hello;
         std::string capabilities;
@@ -577,27 +629,30 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
             hello.clear();
             capabilities.clear();
             systemInfo.clear();
-            client = std::make_shared<testtools::AgentClient>();
-            if (!client->connect("127.0.0.1", deploymentResult.localPort, error)
-                || !client->request(
-                    "{\"protocol\":1,\"request_id\":\"ui-hello\","
-                    "\"method\":\"session.hello\",\"params\":{}}", hello, error)) {
+            client = testtools::AgentConnectionService::createClient();
+            if (!client->connect("127.0.0.1", deploymentResult.localPort, error) ||
+                !client->request("{\"protocol\":1,\"request_id\":\"ui-hello\","
+                                 "\"method\":\"session.hello\",\"params\":{}}",
+                                 hello,
+                                 error)) {
                 return false;
             }
-            const std::string requiredVersion = std::string("\"agent_version\":\"")
-                                                + testtools::AgentDeployment::RequiredAgentVersion
-                                                + "\"";
+            const std::string requiredVersion =
+                std::string("\"agent_version\":\"") +
+                testtools::AndroidAgentDeployment::RequiredAgentVersion + "\"";
             if (hello.find(requiredVersion) == std::string::npos) {
-                error = std::string("板端 Agent 版本不匹配，需要 ")
-                        + testtools::AgentDeployment::RequiredAgentVersion;
+                error = std::string("板端 Agent 版本不匹配，需要 ") +
+                        testtools::AndroidAgentDeployment::RequiredAgentVersion;
                 return false;
             }
-            return client->request(
-                       "{\"protocol\":1,\"request_id\":\"ui-capabilities\","
-                       "\"method\":\"capability.list\",\"params\":{}}", capabilities, error)
-                   && client->request(
-                       "{\"protocol\":1,\"request_id\":\"ui-system-info\","
-                       "\"method\":\"system.info\",\"params\":{}}", systemInfo, error);
+            return client->request("{\"protocol\":1,\"request_id\":\"ui-capabilities\","
+                                   "\"method\":\"capability.list\",\"params\":{}}",
+                                   capabilities,
+                                   error) &&
+                   client->request("{\"protocol\":1,\"request_id\":\"ui-system-info\","
+                                   "\"method\":\"system.info\",\"params\":{}}",
+                                   systemInfo,
+                                   error);
         };
         bool succeeded = connectAndDiscover();
         if (!succeeded && allowDeploy) {
@@ -613,16 +668,24 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
             deployment.removeForward(serial, deploymentResult.localPort);
             deploymentResult.localPort = 0;
         }
-        QMetaObject::invokeMethod(guard,
-            [guard, client = std::move(client), hello = std::move(hello),
-             capabilities = std::move(capabilities), systemInfo = std::move(systemInfo),
-             error = std::move(error), deploymentResult = std::move(deploymentResult),
-              succeeded, serial, generation, allowDeploy]() mutable {
+        QMetaObject::invokeMethod(
+            guard,
+            [guard,
+             client = std::move(client),
+             hello = std::move(hello),
+             capabilities = std::move(capabilities),
+             systemInfo = std::move(systemInfo),
+             error = std::move(error),
+             deploymentResult = std::move(deploymentResult),
+             succeeded,
+             serial,
+             generation,
+             allowDeploy]() mutable {
                 if (!guard || guard->shuttingDown_ || generation != guard->agentGeneration_) {
                     client->close();
                     if (deploymentResult.localPort != 0) {
-                        testtools::AgentDeployment().removeForward(serial,
-                                                                  deploymentResult.localPort);
+                        testtools::AndroidAgentDeployment().removeForward(
+                            serial, deploymentResult.localPort);
                     }
                     return;
                 }
@@ -630,15 +693,17 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
                 if (!succeeded) {
                     client->close();
                     if (deploymentResult.localPort != 0) {
-                        testtools::AgentDeployment().removeForward(serial,
-                                                                  deploymentResult.localPort);
+                        testtools::AndroidAgentDeployment().removeForward(
+                            serial, deploymentResult.localPort);
                     }
                     guard->setAgentStatus(
                         allowDeploy ? QStringLiteral("Agent · 连接失败")
                                     : QStringLiteral("Agent · 未发现"),
                         allowDeploy ? StatusTone::Error : StatusTone::Neutral,
-                        allowDeploy ? fromUtf8(error)
-                                    : QStringLiteral("未发现兼容的板端 Agent；点击“连接 / 必要时部署”安装或升级"));
+                        allowDeploy
+                            ? fromUtf8(error)
+                            : QStringLiteral(
+                                  "未发现兼容的板端 Agent；点击“连接 / 必要时部署”安装或升级"));
                     guard->updateAgentControls();
                     return;
                 }
@@ -647,17 +712,16 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
                 guard->agentAdbSerial_ = serial;
                 guard->agentForwardPort_ = deploymentResult.localPort;
                 if (guard->serialWorkspace_) {
-                    guard->serialWorkspace_->setAgentConnection(serial,
-                                                                 deploymentResult.localPort);
+                    guard->serialWorkspace_->setAgentConnection(serial, deploymentResult.localPort);
                 }
                 const QString version = jsonStringValue(hello, "agent_version");
-                const bool systemInfoCapability = capabilities.find("\"id\":\"system.info\"")
-                                                  != std::string::npos;
-                const bool serialStream = capabilities.find("\"id\":\"serial.stream\"")
-                                          != std::string::npos;
+                const bool systemInfoCapability =
+                    capabilities.find("\"id\":\"system.info\"") != std::string::npos;
+                const bool serialStream =
+                    capabilities.find("\"id\":\"serial.stream\"") != std::string::npos;
                 guard->agentSummary_ = version.isEmpty()
-                    ? QStringLiteral("已连接")
-                    : QStringLiteral("v%1 · 已连接").arg(version);
+                                           ? QStringLiteral("已连接")
+                                           : QStringLiteral("v%1 · 已连接").arg(version);
                 guard->setAgentStatus(QStringLiteral("Agent · %1").arg(guard->agentSummary_),
                                       StatusTone::Good,
                                       QStringLiteral("%1 · %2 · 本地转发端口 %3")
@@ -681,7 +745,8 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
                 guard->agentSystemInfoValue_->setToolTip(fromUtf8(systemInfo));
                 guard->setActivity(QStringLiteral("真实板端 Agent 连接、握手与能力发现完成"));
                 guard->updateAgentControls();
-            }, Qt::QueuedConnection);
+            },
+            Qt::QueuedConnection);
     });
 }
 
@@ -695,7 +760,8 @@ void MainWindow::stopSelectedAgent()
         serial = selectedDevice().serial;
     }
     if (serial.empty()) {
-        setAgentStatus(QStringLiteral("Agent · 无可用设备"), StatusTone::Error,
+        setAgentStatus(QStringLiteral("Agent · 无可用设备"),
+                       StatusTone::Error,
                        QStringLiteral("请先选择 ADB 设备"));
         return;
     }
@@ -706,22 +772,25 @@ void MainWindow::stopSelectedAgent()
     QPointer<MainWindow> guard(this);
     agentTasks_.start([guard, serial, generation] {
         std::string error;
-        const bool stopped = testtools::AgentDeployment().stopRemote(serial, error);
-        QMetaObject::invokeMethod(guard, [guard, stopped, error = std::move(error), generation] {
-            if (!guard || guard->shuttingDown_ || generation != guard->agentGeneration_) {
-                return;
-            }
-            guard->agentConnecting_ = false;
-            guard->setAgentStatus(stopped ? QStringLiteral("Agent · 已停止")
-                                          : QStringLiteral("Agent · 停止失败"),
-                                  stopped ? StatusTone::Neutral : StatusTone::Error,
-                                  stopped ? QStringLiteral("板端 Agent 已停止") : fromUtf8(error));
-            guard->updateAgentControls();
-        }, Qt::QueuedConnection);
+        const bool stopped = testtools::AndroidAgentDeployment().stopRemote(serial, error);
+        QMetaObject::invokeMethod(
+            guard,
+            [guard, stopped, error = std::move(error), generation] {
+                if (!guard || guard->shuttingDown_ || generation != guard->agentGeneration_) {
+                    return;
+                }
+                guard->agentConnecting_ = false;
+                guard->setAgentStatus(
+                    stopped ? QStringLiteral("Agent · 已停止") : QStringLiteral("Agent · 停止失败"),
+                    stopped ? StatusTone::Neutral : StatusTone::Error,
+                    stopped ? QStringLiteral("板端 Agent 已停止") : fromUtf8(error));
+                guard->updateAgentControls();
+            },
+            Qt::QueuedConnection);
     });
 }
 
-void MainWindow::disconnectAgent(const QString &reason)
+void MainWindow::disconnectAgent(const QString& reason)
 {
     ++agentGeneration_;
     agentConnecting_ = false;
@@ -733,12 +802,13 @@ void MainWindow::disconnectAgent(const QString &reason)
         serialWorkspace_->setAgentConnection({}, 0);
     }
     if (!agentAdbSerial_.empty() && agentForwardPort_ != 0) {
-        testtools::AgentDeployment().removeForward(agentAdbSerial_, agentForwardPort_);
+        testtools::AndroidAgentDeployment().removeForward(agentAdbSerial_, agentForwardPort_);
     }
     agentAdbSerial_.clear();
     agentForwardPort_ = 0;
     agentSummary_ = QStringLiteral("未连接");
-    setAgentStatus(QStringLiteral("Agent · 未连接"), StatusTone::Neutral,
+    setAgentStatus(QStringLiteral("Agent · 未连接"),
+                   StatusTone::Neutral,
                    reason.isEmpty() ? QStringLiteral("尚未连接 Agent") : reason);
     if (agentCapabilitiesValue_) {
         agentCapabilitiesValue_->setText(QStringLiteral("已发现能力：—"));
@@ -754,7 +824,7 @@ void MainWindow::disconnectAgent(const QString &reason)
     updateAgentControls();
 }
 
-void MainWindow::setAgentStatus(const QString &text, StatusTone tone, const QString &detail)
+void MainWindow::setAgentStatus(const QString& text, StatusTone tone, const QString& detail)
 {
     if (!agentStatusLabel_) {
         return;
@@ -790,12 +860,12 @@ void MainWindow::updateAgentControls()
     disconnectAgentButton_->setEnabled(connected && !serialBusy_);
     stopAgentButton_->setEnabled(online && !agentConnecting_ && !serialBusy_);
     deployAgentButton_->setText(agentConnecting_ ? QStringLiteral("正在处理...")
-                                                  : QStringLiteral("连接 / 必要时部署"));
+                                                 : QStringLiteral("连接 / 必要时部署"));
     if (agentDeviceValue_) {
-        agentDeviceValue_->setText(online
-            ? QStringLiteral("目标设备：%1 · %2").arg(fromUtf8(device.serial),
-                                                     fromUtf8(device.description))
-            : QStringLiteral("目标设备：未选择在线 ADB 设备"));
+        agentDeviceValue_->setText(
+            online ? QStringLiteral("目标设备：%1 · %2")
+                         .arg(fromUtf8(device.serial), fromUtf8(device.description))
+                   : QStringLiteral("目标设备：未选择在线 ADB 设备"));
     }
 }
 
@@ -813,11 +883,14 @@ void MainWindow::refreshDevices()
     scanTasks_.start([guard] {
         testtools::DeviceDiscovery discovery;
         auto result = discovery.scanAdbDevices();
-        QMetaObject::invokeMethod(guard, [guard, result = std::move(result)]() mutable {
-            if (guard && !guard->shuttingDown_) {
-                guard->applyDeviceScan(std::move(result));
-            }
-        }, Qt::QueuedConnection);
+        QMetaObject::invokeMethod(
+            guard,
+            [guard, result = std::move(result)]() mutable {
+                if (guard && !guard->shuttingDown_) {
+                    guard->applyDeviceScan(std::move(result));
+                }
+            },
+            Qt::QueuedConnection);
     });
 }
 
@@ -833,7 +906,7 @@ void MainWindow::applyDeviceScan(testtools::DeviceScanResult result)
     int firstOnline = -1;
     int onlineCount = 0;
     int restoreIndex = -1;
-    for (const auto &device : result.devices) {
+    for (const auto& device : result.devices) {
         QString label = deviceDisplayName(device);
         if (device.state != "device") {
             label += QStringLiteral(" [%1]").arg(fromUtf8(device.state));
@@ -887,7 +960,8 @@ serialdemo::AdbDevice MainWindow::selectedDevice() const
     const QByteArray description = deviceCombo_->currentData(Qt::UserRole + 2).toString().toUtf8();
     device.serial.assign(serial.constData(), static_cast<std::size_t>(serial.size()));
     device.state.assign(state.constData(), static_cast<std::size_t>(state.size()));
-    device.description.assign(description.constData(), static_cast<std::size_t>(description.size()));
+    device.description.assign(description.constData(),
+                              static_cast<std::size_t>(description.size()));
     return device;
 }
 
@@ -903,8 +977,7 @@ void MainWindow::applySelectedDevice()
     serialWorkspace_->setAdbDevice(device);
     updateOverview();
     updateAgentControls();
-    if (!agentClient_ && !agentConnecting_ && device.state == "device"
-        && !device.serial.empty()) {
+    if (!agentClient_ && !agentConnecting_ && device.state == "device" && !device.serial.empty()) {
         connectSelectedAgent(false);
     }
 }
@@ -920,7 +993,7 @@ void MainWindow::showPage(int pageIndex)
     }
 }
 
-void MainWindow::setAdbStatus(const QString &text, StatusTone tone)
+void MainWindow::setAdbStatus(const QString& text, StatusTone tone)
 {
     adbStatusLabel_->setText(text);
     QString objectName = QStringLiteral("topStatusNeutral");
@@ -943,7 +1016,7 @@ void MainWindow::setAdbStatus(const QString &text, StatusTone tone)
     updateOverview();
 }
 
-void MainWindow::setActivity(const QString &message)
+void MainWindow::setActivity(const QString& message)
 {
     if (activityLabel_) {
         activityLabel_->setText(message);
@@ -956,9 +1029,12 @@ void MainWindow::updateOverview()
         return;
     }
     const auto device = selectedDevice();
-    overviewDeviceValue_->setText(device.serial.empty() ? QStringLiteral("未选择") : fromUtf8(device.serial));
-    overviewAdbValue_->setText(adbStatusLabel_ ? adbStatusLabel_->text() : QStringLiteral("检测中"));
-    overviewAgentValue_->setText(agentSummary_.isEmpty() ? QStringLiteral("未连接") : agentSummary_);
+    overviewDeviceValue_->setText(device.serial.empty() ? QStringLiteral("未选择")
+                                                        : fromUtf8(device.serial));
+    overviewAdbValue_->setText(adbStatusLabel_ ? adbStatusLabel_->text()
+                                               : QStringLiteral("检测中"));
+    overviewAgentValue_->setText(agentSummary_.isEmpty() ? QStringLiteral("未连接")
+                                                         : agentSummary_);
 }
 
 void MainWindow::updateDeviceControls()

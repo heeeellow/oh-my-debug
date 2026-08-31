@@ -1,5 +1,5 @@
 #include "agent_service.h"
-#include "core/agent_version.h"
+#include "core/protocol/agent_version.h"
 
 #include <algorithm>
 #include <cctype>

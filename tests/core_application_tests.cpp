@@ -1,23 +1,82 @@
-#include "application/background_task_group.h"
-#include "application/serial_workspace_state.h"
-#include "core/agent_protocol.h"
-#include "core/async_serial_sender.h"
-#include "core/codec.h"
-#include "core/command_line.h"
-#include "core/serial_test_engine.h"
+#include "application/agent/agent_target.h"
+#include "application/serial/serial_session.h"
+#include "application/serial/serial_workspace_state.h"
+#include "application/support/background_task_group.h"
+#include "core/protocol/agent_protocol.h"
+#include "core/serial/async_serial_sender.h"
+#include "core/serial/codec.h"
+#include "core/serial/serial_test_engine.h"
+#include "core/support/command_line.h"
 
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
 
-int fail(const char *name)
+class FakeSerialTransport final : public serialdemo::ISerialTransport {
+  public:
+    void open(const serialdemo::SerialConfig&) override
+    {
+        open_.store(true);
+        publishStatus(serialdemo::TransportState::Connected, "fake connected");
+    }
+
+    void close() override
+    {
+        const int delay = closeDelayMs.load();
+        if (delay > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+        }
+        const bool wasOpen = open_.exchange(false);
+        if (wasOpen) {
+            publishStatus(serialdemo::TransportState::Closed, "fake closed");
+        }
+    }
+
+    bool write(const serialdemo::ByteBuffer& data) override
+    {
+        if (!open_.load() || failWrites.load()) {
+            return false;
+        }
+        std::lock_guard<std::mutex> lock(mutex_);
+        writes.push_back(data);
+        return true;
+    }
+
+    bool isOpen() const override
+    {
+        return open_.load();
+    }
+
+    void emitData(const serialdemo::ByteBuffer& data)
+    {
+        publishData(data);
+    }
+
+    void emitDisconnect()
+    {
+        open_.store(false);
+        publishStatus(serialdemo::TransportState::Error, "fake disconnected");
+    }
+
+    std::atomic<bool> failWrites{false};
+    std::atomic<int> closeDelayMs{0};
+    std::mutex mutex_;
+    std::vector<serialdemo::ByteBuffer> writes;
+
+  private:
+    std::atomic<bool> open_{false};
+};
+
+int fail(const char* name)
 {
     std::cerr << "FAIL " << name << '\n';
     return 1;
@@ -27,18 +86,37 @@ int fail(const char *name)
 
 int main()
 {
+    const auto androidArm32 = testtools::parseAndroidAgentAbi("armeabi-v7a");
+    const auto androidArm64 = testtools::parseAndroidAgentAbi("arm64-v8a");
+    const auto linuxArm32 = testtools::parseLinuxAgentMachine("armv7l");
+    const auto linuxArm64 = testtools::parseLinuxAgentMachine("aarch64");
+    if (!androidArm32 || *androidArm32 != testtools::AgentArchitecture::ArmV7 || !androidArm64 ||
+        *androidArm64 != testtools::AgentArchitecture::Arm64 || !linuxArm32 ||
+        *linuxArm32 != testtools::AgentArchitecture::ArmV7 || !linuxArm64 ||
+        *linuxArm64 != testtools::AgentArchitecture::Arm64 ||
+        testtools::parseAndroidAgentAbi("x86_64") || testtools::parseLinuxAgentMachine("x86_64")) {
+        return fail("ARM-only Agent target mapping");
+    }
+    const auto androidPath = testtools::agentArtifactPath(
+        "application", {testtools::AgentPlatform::Android, *androidArm64});
+    const auto linuxPath =
+        testtools::agentArtifactPath("application", {testtools::AgentPlatform::Linux, *linuxArm64});
+    if (androidPath.generic_string() != "application/agents/android/arm64-v8a/testtools-agent" ||
+        linuxPath.generic_string() != "application/agents/linux/aarch64/testtools-agent") {
+        return fail("Agent artifact path mapping");
+    }
+
     std::uint16_t port = 0;
-    if (!testtools::parseTcpPort("27183", port) || port != 27183
-        || testtools::parseTcpPort("invalid", port)
-        || testtools::parseTcpPort("70000", port)
-        || testtools::parseTcpPort("0", port)) {
+    if (!testtools::parseTcpPort("27183", port) || port != 27183 ||
+        testtools::parseTcpPort("invalid", port) || testtools::parseTcpPort("70000", port) ||
+        testtools::parseTcpPort("0", port)) {
         return fail("TCP port parsing");
     }
 
     serialdemo::ByteBuffer bytes;
     std::string error;
-    if (!serialdemo::parseHex("55 AA 01 0d 0A", bytes, error)
-        || serialdemo::toHex(bytes) != "55 AA 01 0D 0A") {
+    if (!serialdemo::parseHex("55 AA 01 0d 0A", bytes, error) ||
+        serialdemo::toHex(bytes) != "55 AA 01 0D 0A") {
         return fail("HEX codec");
     }
     serialdemo::ByteBuffer lineEndingProbe{0x41, 0x54};
@@ -49,8 +127,7 @@ int main()
 
     serialdemo::PeriodicSendPlan sendPlan;
     const auto start = serialdemo::PeriodicSendPlan::Clock::now();
-    if (!sendPlan.start({std::chrono::milliseconds(10), 2}, start)
-        || !sendPlan.isDue(start)) {
+    if (!sendPlan.start({std::chrono::milliseconds(10), 2}, start) || !sendPlan.isDue(start)) {
         return fail("periodic send start");
     }
     sendPlan.recordAttempt(true, start);
@@ -72,35 +149,158 @@ int main()
     std::condition_variable senderCondition;
     bool senderCompleted = false;
     serialdemo::AsyncSerialSender sender;
-    sender.start([](const serialdemo::ByteBuffer &payload) {
-        return payload == serialdemo::ByteBuffer{0x41, 0x54};
-    }, [&](const serialdemo::ByteBuffer &, std::uint64_t, bool succeeded) {
-        std::lock_guard<std::mutex> lock(senderMutex);
-        senderCompleted = succeeded;
-        senderCondition.notify_one();
-    });
+    sender.start(
+        [](const serialdemo::ByteBuffer& payload) {
+            return payload == serialdemo::ByteBuffer{0x41, 0x54};
+        },
+        [&](const serialdemo::ByteBuffer&, std::uint64_t, bool succeeded) {
+            std::lock_guard<std::mutex> lock(senderMutex);
+            senderCompleted = succeeded;
+            senderCondition.notify_one();
+        });
     if (!sender.enqueue({0x41, 0x54}, 7)) {
         return fail("async sender enqueue");
     }
     {
         std::unique_lock<std::mutex> lock(senderMutex);
-        senderCondition.wait_for(lock, std::chrono::seconds(2), [&] {
-            return senderCompleted;
-        });
+        senderCondition.wait_for(lock, std::chrono::seconds(2), [&] { return senderCompleted; });
     }
     sender.stop(true);
     if (!senderCompleted || sender.pendingCount() != 0) {
         return fail("async sender completion");
     }
 
-    const auto encoded = testtools::encodeAgentFrame(
-        testtools::jsonAgentFrame("{\"protocol\":1}"));
+    std::mutex sessionMutex;
+    std::condition_variable sessionCondition;
+    int sessionSendCompletions = 0;
+    std::uint64_t callbackGeneration = 0;
+    bool lastSendSucceeded = false;
+    bool scheduleStoppedByFailure = false;
+    testtools::SerialSession session;
+    session.setSendCallback([&](std::uint64_t generation,
+                                const serialdemo::ByteBuffer&,
+                                std::uint64_t,
+                                bool succeeded,
+                                bool scheduledSendStopped) {
+        std::lock_guard<std::mutex> lock(sessionMutex);
+        callbackGeneration = generation;
+        lastSendSucceeded = succeeded;
+        scheduleStoppedByFailure = scheduledSendStopped;
+        ++sessionSendCompletions;
+        sessionCondition.notify_all();
+    });
+    auto fakeTransport = std::make_unique<FakeSerialTransport>();
+    auto* fakeTransportView = fakeTransport.get();
+    const auto sessionGeneration = session.open(std::move(fakeTransport), {});
+    if (!session.isActive() || !session.isOpen() ||
+        session.snapshot().state != testtools::SerialSessionState::Connected) {
+        return fail("serial session open state");
+    }
+    fakeTransportView->emitData({0x4F, 0x4B});
+    if (!session.send({0x41, 0x54}, 1)) {
+        return fail("serial session enqueue");
+    }
+    {
+        std::unique_lock<std::mutex> lock(sessionMutex);
+        sessionCondition.wait_for(
+            lock, std::chrono::seconds(2), [&] { return sessionSendCompletions == 1; });
+    }
+    auto sessionSnapshot = session.snapshot();
+    if (sessionSendCompletions != 1 || callbackGeneration != sessionGeneration ||
+        !lastSendSucceeded || sessionSnapshot.receivedBytes != 2 ||
+        sessionSnapshot.sentBytes != 2) {
+        return fail("serial session generation and counters");
+    }
+
+    const auto scheduleStart = serialdemo::PeriodicSendPlan::Clock::now();
+    if (!session.startScheduledSend({0x41}, {std::chrono::milliseconds(10), 2}, 1, scheduleStart)) {
+        return fail("serial session scheduled send start");
+    }
+    if (session.startScheduledSend({0x42}, {std::chrono::milliseconds(10), 1}, 0, scheduleStart)) {
+        return fail("serial session duplicate schedule guard");
+    }
+    if (session.processScheduledSend(scheduleStart) != testtools::ScheduledSendTick::Queued ||
+        session.processScheduledSend(scheduleStart + std::chrono::milliseconds(10)) !=
+            testtools::ScheduledSendTick::Completed) {
+        return fail("serial session scheduled send lifecycle");
+    }
+    {
+        std::unique_lock<std::mutex> lock(sessionMutex);
+        sessionCondition.wait_for(
+            lock, std::chrono::seconds(2), [&] { return sessionSendCompletions == 3; });
+    }
+    sessionSnapshot = session.snapshot();
+    if (sessionSendCompletions != 3 || sessionSnapshot.scheduledSend.running ||
+        sessionSnapshot.scheduledSend.attempts != 2 ||
+        sessionSnapshot.scheduledSend.submitted != 2) {
+        return fail("serial session scheduled send accounting");
+    }
+
+    fakeTransportView->failWrites.store(true);
+    scheduleStoppedByFailure = false;
+    if (!session.startScheduledSend({0x42}, {std::chrono::milliseconds(10), 0}, 0, scheduleStart) ||
+        session.processScheduledSend(scheduleStart) != testtools::ScheduledSendTick::Queued) {
+        return fail("serial session failed schedule enqueue");
+    }
+    {
+        std::unique_lock<std::mutex> lock(sessionMutex);
+        sessionCondition.wait_for(
+            lock, std::chrono::seconds(2), [&] { return sessionSendCompletions == 4; });
+    }
+    if (sessionSendCompletions != 4 || lastSendSucceeded || !scheduleStoppedByFailure ||
+        session.snapshot().scheduledSend.running) {
+        return fail("serial session write failure convergence");
+    }
+    fakeTransportView->failWrites.store(false);
+
+    const auto previousGeneration = session.generation();
+    if (!session.startScheduledSend({0x41}, {std::chrono::milliseconds(10), 0}, 0) ||
+        !session.snapshot().scheduledSend.running) {
+        return fail("serial session continuous schedule start");
+    }
+    fakeTransportView->emitDisconnect();
+    sessionSnapshot = session.snapshot();
+    if (sessionSnapshot.state != testtools::SerialSessionState::Disconnected ||
+        sessionSnapshot.open || sessionSnapshot.scheduledSend.running) {
+        return fail("serial session unexpected disconnect state");
+    }
+    std::uint64_t closeCallbackGeneration = 0;
+    bool closeCompleted = false;
+    fakeTransportView->closeDelayMs.store(50);
+    const auto closeGeneration = session.closeAsync([&](std::uint64_t generation) {
+        std::lock_guard<std::mutex> lock(sessionMutex);
+        closeCallbackGeneration = generation;
+        closeCompleted = true;
+        sessionCondition.notify_all();
+    });
+    sessionSnapshot = session.snapshot();
+    if (closeGeneration == previousGeneration || !sessionSnapshot.active ||
+        sessionSnapshot.state != testtools::SerialSessionState::Disconnecting) {
+        return fail("serial session asynchronous disconnect start");
+    }
+    {
+        std::unique_lock<std::mutex> lock(sessionMutex);
+        sessionCondition.wait_for(lock, std::chrono::seconds(2), [&] { return closeCompleted; });
+    }
+    if (!closeCompleted || closeCallbackGeneration != closeGeneration || session.isActive() ||
+        session.isOpen() || session.snapshot().scheduledSend.running ||
+        session.snapshot().state != testtools::SerialSessionState::Disconnected) {
+        return fail("serial session asynchronous disconnect convergence");
+    }
+    auto reopenedTransport = std::make_unique<FakeSerialTransport>();
+    const auto reopenedGeneration = session.open(std::move(reopenedTransport), {});
+    if (reopenedGeneration <= closeGeneration || !session.isOpen()) {
+        return fail("serial session reopen after asynchronous disconnect");
+    }
+    session.close();
+
+    const auto encoded = testtools::encodeAgentFrame(testtools::jsonAgentFrame("{\"protocol\":1}"));
     testtools::AgentFrameDecoder decoder;
     std::vector<testtools::AgentFrame> decoded;
     std::string decodeError;
-    if (!decoder.push(serialdemo::ByteBuffer(encoded.begin(), encoded.end()),
-                      decoded, decodeError)
-        || decoded.size() != 1) {
+    if (!decoder.push(
+            serialdemo::ByteBuffer(encoded.begin(), encoded.end()), decoded, decodeError) ||
+        decoded.size() != 1) {
         return fail("Agent frame codec");
     }
 
@@ -110,10 +310,10 @@ int main()
         return fail("workspace dual mode");
     }
     activity.channelActive[0] = true;
-    const auto blocked = workspace.evaluateModeSwitch(
-        testtools::SerialWorkspaceMode::Single, activity);
-    if (blocked.allowed
-        || blocked.blockedBy != testtools::SerialModeSwitchBlock::HiddenChannelActive) {
+    const auto blocked =
+        workspace.evaluateModeSwitch(testtools::SerialWorkspaceMode::Single, activity);
+    if (blocked.allowed ||
+        blocked.blockedBy != testtools::SerialModeSwitchBlock::HiddenChannelActive) {
         return fail("workspace hidden channel guard");
     }
 
@@ -124,12 +324,12 @@ int main()
         true, testtools::SerialEndpointKind::Agent, "/dev/ttyUSB2", "device-a"};
     testtools::SerialEndpointSelection agentB{
         true, testtools::SerialEndpointKind::Agent, "/dev/ttyS2", "device-a"};
-    if (testtools::SerialWorkspaceState::endpointConflict(localA, localB)
-            != testtools::SerialEndpointConflict::SameResource
-        || testtools::SerialWorkspaceState::endpointConflict(agentA, agentB)
-            != testtools::SerialEndpointConflict::AgentSingleSession
-        || testtools::SerialWorkspaceState::endpointConflict(localA, agentA)
-            != testtools::SerialEndpointConflict::None) {
+    if (testtools::SerialWorkspaceState::endpointConflict(localA, localB) !=
+            testtools::SerialEndpointConflict::SameResource ||
+        testtools::SerialWorkspaceState::endpointConflict(agentA, agentB) !=
+            testtools::SerialEndpointConflict::AgentSingleSession ||
+        testtools::SerialWorkspaceState::endpointConflict(localA, agentA) !=
+            testtools::SerialEndpointConflict::None) {
         return fail("workspace endpoint conflicts");
     }
 
