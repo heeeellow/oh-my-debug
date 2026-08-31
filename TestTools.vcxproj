@@ -43,11 +43,21 @@
     <QtInstall>6.11.2_msvc2022_64</QtInstall>
     <QtModules>core;gui;widgets</QtModules>
     <QtBuildConfig>debug</QtBuildConfig>
+    <QtDeploy>true</QtDeploy>
+    <QtDeployDebugRelease>debug</QtDeployDebugRelease>
+    <QtDeployNoTranslations>true</QtDeployNoTranslations>
+    <QtDeployNoSystemD3dCompiler>true</QtDeployNoSystemD3dCompiler>
+    <QtDeployNoOpenglSw>true</QtDeployNoOpenglSw>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
     <QtInstall>6.11.2_msvc2022_64</QtInstall>
     <QtModules>core;gui;widgets</QtModules>
     <QtBuildConfig>release</QtBuildConfig>
+    <QtDeploy>true</QtDeploy>
+    <QtDeployDebugRelease>release</QtDeployDebugRelease>
+    <QtDeployNoTranslations>true</QtDeployNoTranslations>
+    <QtDeployNoSystemD3dCompiler>true</QtDeployNoSystemD3dCompiler>
+    <QtDeployNoOpenglSw>true</QtDeployNoOpenglSw>
   </PropertyGroup>
   <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') or !Exists('$(QtMsBuild)\qt.props')">
     <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
@@ -185,9 +195,9 @@
     <TestToolsNdkRoot Condition="'$(TestToolsNdkRoot)'=='' AND '$(ANDROID_NDK_ROOT)'!=''">$(ANDROID_NDK_ROOT)</TestToolsNdkRoot>
     <TestToolsNdkRoot Condition="'$(TestToolsNdkRoot)'=='' AND '$(ANDROID_NDK_HOME)'!=''">$(ANDROID_NDK_HOME)</TestToolsNdkRoot>
     <TestToolsNdkRoot Condition="'$(TestToolsNdkRoot)'=='' AND Exists('$(LOCALAPPDATA)\Android\Sdk\ndk\27.3.13750724\build\cmake\android.toolchain.cmake')">$(LOCALAPPDATA)\Android\Sdk\ndk\27.3.13750724</TestToolsNdkRoot>
-    <TestToolsCMakeProgram Condition="'$(TestToolsCMakeProgram)'=='' AND Exists('C:\software\QT\Tools\CMake_64\bin\cmake.exe')">C:\software\QT\Tools\CMake_64\bin\cmake.exe</TestToolsCMakeProgram>
+    <TestToolsCMakeProgram Condition="'$(TestToolsCMakeProgram)'=='' AND '$(TESTTOOLS_CMAKE_PROGRAM)'!=''">$(TESTTOOLS_CMAKE_PROGRAM)</TestToolsCMakeProgram>
     <TestToolsCMakeProgram Condition="'$(TestToolsCMakeProgram)'==''">cmake</TestToolsCMakeProgram>
-    <TestToolsNinjaProgram Condition="'$(TestToolsNinjaProgram)'=='' AND Exists('C:\software\QT\Tools\Ninja\ninja.exe')">C:\software\QT\Tools\Ninja\ninja.exe</TestToolsNinjaProgram>
+    <TestToolsNinjaProgram Condition="'$(TestToolsNinjaProgram)'=='' AND '$(TESTTOOLS_NINJA_PROGRAM)'!=''">$(TESTTOOLS_NINJA_PROGRAM)</TestToolsNinjaProgram>
     <TestToolsNinjaProgram Condition="'$(TestToolsNinjaProgram)'==''">ninja</TestToolsNinjaProgram>
   </PropertyGroup>
   <Target Name="BuildTestToolsAndroidAgent" AfterTargets="Build"

@@ -54,7 +54,9 @@ build/             所有生成物，不提交 Git
 ## 4. 构建
 
 在已配置 Qt VS Tools 的 Visual Studio 中打开根目录 `TestTools.slnx`，选择 `x64` 和
-Debug/Release 构建。
+Debug/Release 构建。工程会通过 Qt VS Tools 的 `windeployqt` 自动把 Qt 运行时和必要插件复制到
+`build/windows/x64/<Configuration>/`，该目录可直接启动 `TestTools.exe`；同时会复制存在的
+`agent-bundle/`。
 
 命令行构建建议在 Visual Studio Developer PowerShell 中运行，并确保 Qt 安装已注册。不要把个人
 账户目录写入共享脚本；当前机器可使用：
@@ -64,6 +66,14 @@ $qtMsBuild = Join-Path $env:LOCALAPPDATA 'QtMsBuild'
 msbuild '.\TestTools.vcxproj' /m /p:Configuration=Release /p:Platform=x64 `
   /p:QtMsBuild="$qtMsBuild"
 ```
+
+Android Agent 的 CMake/Ninja 也必须来自 PATH 或显式环境变量；例如在当前终端设置
+`TESTTOOLS_CMAKE_PROGRAM`、`TESTTOOLS_NINJA_PROGRAM`，或直接向 Agent 构建脚本传入
+`-CMakeProgram`、`-NinjaProgram`。工程不内置开发者机器的工具链绝对路径。
+
+如果 Qt 未注册为工程中的 `QtInstall` 版本，先在 Qt VS Tools 中注册与工程配置一致的 Qt 安装；
+不要把个人机器的 Qt 绝对路径写入工程或脚本。发布验收应在没有 Qt 环境变量的进程中直接启动上述
+输出目录中的程序，并确认同目录包含 `Qt6Core.dll`、`Qt6Gui.dll` 和 `Qt6Widgets.dll`。
 
 如果 Developer PowerShell 中找不到 `msbuild`，应通过 Visual Studio Installer 或 `vswhere` 定位
 实际安装，不在项目文档中假定固定版本号和安装盘符。

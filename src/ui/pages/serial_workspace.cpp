@@ -607,7 +607,7 @@ void SerialWorkspace::refreshAgentPorts()
     if (!selectedAgentIsOnline()) {
         scanning_ = false;
         emit activityChanged(currentAdbDevice_.serial.empty()
-                                 ? QStringLiteral("未选择安卓设备，板端串口列表为空")
+                                 ? QStringLiteral("未选择 ADB 设备，板端串口列表为空")
                                  : QStringLiteral("请先在设置中部署并连接该设备的 Agent"));
         updateGlobalControls();
         return;

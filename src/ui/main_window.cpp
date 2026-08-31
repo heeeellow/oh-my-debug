@@ -270,7 +270,7 @@ QWidget* MainWindow::buildTopBar()
     adbStatusLabel_->setObjectName(QStringLiteral("topStatusNeutral"));
     agentStatusLabel_ = new QLabel(QStringLiteral("Agent · 未连接"), bar);
     agentStatusLabel_->setObjectName(QStringLiteral("topStatusNeutral"));
-    agentActionButton_ = new QPushButton(QStringLiteral("管理"), bar);
+    agentActionButton_ = new QPushButton(QStringLiteral("Agent 管理"), bar);
     agentActionButton_->setObjectName(QStringLiteral("topGhostButton"));
     refreshButton_ = new QPushButton(QStringLiteral("刷新设备"), bar);
     refreshButton_->setObjectName(QStringLiteral("topGhostButton"));
@@ -929,9 +929,13 @@ void MainWindow::applyDeviceScan(testtools::DeviceScanResult result)
     }
 
     scanning_ = false;
+    const QString scanError = result.error.empty()
+                                   ? QString{}
+                                   : fromUtf8(result.error)
+                                         + QStringLiteral("；请检查 ADB 安装、路径和设备授权");
     if (!result.error.empty()) {
         setAdbStatus(QStringLiteral("ADB · 异常"), StatusTone::Error);
-        setActivity(fromUtf8(result.error));
+        setActivity(scanError);
     } else if (result.devices.empty()) {
         deviceCombo_->addItem(QStringLiteral("未发现 ADB 设备"));
         deviceCombo_->setCurrentIndex(0);
@@ -948,6 +952,11 @@ void MainWindow::applyDeviceScan(testtools::DeviceScanResult result)
     }
     applySelectedDevice();
     updateDeviceControls();
+    // Refreshing the selected device also refreshes Agent/serial state and can
+    // replace the activity text. Keep the actionable ADB failure visible.
+    if (!scanError.isEmpty()) {
+        setActivity(scanError);
+    }
 }
 
 serialdemo::AdbDevice MainWindow::selectedDevice() const

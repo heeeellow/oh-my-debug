@@ -81,17 +81,26 @@ try {
             if ($LASTEXITCODE -ne 0) {
                 throw "TestTools $item build failed"
             }
+
+            $windowsOutput = Join-Path $repositoryRoot "build\windows\x64\$item"
+            $qtSuffix = if ($item -eq 'Debug') { 'd' } else { '' }
+            $requiredRuntimeFiles = @(
+                'TestTools.exe',
+                "Qt6Core$qtSuffix.dll",
+                "Qt6Gui$qtSuffix.dll",
+                "Qt6Widgets$qtSuffix.dll",
+                "platforms\qwindows$qtSuffix.dll"
+            )
+            $missingRuntimeFiles = $requiredRuntimeFiles |
+                Where-Object { -not (Test-Path -LiteralPath (Join-Path $windowsOutput $_)) }
+            if ($missingRuntimeFiles) {
+                throw "Qt runtime deployment incomplete for $item`: $($missingRuntimeFiles -join ', ')"
+            }
         }
 
         $cmake = (Get-Command cmake.exe -ErrorAction SilentlyContinue).Source
         if (-not $cmake) {
-            $bundledCmake = 'C:\software\QT\Tools\CMake_64\bin\cmake.exe'
-            if (Test-Path -LiteralPath $bundledCmake) {
-                $cmake = $bundledCmake
-            }
-        }
-        if (-not $cmake) {
-            throw 'CMake was not found for host-side Agent tests.'
+            throw 'CMake was not found for host-side Agent tests. Add it to PATH or set TESTTOOLS_CMAKE_PROGRAM.'
         }
         $coreTestBuild = Join-Path $repositoryRoot 'build\tests\host'
         & $cmake -S 'tests' -B $coreTestBuild

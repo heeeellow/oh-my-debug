@@ -56,15 +56,19 @@ std::string commandError(const std::string &operation, const CommandResult &resu
 #ifdef _WIN32
 std::wstring environmentVariable(const wchar_t *name)
 {
-    const DWORD length = GetEnvironmentVariableW(name, nullptr, 0);
-    if (length == 0) {
+    // The size returned for a null buffer includes the terminating null.
+    // Allocate one extra character so a long path cannot be truncated.
+    const DWORD requiredLength = GetEnvironmentVariableW(name, nullptr, 0);
+    if (requiredLength == 0) {
         return {};
     }
-    std::wstring value(static_cast<std::size_t>(length), L'\0');
-    GetEnvironmentVariableW(name, value.data(), length);
-    if (!value.empty() && value.back() == L'\0') {
-        value.pop_back();
+    std::wstring value(static_cast<std::size_t>(requiredLength) + 1, L'\0');
+    const DWORD valueLength = GetEnvironmentVariableW(
+        name, value.data(), static_cast<DWORD>(value.size()));
+    if (valueLength == 0) {
+        return {};
     }
+    value.resize(valueLength);
     return value;
 }
 
@@ -105,6 +109,8 @@ std::string resolveAdbProgram(const std::string &requested)
     }
 
 #ifdef _WIN32
+    // Prefer explicit configuration and common SDK locations before PATH so
+    // the GUI and command-line diagnostics use the same ADB executable.
     std::vector<std::filesystem::path> candidates;
     const auto adbPath = environmentVariable(L"ADB_PATH");
     if (!adbPath.empty()) {

@@ -48,8 +48,8 @@
 | --- | --- | --- |
 | GUI 启动 | 2026-08-29，主解决方案只启动 Qt GUI | 已验证；记录于 `DEVLOG.md` |
 | 基线静态检查 | 2026-08-31，`v0.1.0` 源码 | 文档链接、差异空白、Qt 边界、UI 适配器边界、工程文件完整性和生成物跟踪检查通过 |
-| Windows Release 构建 | 2026-08-31，标准输出目录 | 零警告、零错误；Android Agent `armeabi-v7a` 同步生成 |
-| Windows Debug 构建 | 2026-08-31，标准输出目录 | 零警告、零错误；Android Agent `armeabi-v7a` 同步生成 |
+| Windows Release 构建 | 2026-08-31，标准输出目录 | 编译零警告、零错误；Qt 运行时和平台插件由 `windeployqt` 自动部署；Android Agent `armeabi-v7a` 同步生成 |
+| Windows Debug 构建 | 2026-08-31，标准输出目录 | 编译零警告、零错误；Qt 运行时和平台插件由 `windeployqt` 自动部署；Android Agent `armeabi-v7a` 同步生成 |
 | Core/Application 主机测试 | 2026-08-31，CTest | 1/1 通过；覆盖串口会话和 ARM-only 产物映射，不依赖 Qt、ADB 或串口设备 |
 | Agent 主机契约测试 | 2026-08-31，CTest | 1/1 通过；覆盖版本、字段类型、枚举和范围拒绝路径，不访问设备 |
 | Agent 固定矩阵与 Bundle | 2026-08-31，统一入口首次及重复运行 | Android 两 ABI、Linux aarch64 均 Release 构建通过；build id 和三个产物 SHA-256 重复运行稳定；manifest 独立校验通过 |
@@ -58,6 +58,7 @@
 | Linux ARM Agent 构建 | 2026-08-31，WSL2 + Debian Bullseye 固定工具链 | ARM64 ELF，动态依赖含 `libc.so.6`，最高 GLIBC 符号 `2.17`，不高于 2.31 |
 | Linux Agent 临时实机验证 | 2026-08-31，Nexus4 ADB 设备 `976ccefbf0c7e61b` | 设备实际为 Ubuntu 22.04.5/aarch64、glibc 2.35；临时版本目录部署 SHA-256 一致，`session.hello`、`capability.list`、`system.info`、`serial.list` 均通过；已清理，不含串口读写 |
 | 当前串口界面 | 2026-08-31，Release 构建 | 1366x768 单串口/双端、1920x1080 单串口快照通过；未打开串口或发送数据 |
+| Release 自包含启动与 ADB 发现 | 2026-08-31，清理 Qt 环境变量的 Release 进程 | `TestTools.exe` 直接启动成功，同目录 Qt DLL/平台插件有效，发现 2 台 ADB 设备并连接现有 Agent；未部署、未打开或写入串口 |
 | 内置自检 | 2026-08-31，Release 产物 | 通过；识别在线 ADB 设备，仅执行安全转发，不发送串口数据 |
 | Android Agent 0.2.2 部署 | 2026-08-30，设备 `e2ea0f728463744a` | ABI 识别、部署、握手、`system.info` 和 `serial.list` 通过；未打开或写入串口 |
 | Agent 非法端口参数 | 2026-08-30，同一设备 | `--port invalid` 确定返回退出码 2，未异常崩溃 |
@@ -78,6 +79,7 @@
 - Agent 只有单串口会话，控制 JSON 仍使用受限字段读取而非完整结构化解析；还缺少连接上限、资源表、
   心跳、断线恢复、认证和正式 Android service 集成。
 - Linux 固定矩阵和 glibc 2.31 Bundle 已完成；Linux ADB 部署与 GUI 连接已接入，systemd 服务和包签名仍未实现。
+- Windows Release 目录已包含 Qt 运行时，可直接启动；正式安装包、签名和升级分发仍未实现。
 - 测试中心、运行记录和多数板级测试仍是产品骨架，尚未形成完整任务与产物闭环。
 - 历史代码仍混用 `serialdemo` 与 `testtools` 命名空间；不影响行为，但应在独立机械重构中统一。
 - 当前没有 CI 和 clang-tidy 门禁；统一脚本和格式文件已建立本地可执行基线。
