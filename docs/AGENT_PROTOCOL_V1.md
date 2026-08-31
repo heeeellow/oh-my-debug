@@ -5,8 +5,8 @@
 ## 当前实现
 
 Agent 是运行在 ARM Android 或 ARM Linux 板端的无 Qt C++17 服务，控制协议不随系统和内核版本
-改变。Agent 只监听板端 `127.0.0.1:27183`；Android 通过 ADB 转发，Linux 连接器将通过 SSH 隧道
-接入。当前产品已实现 Android ADB 自动部署，Linux 暂时需要手动构建和启动。
+改变。Agent 只监听板端 `127.0.0.1:27183`；Android 和 Linux 均通过 ADB 转发接入。当前产品已
+实现 Android 和 Linux ADB 自动部署，Linux 固定选择 Bundle 中的 `aarch64/glibc-2.31` 产物。
 
 当前程序版本和验证边界见 [`STATUS.md`](STATUS.md)。协议 v1 的仓库实现包括：
 
@@ -47,11 +47,11 @@ termios 兼容字段，不代表 USB 总线或模块内部 UART 的物理速率�
 ## 安全边界
 
 - Agent 和数据端口只绑定回环地址，不直接暴露到板卡网络。
-- ADB 或 SSH 只负责发现、部署和端口转发，不承担串口业务语义。
+- ADB 只负责发现、部署和端口转发，不承担串口业务语义。
 - 不提供任意 shell RPC；每个新能力必须有固定方法、参数校验和风险等级。
 - `/dev/ttyUSB1` 等被系统进程占用的端点会返回明确占用者，不会抢占系统服务。
-- Android 开发部署依赖已有 ADB 授权；Linux 自动部署尚未实现。量产阶段仍需补充包签名、版本校验
-  和 init/systemd 服务集成。
+- Android 和 Linux 开发部署依赖已有 ADB 授权以及 Linux 设备可写的 root adbd；部署会校验 Bundle
+  清单和 SHA-256。量产阶段仍需补充包签名和 init/systemd 服务集成。
 
 ## 请求示例
 

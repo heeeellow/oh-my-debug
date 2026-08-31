@@ -35,7 +35,7 @@ TestTools 从串口助手演进为设备中心的调试与测试工作台。架�
                │                           │
 ┌──────────────▼──────────────┐ ┌──────────▼──────────────────┐
 │ Host transports/adapters   │ │ Local device adapters       │
-│ ADB / SSH / Agent client   │ │ Windows COM / process       │
+│ ADB / Agent client         │ │ Windows COM / process       │
 └──────────────┬──────────────┘ └─────────────────────────────┘
                │ loopback tunnel
 ┌──────────────▼───────────────────────────────────────────────┐
@@ -100,13 +100,13 @@ Application 层负责跨接口用例和生命周期，目标职责包括：
 
 ## 5. 板端 Agent
 
-Agent 使用 C++17 与平台 API 实现，不依赖 Qt。开发期默认只监听板端 `127.0.0.1`。Android 使用
-ADB 动态端口转发；Linux 采用 SSH 隧道和受控服务部署。直接 TCP 必须由显式产品配置开启，并先
+Agent 使用 C++17 与平台 API 实现，不依赖 Qt。开发期默认只监听板端 `127.0.0.1`。Android 和 Linux
+通过 ADB 动态端口转发；Linux 使用固定 Bundle 和受控版本目录部署。直接 TCP 必须由显式产品配置开启，并先
 补充认证、授权和网络暴露策略。
 
 Agent 产物由“操作系统用户空间 + ARM 架构”确定：Android 使用 NDK/Bionic 的 `armeabi-v7a` 或
-`arm64-v8a`，Linux 使用 glibc 工具链的 `armv7` 或 `aarch64`。内核版本不作为产物目录维度；
-更换内核后重新验证设备节点、驱动、termios、权限和安全策略。
+`arm64-v8a`，固定构建矩阵的 Linux 第一阶段使用 glibc 2.31 基线的 `aarch64`。内核版本不作为
+产物目录维度；更换内核后重新验证设备节点、驱动、termios、权限和安全策略。
 
 Agent v1 的最小能力族包含会话握手、能力查询、系统信息、串口枚举和串口托管；实际开放范围见
 `STATUS.md`。扩展能力时按需要逐步加入：
@@ -170,8 +170,9 @@ created -> queued -> running -> succeeded
 
 ## 9. 部署与安全
 
-- 开发期：Android 通过 ADB 部署和转发；Linux 可在板端原生构建，后续由 SSH 部署和转发。
-- 稳定期：Android 使用受控 init/service 集成，Linux/Buildroot 使用 systemd 或包配置安装。
+- 开发期：Android 和 Linux 通过 ADB 部署和转发；Linux 固定使用 aarch64/glibc-2.31 Bundle。
+- 稳定期：Android 使用受控 init/service 集成，Linux/Buildroot 使用 systemd 或包配置安装；ADB
+  部署仍保留为开发与维修入口。
 - 上位机与 Agent 独立版本，握手协商协议范围和能力版本。
 - 升级失败不能破坏 ADB；需要保留版本查询、产物校验和回退入口。
 - 当前安全依赖已有 ADB 授权和回环监听；网络认证、包签名和量产权限仍是开放项。

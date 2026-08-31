@@ -10,7 +10,7 @@
 #include "core/serial/codec.h"
 #include "core/serial/serial_test_engine.h"
 #include "core/support/command_line.h"
-#include "application/agent/android_agent_deployment.h"
+#include "application/agent/adb_agent_deployment.h"
 #include "application/serial/serial_workspace_state.h"
 #include "application/support/background_task_group.h"
 
@@ -359,7 +359,7 @@ int runAgentSerialSmokeTest(const std::string &serial, std::uint16_t agentContro
 int runAgentDeploymentSmokeTest(const std::string &serial,
                                 const std::string &applicationDirectory)
 {
-    testtools::AndroidAgentDeployment deployment;
+    testtools::AdbAgentDeployment deployment;
     const auto result = deployment.deployAndForward(serial, applicationDirectory,
         [](const std::string &message) { std::cout << message << '\n'; });
     if (!result.succeeded) {
@@ -378,7 +378,8 @@ int runAgentDeploymentSmokeTest(const std::string &serial,
         || !client.request("{\"protocol\":1,\"request_id\":\"deploy-info\","
                            "\"method\":\"system.info\",\"params\":{}}",
                            response, error)
-        || response.find("\"platform\":\"android\"") == std::string::npos) {
+        || response.find(std::string("\"platform\":\"") + result.platform + "\"") ==
+               std::string::npos) {
         cleanup();
         std::cerr << "FAIL deployed Agent system.info: "
                   << (error.empty() ? response : error) << '\n';
@@ -387,21 +388,25 @@ int runAgentDeploymentSmokeTest(const std::string &serial,
     if (!client.request("{\"protocol\":1,\"request_id\":\"deploy-serial-list\","
                         "\"method\":\"serial.list\",\"params\":{}}",
                         response, error)
-        || response.find("\"endpoint\":\"/dev/ttyUSB2\"") == std::string::npos) {
+        || (result.platform == "android" &&
+            response.find("\"endpoint\":\"/dev/ttyUSB2\"") == std::string::npos)
+        || (result.platform == "linux" &&
+            response.find("\"endpoints\":[") == std::string::npos)) {
         cleanup();
         std::cerr << "FAIL deployed Agent serial.list: "
                   << (error.empty() ? response : error) << '\n';
         return 72;
     }
     cleanup();
-    std::cout << "PASS android-agent-deploy abi=" << result.abi
-              << " serial=" << serial << " ttyUSB2=discovered\n";
+    std::cout << "PASS adb-agent-deploy platform=" << result.platform
+              << " target=" << result.target
+              << " serial=" << serial << " serial_endpoints=discovered\n";
     return 0;
 }
 
 int runAgentReconnectSmokeTest(const std::string &serial)
 {
-    testtools::AndroidAgentDeployment deployment;
+    testtools::AdbAgentDeployment deployment;
     const auto result = deployment.reconnect(serial,
         [](const std::string &message) { std::cout << message << '\n'; });
     if (!result.succeeded) {
@@ -424,14 +429,15 @@ int runAgentReconnectSmokeTest(const std::string &serial)
                   << (error.empty() ? response : error) << '\n';
         return 74;
     }
-    std::cout << "PASS existing-agent-reconnect abi=" << result.abi
+    std::cout << "PASS existing-agent-reconnect platform=" << result.platform
+              << " target=" << result.target
               << " serial=" << serial << '\n';
     return 0;
 }
 
 int runAgentAtSmokeTest(const std::string &serial, const std::string &endpoint)
 {
-    testtools::AndroidAgentDeployment deployment;
+    testtools::AdbAgentDeployment deployment;
     const auto connection = deployment.reconnect(serial,
         [](const std::string &message) { std::cout << message << '\n'; });
     if (!connection.succeeded) {

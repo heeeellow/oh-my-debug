@@ -1,7 +1,7 @@
 param(
   [Parameter(Mandatory = $true)]
   [string]$ToolchainFile,
-  [ValidateSet('armv7', 'aarch64')]
+  [ValidateSet('aarch64')]
   [string]$Architecture = 'aarch64',
   [ValidateSet('Debug', 'Release')]
   [string]$Configuration = 'Release',

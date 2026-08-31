@@ -91,25 +91,51 @@ Android 产物使用 NDK/Bionic，最低 API 为 23。同一 ABI 可以覆盖 An
 
 ### 4.2 Linux ARM Agent
 
-Ubuntu 或其他 Linux 板卡使用 glibc 产物，不能复用 Android 二进制。在 ARM 板端取得仓库后可原生
-构建并运行主机契约测试：
+固定构建矩阵的 Linux 目标只有 `aarch64`，使用 glibc 2.31 基线产物，不能复用 Android 二进制。
+Linux 构建必须在 WSL2 中完成，CMake 构建目录位于 WSL 用户目录，不在 `/mnt/c` 下长期编译。
+可信工具链由 Debian Bullseye 官方仓库的固定包和脚本内 SHA-256 校验值确定，安装到 WSL 用户目录，
+不需要 `sudo`：
+
+```powershell
+wsl.exe -d Ubuntu-24.04 -- bash /mnt/c/path/to/test-tools/scripts/install-linux-aarch64-toolchain.sh
+```
+
+也可以把目标工具链目录作为脚本第一个参数传入。脚本固定使用 GCC 10.2.1 交叉编译器和 glibc
+`2.31-9cross4` sysroot；如果校验或 sysroot 检查失败，必须停止构建。
+
+Linux 板端的原生构建脚本仍可用于板端主机契约测试：
 
 ```bash
 bash ./scripts/build-linux-agent.sh Release
 ```
 
-脚本只接受 `armv7/armv7l/armhf` 或 `aarch64/arm64` 主机，产物位于
-`build/agents/linux/<armv7|aarch64>/testtools-agent`。Windows 上已有 Linux ARM 交叉工具链时可运行：
+该脚本只接受 `aarch64/arm64` 主机。固定 Bundle 不使用它，而使用统一矩阵入口。GUI 的 Linux
+ADB 自动部署要求构建后将 `build/agent-bundle/` 复制到程序旁的 `agent-bundle/`；Visual Studio
+工程在该 Bundle 存在时会自动执行复制：
 
 ```powershell
-.\scripts\build-linux-agent.ps1 `
-  -ToolchainFile 'C:\toolchains\linux-aarch64.cmake' `
-  -Architecture aarch64
+.\scripts\build-agent-matrix.ps1 `
+  -NdkRoot '<Android NDK path>' `
+  -NinjaProgram '<Ninja executable path>'
 ```
 
-交叉工具链文件必须指定编译器和与目标系统兼容的 sysroot；交叉构建不代替板端契约测试。当前 GUI
-只实现 Android ADB 自动部署，Linux 产物需要手动启动；SSH 部署、systemd 服务和端口隧道仍是后续
-连接器工作。
+矩阵入口固定构建 Android `armeabi-v7a`、`arm64-v8a`（最低 API 23、`c++_static`）和 Linux
+`aarch64/glibc-2.31`，最终产物位于 `build/agent-bundle/`。Linux 的实际构建目录位于 WSL 用户的
+`.cache/testtools-agent-matrix/`；Windows 端只接收最终 Bundle 文件。可单独复核清单：
+
+```powershell
+.\scripts\validate-agent-bundle.ps1 -BundleDirectory .\build\agent-bundle
+```
+
+Bundle 的 `manifest.json` 记录 Agent/协议版本、平台、架构、ABI 或 libc 基线、相对路径、大小、
+SHA-256、构建配置、固定构建标识和构建时间。构建 wrapper 会检查 Linux ELF 架构、动态 glibc
+依赖和最高 GLIBC 符号版本不得高于 `2.31`；交叉构建不代替板端契约测试。
+
+GUI 通过统一 ADB 部署入口按设备用户空间分流：Android 读取 ABI，Linux 读取 `uname -m`、glibc
+和 root adbd 状态。Linux 部署只接受 `aarch64/glibc-2.31` Bundle，推送前后校验 SHA-256，并使用
+`/opt/testtools-agent/versions/<version>-<build-id>/`、`current`、`previous`、
+`/var/log/testtools-agent/` 和 `/run/testtools-agent/` 管理版本、启动和回退；控制端口仍通过
+ADB `forward` 接入。暂不接入 SSH、systemd 或 GUI 外的自动服务安装。
 
 Kernel 5.10 与 6.1 通常共享同一用户空间产物。切换内核时重点回归串口驱动、节点名称、termios、
 `/proc`/`/sys` 可见性和权限策略，而不是为每个内核建立一套源码。

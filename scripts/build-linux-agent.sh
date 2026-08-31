@@ -12,7 +12,6 @@ esac
 machine="$(uname -m)"
 case "$machine" in
   aarch64|arm64) architecture="aarch64" ;;
-  armv7l|armv7|armhf) architecture="armv7" ;;
   *) echo "unsupported Linux architecture: $machine (ARM only)" >&2; exit 2 ;;
 esac
 

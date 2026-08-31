@@ -1,7 +1,7 @@
 #include "main_window.h"
 
 #include "application/agent/agent_connection_service.h"
-#include "application/agent/android_agent_deployment.h"
+#include "application/agent/adb_agent_deployment.h"
 #include "theme.h"
 #include "ui/pages/serial_workspace.h"
 
@@ -153,16 +153,16 @@ void MainWindow::prepareForShutdown()
     agentAdbSerial_.clear();
     agentForwardPort_ = 0;
     if (!agentSerial.empty() && agentPort != 0) {
-        testtools::AndroidAgentDeployment().removeForward(agentSerial, agentPort);
+        testtools::AdbAgentDeployment().removeForward(agentSerial, agentPort);
     }
     scanTasks_.wait();
     agentTasks_.wait();
     // A deployment may have completed after the event loop began shutting
     // down, before its queued result could transfer ownership of the port.
     // Remove only forwards targeting this Agent's fixed control port.
-    testtools::AndroidAgentDeployment().removeControlForwards(selectedSerial);
+    testtools::AdbAgentDeployment().removeControlForwards(selectedSerial);
     if (!agentSerial.empty() && agentSerial != selectedSerial) {
-        testtools::AndroidAgentDeployment().removeControlForwards(agentSerial);
+        testtools::AdbAgentDeployment().removeControlForwards(agentSerial);
     }
     QCoreApplication::removePostedEvents(this);
 }
@@ -600,7 +600,7 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
 
     QPointer<MainWindow> guard(this);
     agentTasks_.start([guard, serial, applicationDirectory, generation, allowDeploy] {
-        testtools::AndroidAgentDeployment deployment;
+        testtools::AdbAgentDeployment deployment;
         const auto progress = [guard, generation, allowDeploy](const std::string& message) {
             QMetaObject::invokeMethod(
                 guard,
@@ -639,10 +639,10 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
             }
             const std::string requiredVersion =
                 std::string("\"agent_version\":\"") +
-                testtools::AndroidAgentDeployment::RequiredAgentVersion + "\"";
+                testtools::AdbAgentDeployment::RequiredAgentVersion + "\"";
             if (hello.find(requiredVersion) == std::string::npos) {
                 error = std::string("板端 Agent 版本不匹配，需要 ") +
-                        testtools::AndroidAgentDeployment::RequiredAgentVersion;
+                        testtools::AdbAgentDeployment::RequiredAgentVersion;
                 return false;
             }
             return client->request("{\"protocol\":1,\"request_id\":\"ui-capabilities\","
@@ -684,7 +684,7 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
                 if (!guard || guard->shuttingDown_ || generation != guard->agentGeneration_) {
                     client->close();
                     if (deploymentResult.localPort != 0) {
-                        testtools::AndroidAgentDeployment().removeForward(
+                        testtools::AdbAgentDeployment().removeForward(
                             serial, deploymentResult.localPort);
                     }
                     return;
@@ -693,7 +693,7 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
                 if (!succeeded) {
                     client->close();
                     if (deploymentResult.localPort != 0) {
-                        testtools::AndroidAgentDeployment().removeForward(
+                        testtools::AdbAgentDeployment().removeForward(
                             serial, deploymentResult.localPort);
                     }
                     guard->setAgentStatus(
@@ -725,7 +725,7 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
                 guard->setAgentStatus(QStringLiteral("Agent · %1").arg(guard->agentSummary_),
                                       StatusTone::Good,
                                       QStringLiteral("%1 · %2 · 本地转发端口 %3")
-                                          .arg(fromUtf8(serial), fromUtf8(deploymentResult.abi))
+                                          .arg(fromUtf8(serial), fromUtf8(deploymentResult.target))
                                           .arg(deploymentResult.localPort));
                 guard->agentCapabilitiesValue_->setText(
                     QStringLiteral("已发现能力：%1%2")
@@ -738,9 +738,10 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
                 const QString architecture = jsonStringValue(systemInfo, "architecture");
                 const QString release = jsonStringValue(systemInfo, "os_release");
                 guard->agentSystemInfoValue_->setText(
-                    QStringLiteral("设备信息：%1 · %2 · Android %3")
+                    QStringLiteral("设备信息：%1 · %2 · %3 %4")
                         .arg(model.isEmpty() ? QStringLiteral("未知型号") : model,
-                             architecture.isEmpty() ? fromUtf8(deploymentResult.abi) : architecture,
+                             architecture.isEmpty() ? fromUtf8(deploymentResult.target) : architecture,
+                             fromUtf8(deploymentResult.platform),
                              release.isEmpty() ? QStringLiteral("未知") : release));
                 guard->agentSystemInfoValue_->setToolTip(fromUtf8(systemInfo));
                 guard->setActivity(QStringLiteral("真实板端 Agent 连接、握手与能力发现完成"));
@@ -772,7 +773,7 @@ void MainWindow::stopSelectedAgent()
     QPointer<MainWindow> guard(this);
     agentTasks_.start([guard, serial, generation] {
         std::string error;
-        const bool stopped = testtools::AndroidAgentDeployment().stopRemote(serial, error);
+        const bool stopped = testtools::AdbAgentDeployment().stopRemote(serial, error);
         QMetaObject::invokeMethod(
             guard,
             [guard, stopped, error = std::move(error), generation] {
@@ -802,7 +803,7 @@ void MainWindow::disconnectAgent(const QString& reason)
         serialWorkspace_->setAgentConnection({}, 0);
     }
     if (!agentAdbSerial_.empty() && agentForwardPort_ != 0) {
-        testtools::AndroidAgentDeployment().removeForward(agentAdbSerial_, agentForwardPort_);
+        testtools::AdbAgentDeployment().removeForward(agentAdbSerial_, agentForwardPort_);
     }
     agentAdbSerial_.clear();
     agentForwardPort_ = 0;
