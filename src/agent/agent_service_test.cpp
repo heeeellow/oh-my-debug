@@ -32,6 +32,18 @@ int main()
         return fail("valid hello", hello);
     }
 
+    const auto systemInfo = service.handleRequest(
+        "{\"protocol\":1,\"request_id\":\"system-info\","
+        "\"method\":\"system.info\",\"params\":{}}");
+    if (!contains(systemInfo, "\"ok\":true") ||
+        !contains(systemInfo, "\"platform\":") ||
+        !contains(systemInfo, "\"model\":") ||
+        !contains(systemInfo, "\"cpu_cores\":") ||
+        !contains(systemInfo, "\"memory_total_kib\":") ||
+        !contains(systemInfo, "\"effective_uid\":")) {
+        return fail("system info contract", systemInfo);
+    }
+
     const auto missingProtocol = service.handleRequest(
         "{\"request_id\":\"missing\",\"method\":\"session.hello\",\"params\":{}}");
     if (!contains(missingProtocol, "\"code\":\"invalid_request\"")) {

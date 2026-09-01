@@ -12,7 +12,8 @@ Agent 是运行在 ARM Android 或 ARM Linux 板端的无 Qt C++17 服务，控�
 
 - `session.hello`：协议范围、Agent 版本和平台。
 - `capability.list`：`system.info` 与 `serial.stream`。
-- `system.info`：系统、内核、架构、板型、系统版本和有效 UID。
+- `system.info`：系统、内核、架构、板型、厂商/产品、Android 构建、CPU 核数、内存、SELinux
+  状态和有效 UID。
 - `serial.list`：设备节点、USB 接口名称、读写权限和占用进程。
 - `serial.open` / `serial.close`：由 Agent 独占打开串口并分配临时原始数据端口。
 - 强制协议版本、请求 ID、方法和串口参数类型、范围与枚举校验。
@@ -54,6 +55,9 @@ termios 兼容字段，不代表 USB 总线或模块内部 UART 的物理速率�
   以有效 UID 0 运行后才允许连接；自动重连只读检查已有 Agent 身份，不隐式提权。Linux 部署要求
   设备已有可写的 root adbd。部署会校验 Bundle 清单和 SHA-256。量产阶段仍需补充包签名和
   init/systemd 服务集成。
+- 上位机以 `session.hello.agent_version` 判断板端程序是否与当前源码配套。后台设备发现只读握手；
+  用户点击“连接并同步 Agent”时，版本不一致才自动部署当前产物。任何改变 Agent 行为、能力或返回
+  字段的修改都必须同步递增 `src/core/protocol/agent_version.h` 中的 `AgentVersion`。
 
 ## 请求示例
 

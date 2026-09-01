@@ -11,6 +11,9 @@
 #else
 #include <sys/utsname.h>
 #include <unistd.h>
+#ifdef __ANDROID__
+#include <sys/system_properties.h>
+#endif
 #endif
 
 namespace testtools::agent {
@@ -176,15 +179,70 @@ std::string readLine(const std::string &path)
 
 std::string buildProperty(const std::string &key)
 {
-    std::ifstream input("/system/build.prop");
-    std::string line;
-    const std::string prefix = key + '=';
-    while (std::getline(input, line)) {
-        if (line.rfind(prefix, 0) == 0) {
-            return line.substr(prefix.size());
+#ifdef __ANDROID__
+    char value[PROP_VALUE_MAX] = {};
+    const int length = __system_property_get(key.c_str(), value);
+    if (length > 0) {
+        return std::string(value, static_cast<std::size_t>(length));
+    }
+#endif
+    for (const char *path : {"/system/build.prop",
+                             "/vendor/build.prop",
+                             "/product/build.prop",
+                             "/system_ext/build.prop",
+                             "/odm/build.prop"}) {
+        std::ifstream input(path);
+        std::string line;
+        const std::string prefix = key + '=';
+        while (std::getline(input, line)) {
+            if (line.rfind(prefix, 0) == 0) {
+                return line.substr(prefix.size());
+            }
         }
     }
     return {};
+}
+
+std::string keyValue(const std::string &path, const std::string &key, char delimiter = '=')
+{
+    std::ifstream input(path);
+    std::string line;
+    const std::string prefix = key + delimiter;
+    while (std::getline(input, line)) {
+        if (line.rfind(prefix, 0) != 0) {
+            continue;
+        }
+        std::string value = line.substr(prefix.size());
+        const auto first = value.find_first_not_of(" \t");
+        value = first == std::string::npos ? std::string{} : value.substr(first);
+        if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+            value = value.substr(1, value.size() - 2);
+        }
+        return value;
+    }
+    return {};
+}
+
+long long memoryTotalKib()
+{
+    const std::string value = keyValue("/proc/meminfo", "MemTotal", ':');
+    try {
+        return value.empty() ? 0 : std::stoll(value);
+    } catch (...) {
+        return 0;
+    }
+}
+
+std::string selinuxMode()
+{
+    const std::string enforce = readLine("/sys/fs/selinux/enforce");
+    if (enforce == "1") {
+        return "Enforcing";
+    }
+    if (enforce == "0") {
+        return "Permissive";
+    }
+    return "Disabled";
 }
 
 std::string platformName()
@@ -218,6 +276,7 @@ std::string systemInfoJson()
     architecture = "unknown";
 #endif
     const int uid = 0;
+    const long processorCount = 0;
 #else
     utsname information{};
     if (uname(&information) == 0) {
@@ -226,6 +285,7 @@ std::string systemInfoJson()
         architecture = information.machine;
     }
     const int uid = static_cast<int>(geteuid());
+    const long processorCount = sysconf(_SC_NPROCESSORS_ONLN);
 #endif
     std::string model = readLine("/proc/device-tree/model");
     if (model.empty()) {
@@ -233,14 +293,33 @@ std::string systemInfoJson()
     }
     std::string release = buildProperty("ro.build.version.release");
     if (release.empty()) {
-        release = readLine("/etc/os-release");
+        release = keyValue("/etc/os-release", "PRETTY_NAME");
     }
+    const std::string manufacturer = buildProperty("ro.product.manufacturer");
+    const std::string brand = buildProperty("ro.product.brand");
+    const std::string board = buildProperty("ro.product.board");
+    const std::string device = buildProperty("ro.product.device");
+    const std::string product = buildProperty("ro.product.name");
+    const std::string hardware = buildProperty("ro.hardware");
+    const std::string sdk = buildProperty("ro.build.version.sdk");
+    const std::string buildId = buildProperty("ro.build.id");
     return "{\"platform\":\"" + jsonEscape(platformName())
            + "\",\"hostname\":\"" + jsonEscape(host)
            + "\",\"kernel\":\"" + jsonEscape(kernel)
            + "\",\"architecture\":\"" + jsonEscape(architecture)
            + "\",\"model\":\"" + jsonEscape(model)
            + "\",\"os_release\":\"" + jsonEscape(release)
+           + "\",\"manufacturer\":\"" + jsonEscape(manufacturer)
+           + "\",\"brand\":\"" + jsonEscape(brand)
+           + "\",\"board\":\"" + jsonEscape(board)
+           + "\",\"device\":\"" + jsonEscape(device)
+           + "\",\"product\":\"" + jsonEscape(product)
+           + "\",\"hardware\":\"" + jsonEscape(hardware)
+           + "\",\"android_sdk\":\"" + jsonEscape(sdk)
+           + "\",\"build_id\":\"" + jsonEscape(buildId)
+           + "\",\"cpu_cores\":" + std::to_string(std::max(0L, processorCount))
+           + ",\"memory_total_kib\":" + std::to_string(memoryTotalKib())
+           + ",\"selinux\":\"" + jsonEscape(selinuxMode())
            + "\",\"effective_uid\":" + std::to_string(uid) + "}";
 }
 

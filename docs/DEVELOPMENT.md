@@ -71,6 +71,11 @@ Android Agent 的 CMake/Ninja 也必须来自 PATH 或显式环境变量；例�
 `TESTTOOLS_CMAKE_PROGRAM`、`TESTTOOLS_NINJA_PROGRAM`，或直接向 Agent 构建脚本传入
 `-CMakeProgram`、`-NinjaProgram`。工程不内置开发者机器的工具链绝对路径。
 
+修改 `src/agent/`、Agent 协议行为或板端返回字段时，必须先递增
+`src/core/protocol/agent_version.h` 中的 `AgentVersion`。这是上位机判断板端 Agent 是否需要
+升级的唯一版本来源，不再增加第二套二进制指纹。启动后的后台发现只做只读握手；用户点击
+“连接并同步 Agent”时，如果板端版本不同，上位机会自动推送并启动当前构建产物。
+
 如果 Qt 未注册为工程中的 `QtInstall` 版本，先在 Qt VS Tools 中注册与工程配置一致的 Qt 安装；
 不要把个人机器的 Qt 绝对路径写入工程或脚本。发布验收应在没有 Qt 环境变量的进程中直接启动上述
 输出目录中的程序，并确认同目录包含 `Qt6Core.dll`、`Qt6Gui.dll` 和 `Qt6Widgets.dll`。
@@ -98,6 +103,11 @@ Debug/Release 运行目录。默认目标为 `armeabi-v7a`，可通过 MSBuild �
 
 Android 产物使用 NDK/Bionic，最低 API 为 23。同一 ABI 可以覆盖 Android 11、13、14 等更高版本；
 更换系统版本后仍需重新验证 SELinux、设备节点权限和系统服务占用。
+
+因此日常只修改当前 Android ABI 时，直接重新构建 `TestTools.vcxproj` 即可；若目标板 ABI 与默认
+`armeabi-v7a` 不同，构建时传入 `/p:TestToolsAndroidAgentAbi=arm64-v8a`。需要同时更新 Android
+双 ABI 和 Linux ARM64 时，运行 4.2 节的 `build-agent-matrix.ps1`，再重建桌面程序以把 Bundle
+复制到运行目录。
 
 ### 4.2 Linux ARM Agent
 

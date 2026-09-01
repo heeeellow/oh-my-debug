@@ -71,7 +71,7 @@ try {
             Where-Object { $_.Extension -in @('.h', '.cpp') }
     }
     $sourceFingerprintLines = foreach ($sourceFile in ($sourceFiles | Sort-Object FullName)) {
-        $relative = [System.IO.Path]::GetRelativePath($repositoryRoot, $sourceFile.FullName).Replace('\', '/')
+        $relative = $sourceFile.FullName.Substring($repositoryRoot.Length + 1).Replace('\', '/')
         $hash = (Get-FileHash -LiteralPath $sourceFile.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
         "$relative=$hash"
     }
