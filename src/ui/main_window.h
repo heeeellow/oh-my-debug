@@ -83,8 +83,14 @@ class MainWindow final : public QMainWindow {
     QPushButton* disconnectAgentButton_ = nullptr;
     QPushButton* stopAgentButton_ = nullptr;
     QLabel* agentConnectionDetail_ = nullptr;
+    QLabel* agentVersionValue_ = nullptr;
     QLabel* agentCapabilitiesValue_ = nullptr;
-    QLabel* agentSystemInfoValue_ = nullptr;
+    QLabel* agentModelValue_ = nullptr;
+    QLabel* agentManufacturerValue_ = nullptr;
+    QLabel* agentHardwareValue_ = nullptr;
+    QLabel* agentOsValue_ = nullptr;
+    QLabel* agentBuildValue_ = nullptr;
+    QLabel* agentSecurityValue_ = nullptr;
     std::shared_ptr<testtools::IAgentConnection> agentClient_;
     std::vector<QPushButton*> navigationButtons_;
     testtools::BackgroundTaskGroup scanTasks_;

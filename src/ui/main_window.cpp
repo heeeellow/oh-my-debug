@@ -6,6 +6,9 @@
 #include "ui/pages/serial_workspace.h"
 
 #include <QtCore/QCoreApplication>
+#include <QtCore/QJsonArray>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
 #include <QtCore/QMetaObject>
 #include <QtCore/QPointer>
 #include <QtCore/QSignalBlocker>
@@ -32,17 +35,33 @@ QString fromUtf8(const std::string& text)
     return QString::fromUtf8(text.data(), static_cast<qsizetype>(text.size()));
 }
 
-QString jsonStringValue(const std::string& json, const std::string& key)
+QJsonObject jsonResultObject(const std::string& json)
 {
-    const std::string marker = "\"" + key + "\":\"";
-    const std::size_t start = json.find(marker);
-    if (start == std::string::npos) {
+    QJsonParseError error;
+    const QJsonDocument document =
+        QJsonDocument::fromJson(QByteArray(json.data(), static_cast<qsizetype>(json.size())), &error);
+    if (error.error != QJsonParseError::NoError || !document.isObject()) {
         return {};
     }
-    const std::size_t valueStart = start + marker.size();
-    const std::size_t end = json.find('"', valueStart);
-    return end == std::string::npos ? QString{}
-                                    : fromUtf8(json.substr(valueStart, end - valueStart));
+    return document.object().value(QStringLiteral("result")).toObject();
+}
+
+QString infoText(const QJsonObject& object, const char* key, const QString& fallback = {})
+{
+    const QString value = object.value(QString::fromLatin1(key)).toString().trimmed();
+    return value.isEmpty() ? fallback : value;
+}
+
+bool hasCapability(const std::string& response, const QString& capabilityId)
+{
+    const QJsonArray capabilities =
+        jsonResultObject(response).value(QStringLiteral("capabilities")).toArray();
+    for (const QJsonValue& capability : capabilities) {
+        if (capability.toObject().value(QStringLiteral("id")).toString() == capabilityId) {
+            return true;
+        }
+    }
+    return false;
 }
 
 QString deviceDisplayName(const serialdemo::AdbDevice& device)
@@ -463,7 +482,7 @@ QWidget* MainWindow::buildSettingsPage()
     connectionTitle->setObjectName(QStringLiteral("sectionLabel"));
     auto* connectionBody = new QLabel(
         QStringLiteral(
-            "优先连接板端已运行的 Agent；未发现时再自动识别 ABI、部署当前版本并发现能力。"),
+            "主动连接时会核对 Agent 版本；版本不一致或未安装时自动同步。后台发现保持只读。"),
         connectionCard);
     connectionBody->setObjectName(QStringLiteral("cardBody"));
     connectionBody->setWordWrap(true);
@@ -475,11 +494,10 @@ QWidget* MainWindow::buildSettingsPage()
     connectionLayout->addWidget(agentDeviceValue_);
 
     auto* actions = new QHBoxLayout;
-    deployAgentButton_ = new QPushButton(QStringLiteral("连接 / 必要时部署"), connectionCard);
+    deployAgentButton_ = new QPushButton(QStringLiteral("连接并同步 Agent"), connectionCard);
     deployAgentButton_->setObjectName(QStringLiteral("primaryButton"));
     disconnectAgentButton_ = new QPushButton(QStringLiteral("断开本机连接"), connectionCard);
     stopAgentButton_ = new QPushButton(QStringLiteral("停止板端 Agent"), connectionCard);
-    stopAgentButton_->setObjectName(QStringLiteral("ghostButton"));
     actions->addWidget(deployAgentButton_);
     actions->addWidget(disconnectAgentButton_);
     actions->addWidget(stopAgentButton_);
@@ -494,13 +512,51 @@ QWidget* MainWindow::buildSettingsPage()
     agentCapabilitiesValue_->setObjectName(QStringLiteral("cardBody"));
     agentCapabilitiesValue_->setWordWrap(true);
     agentCapabilitiesValue_->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    agentSystemInfoValue_ = new QLabel(QStringLiteral("设备信息：—"), connectionCard);
-    agentSystemInfoValue_->setObjectName(QStringLiteral("cardBody"));
-    agentSystemInfoValue_->setWordWrap(true);
-    agentSystemInfoValue_->setTextInteractionFlags(Qt::TextSelectableByMouse);
     connectionLayout->addWidget(agentConnectionDetail_);
+
+    auto* versionTitle = new QLabel(QStringLiteral("版本状态"), connectionCard);
+    versionTitle->setObjectName(QStringLiteral("sectionLabel"));
+    agentVersionValue_ = new QLabel(
+        QStringLiteral("本地要求：v%1 · 板端：—")
+            .arg(QString::fromLatin1(testtools::AdbAgentDeployment::RequiredAgentVersion)),
+        connectionCard);
+    agentVersionValue_->setObjectName(QStringLiteral("cardBody"));
+    agentVersionValue_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    connectionLayout->addWidget(versionTitle);
+    connectionLayout->addWidget(agentVersionValue_);
+
+    auto* boardTitle = new QLabel(QStringLiteral("板级信息"), connectionCard);
+    boardTitle->setObjectName(QStringLiteral("sectionLabel"));
+    connectionLayout->addWidget(boardTitle);
+    auto* boardGrid = new QGridLayout;
+    boardGrid->setHorizontalSpacing(18);
+    boardGrid->setVerticalSpacing(7);
+    boardGrid->setColumnMinimumWidth(0, 76);
+    boardGrid->setColumnStretch(1, 1);
+    const auto addBoardRow = [connectionCard, boardGrid](int row,
+                                                         const QString& name,
+                                                         QLabel*& value) {
+        auto* nameLabel = new QLabel(name, connectionCard);
+        nameLabel->setObjectName(QStringLiteral("cardEyebrow"));
+        value = new QLabel(QStringLiteral("—"), connectionCard);
+        value->setObjectName(QStringLiteral("cardBody"));
+        value->setWordWrap(true);
+        value->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        boardGrid->addWidget(nameLabel, row, 0, Qt::AlignTop);
+        boardGrid->addWidget(value, row, 1);
+    };
+    addBoardRow(0, QStringLiteral("板卡型号"), agentModelValue_);
+    addBoardRow(1, QStringLiteral("厂商 / 产品"), agentManufacturerValue_);
+    addBoardRow(2, QStringLiteral("硬件资源"), agentHardwareValue_);
+    addBoardRow(3, QStringLiteral("系统内核"), agentOsValue_);
+    addBoardRow(4, QStringLiteral("系统构建"), agentBuildValue_);
+    addBoardRow(5, QStringLiteral("运行权限"), agentSecurityValue_);
+    connectionLayout->addLayout(boardGrid);
+
+    auto* capabilityTitle = new QLabel(QStringLiteral("Agent 能力"), connectionCard);
+    capabilityTitle->setObjectName(QStringLiteral("sectionLabel"));
+    connectionLayout->addWidget(capabilityTitle);
     connectionLayout->addWidget(agentCapabilitiesValue_);
-    connectionLayout->addWidget(agentSystemInfoValue_);
     layout->addWidget(connectionCard);
     layout->addStretch();
 
@@ -620,6 +676,7 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
         std::string hello;
         std::string capabilities;
         std::string systemInfo;
+        QString observedVersion;
         const auto connectAndDiscover = [&] {
             if (!deploymentResult.succeeded) {
                 error = deploymentResult.error;
@@ -629,6 +686,7 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
             hello.clear();
             capabilities.clear();
             systemInfo.clear();
+            observedVersion.clear();
             client = testtools::AgentConnectionService::createClient();
             if (!client->connect("127.0.0.1", deploymentResult.localPort, error) ||
                 !client->request("{\"protocol\":1,\"request_id\":\"ui-hello\","
@@ -637,10 +695,9 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
                                  error)) {
                 return false;
             }
-            const std::string requiredVersion =
-                std::string("\"agent_version\":\"") +
-                testtools::AdbAgentDeployment::RequiredAgentVersion + "\"";
-            if (hello.find(requiredVersion) == std::string::npos) {
+            observedVersion = infoText(jsonResultObject(hello), "agent_version");
+            if (observedVersion !=
+                QString::fromLatin1(testtools::AdbAgentDeployment::RequiredAgentVersion)) {
                 error = std::string("板端 Agent 版本不匹配，需要 ") +
                         testtools::AdbAgentDeployment::RequiredAgentVersion;
                 return false;
@@ -675,6 +732,7 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
              hello = std::move(hello),
              capabilities = std::move(capabilities),
              systemInfo = std::move(systemInfo),
+             observedVersion = std::move(observedVersion),
              error = std::move(error),
              deploymentResult = std::move(deploymentResult),
              succeeded,
@@ -703,7 +761,17 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
                         allowDeploy
                             ? fromUtf8(error)
                             : QStringLiteral(
-                                  "未发现兼容的板端 Agent；点击“连接 / 必要时部署”安装或升级"));
+                                  "未发现兼容版本的板端 Agent；点击“连接并同步 Agent”安装或升级"));
+                    if (guard->agentVersionValue_) {
+                        guard->agentVersionValue_->setText(
+                            QStringLiteral("本地要求：v%1 · 板端：%2")
+                                .arg(QString::fromLatin1(
+                                         testtools::AdbAgentDeployment::RequiredAgentVersion),
+                                     observedVersion.isEmpty()
+                                         ? QStringLiteral("未发现")
+                                         : QStringLiteral("v%1 · 需要升级")
+                                               .arg(observedVersion)));
+                    }
                     guard->updateAgentControls();
                     return;
                 }
@@ -714,19 +782,25 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
                 if (guard->serialWorkspace_) {
                     guard->serialWorkspace_->setAgentConnection(serial, deploymentResult.localPort);
                 }
-                const QString version = jsonStringValue(hello, "agent_version");
+                const QJsonObject helloObject = jsonResultObject(hello);
+                const QString version = infoText(helloObject, "agent_version");
                 const bool systemInfoCapability =
-                    capabilities.find("\"id\":\"system.info\"") != std::string::npos;
+                    hasCapability(capabilities, QStringLiteral("system.info"));
                 const bool serialStream =
-                    capabilities.find("\"id\":\"serial.stream\"") != std::string::npos;
+                    hasCapability(capabilities, QStringLiteral("serial.stream"));
                 guard->agentSummary_ = version.isEmpty()
                                            ? QStringLiteral("已连接")
-                                           : QStringLiteral("v%1 · 已连接").arg(version);
+                                           : QStringLiteral("v%1 · 已同步").arg(version);
                 guard->setAgentStatus(QStringLiteral("Agent · %1").arg(guard->agentSummary_),
                                       StatusTone::Good,
                                       QStringLiteral("%1 · %2 · 本地转发端口 %3")
                                           .arg(fromUtf8(serial), fromUtf8(deploymentResult.target))
                                           .arg(deploymentResult.localPort));
+                guard->agentVersionValue_->setText(
+                    QStringLiteral("本地要求：v%1 · 板端：v%2 · 已同步")
+                        .arg(QString::fromLatin1(
+                                 testtools::AdbAgentDeployment::RequiredAgentVersion),
+                             version.isEmpty() ? QStringLiteral("未知") : version));
                 guard->agentCapabilitiesValue_->setText(
                     QStringLiteral("已发现能力：%1%2")
                         .arg(systemInfoCapability ? QStringLiteral("system.info（只读）")
@@ -734,16 +808,65 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
                              serialStream ? QStringLiteral("、serial.stream（设备 I/O）")
                                           : QString{}));
                 guard->agentCapabilitiesValue_->setToolTip(fromUtf8(capabilities));
-                const QString model = jsonStringValue(systemInfo, "model");
-                const QString architecture = jsonStringValue(systemInfo, "architecture");
-                const QString release = jsonStringValue(systemInfo, "os_release");
-                guard->agentSystemInfoValue_->setText(
-                    QStringLiteral("设备信息：%1 · %2 · %3 %4")
-                        .arg(model.isEmpty() ? QStringLiteral("未知型号") : model,
-                             architecture.isEmpty() ? fromUtf8(deploymentResult.target) : architecture,
-                             fromUtf8(deploymentResult.platform),
-                             release.isEmpty() ? QStringLiteral("未知") : release));
-                guard->agentSystemInfoValue_->setToolTip(fromUtf8(systemInfo));
+                const QJsonObject info = jsonResultObject(systemInfo);
+                const QString model = infoText(info, "model", QStringLiteral("未知型号"));
+                const QString manufacturer = infoText(info, "manufacturer");
+                const QString brand = infoText(info, "brand");
+                const QString product = infoText(info, "product");
+                const QString board = infoText(info, "board");
+                const QString hardware = infoText(info, "hardware");
+                const QString architecture =
+                    infoText(info, "architecture", fromUtf8(deploymentResult.target));
+                const int cores = info.value(QStringLiteral("cpu_cores")).toInt();
+                const qint64 memoryKib =
+                    info.value(QStringLiteral("memory_total_kib")).toVariant().toLongLong();
+                const QString release = infoText(info, "os_release", QStringLiteral("未知版本"));
+                const QString sdk = infoText(info, "android_sdk");
+                const QString kernel = infoText(info, "kernel", QStringLiteral("未知内核"));
+                const QString systemBuild = infoText(info, "build_id");
+                const int uid = info.value(QStringLiteral("effective_uid")).toInt(-1);
+                const QString selinux = infoText(info, "selinux", QStringLiteral("未知"));
+
+                guard->agentModelValue_->setText(
+                    board.isEmpty() ? model : QStringLiteral("%1 · %2").arg(model, board));
+                QStringList manufacturerParts;
+                for (const QString& part : {manufacturer, brand, product}) {
+                    if (!part.isEmpty()) {
+                        manufacturerParts << part;
+                    }
+                }
+                const QString manufacturerLine =
+                    manufacturerParts.join(QStringLiteral(" · "));
+                guard->agentManufacturerValue_->setText(
+                    manufacturerLine.isEmpty() ? QStringLiteral("—") : manufacturerLine);
+                QStringList hardwareParts{hardware, architecture};
+                if (cores > 0) {
+                    hardwareParts << QStringLiteral("%1 核 CPU").arg(cores);
+                }
+                if (memoryKib > 0) {
+                    hardwareParts << QStringLiteral("%1 MiB 内存").arg(memoryKib / 1024);
+                }
+                hardwareParts.removeAll(QString{});
+                guard->agentHardwareValue_->setText(hardwareParts.join(QStringLiteral(" · ")));
+                const QString platformRelease =
+                    QStringLiteral("%1 %2").arg(fromUtf8(deploymentResult.platform), release);
+                guard->agentOsValue_->setText(
+                    sdk.isEmpty()
+                        ? QStringLiteral("%1 · %2").arg(platformRelease, kernel)
+                        : QStringLiteral("%1（API %2） · %3").arg(platformRelease, sdk, kernel));
+                guard->agentBuildValue_->setText(
+                    systemBuild.isEmpty() ? QStringLiteral("—") : systemBuild);
+                guard->agentSecurityValue_->setText(
+                    QStringLiteral("UID %1 · SELinux %2")
+                        .arg(uid < 0 ? QStringLiteral("未知") : QString::number(uid), selinux));
+                for (QLabel* label : {guard->agentModelValue_,
+                                      guard->agentManufacturerValue_,
+                                      guard->agentHardwareValue_,
+                                      guard->agentOsValue_,
+                                      guard->agentBuildValue_,
+                                      guard->agentSecurityValue_}) {
+                    label->setToolTip(fromUtf8(systemInfo));
+                }
                 guard->setActivity(QStringLiteral("真实板端 Agent 连接、握手与能力发现完成"));
                 guard->updateAgentControls();
             },
@@ -815,9 +938,21 @@ void MainWindow::disconnectAgent(const QString& reason)
         agentCapabilitiesValue_->setText(QStringLiteral("已发现能力：—"));
         agentCapabilitiesValue_->setToolTip({});
     }
-    if (agentSystemInfoValue_) {
-        agentSystemInfoValue_->setText(QStringLiteral("设备信息：—"));
-        agentSystemInfoValue_->setToolTip({});
+    if (agentVersionValue_) {
+        agentVersionValue_->setText(
+            QStringLiteral("本地要求：v%1 · 板端：—")
+                .arg(QString::fromLatin1(testtools::AdbAgentDeployment::RequiredAgentVersion)));
+    }
+    for (QLabel* label : {agentModelValue_,
+                          agentManufacturerValue_,
+                          agentHardwareValue_,
+                          agentOsValue_,
+                          agentBuildValue_,
+                          agentSecurityValue_}) {
+        if (label) {
+            label->setText(QStringLiteral("—"));
+            label->setToolTip({});
+        }
     }
     if (!reason.isEmpty()) {
         setActivity(reason);
@@ -861,12 +996,12 @@ void MainWindow::updateAgentControls()
     disconnectAgentButton_->setEnabled(connected && !serialBusy_);
     stopAgentButton_->setEnabled(online && !agentConnecting_ && !serialBusy_);
     deployAgentButton_->setText(agentConnecting_ ? QStringLiteral("正在处理...")
-                                                 : QStringLiteral("连接 / 必要时部署"));
+                                                 : QStringLiteral("连接并同步 Agent"));
     if (agentDeviceValue_) {
         agentDeviceValue_->setText(
-            online ? QStringLiteral("目标设备：%1 · %2")
-                         .arg(fromUtf8(device.serial), fromUtf8(device.description))
+            online ? QStringLiteral("目标设备：%1").arg(deviceDisplayName(device))
                    : QStringLiteral("目标设备：未选择在线 ADB 设备"));
+        agentDeviceValue_->setToolTip(online ? fromUtf8(device.description) : QString{});
     }
 }
 
@@ -1040,7 +1175,7 @@ void MainWindow::updateOverview()
     }
     const auto device = selectedDevice();
     overviewDeviceValue_->setText(device.serial.empty() ? QStringLiteral("未选择")
-                                                        : fromUtf8(device.serial));
+                                                        : deviceDisplayName(device));
     overviewAdbValue_->setText(adbStatusLabel_ ? adbStatusLabel_->text()
                                                : QStringLiteral("检测中"));
     overviewAgentValue_->setText(agentSummary_.isEmpty() ? QStringLiteral("未连接")
