@@ -379,7 +379,8 @@ int runAgentDeploymentSmokeTest(const std::string &serial,
                            "\"method\":\"system.info\",\"params\":{}}",
                            response, error)
         || response.find(std::string("\"platform\":\"") + result.platform + "\"") ==
-               std::string::npos) {
+               std::string::npos
+        || response.find("\"effective_uid\":0") == std::string::npos) {
         cleanup();
         std::cerr << "FAIL deployed Agent system.info: "
                   << (error.empty() ? response : error) << '\n';

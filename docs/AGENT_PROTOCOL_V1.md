@@ -50,8 +50,10 @@ termios 兼容字段，不代表 USB 总线或模块内部 UART 的物理速率�
 - ADB 只负责发现、部署和端口转发，不承担串口业务语义。
 - 不提供任意 shell RPC；每个新能力必须有固定方法、参数校验和风险等级。
 - `/dev/ttyUSB1` 等被系统进程占用的端点会返回明确占用者，不会抢占系统服务。
-- Android 和 Linux 开发部署依赖已有 ADB 授权以及 Linux 设备可写的 root adbd；部署会校验 Bundle
-  清单和 SHA-256。量产阶段仍需补充包签名和 init/systemd 服务集成。
+- Android 和 Linux 开发部署依赖已有 ADB 授权。Android 部署会请求并校验 root adbd，保证 Agent
+  以有效 UID 0 运行后才允许连接；自动重连只读检查已有 Agent 身份，不隐式提权。Linux 部署要求
+  设备已有可写的 root adbd。部署会校验 Bundle 清单和 SHA-256。量产阶段仍需补充包签名和
+  init/systemd 服务集成。
 
 ## 请求示例
 

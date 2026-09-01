@@ -175,8 +175,8 @@ Kernel 5.10 与 6.1 通常共享同一用户空间产物。切换内核时重点
 - Agent 主机契约测试：由 CTest 验证协议版本、字段类型、枚举和范围拒绝路径，不访问真实设备。
 - `--self-test`：编码、异步发送队列、串口可靠性帧、Agent 帧、ADB 枚举和安全转发冒烟检查。
 - `--agent-smoke <host> <port>`：验证真实或测试 Agent 的 hello 与能力发现。
-- `--agent-deploy-smoke <adb-serial>`：执行真实 ABI 识别、部署、启动、控制转发、`system.info`
-  和 `serial.list`；不发送串口数据。
+- `--agent-deploy-smoke <adb-serial>`：执行真实 ABI 识别、root 身份校验、部署、启动、控制转发、
+  `system.info` 和 `serial.list`；要求 Agent 的有效 UID 为 0，不发送串口数据。
 - `--agent-reconnect-smoke <adb-serial>`：不重新部署，探测并连接板端现有 Agent，验证握手和转发。
 - `--agent-at-smoke <adb-serial> <endpoint>`：通过与界面相同的 Agent 串口传输发送一次安全的
   `AT\r\n`，并验证在 5 秒内收到 `OK`；该检查会真实发送 AT 指令。

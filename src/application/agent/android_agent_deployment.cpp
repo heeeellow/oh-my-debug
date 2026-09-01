@@ -44,6 +44,59 @@ std::string commandDetail(const serialdemo::CommandResult& result)
     return detail.empty() ? "exit code " + std::to_string(result.exitCode) : detail;
 }
 
+bool ensureRootAdb(serialdemo::AdbTransport& adb,
+                   const std::string& serial,
+                   const AndroidAgentDeployment::ProgressCallback& progress,
+                   std::string& error)
+{
+    const auto readUid = [&] {
+        return adb.runCommand(serial, {"shell", "id -u"}, std::chrono::seconds(4));
+    };
+    auto uid = readUid();
+    if (uid.exitCode == 0 && !uid.timedOut && trim(uid.standardOutput) == "0") {
+        return true;
+    }
+
+    if (progress) {
+        progress("正在请求 root ADB shell...");
+    }
+    const auto root = adb.runCommand(serial, {"root"}, std::chrono::seconds(8));
+    if (root.exitCode != 0 || root.timedOut) {
+        error = "Android Agent 需要 root shell 访问板端串口；ADB root 失败: " +
+                commandDetail(root);
+        return false;
+    }
+
+    const auto wait =
+        adb.runCommand(serial, {"wait-for-device"}, std::chrono::seconds(12));
+    if (wait.exitCode != 0 || wait.timedOut) {
+        error = "ADB root 后等待设备重新上线失败: " + commandDetail(wait);
+        return false;
+    }
+
+    uid = readUid();
+    if (uid.exitCode != 0 || uid.timedOut || trim(uid.standardOutput) != "0") {
+        const std::string actualUid = trim(uid.standardOutput);
+        error = "ADB root 后 shell 仍不是 root";
+        if (!actualUid.empty()) {
+            error += "，当前 UID: " + actualUid;
+        }
+        return false;
+    }
+    return true;
+}
+
+std::string rootAgentProbe(const std::string& pidFile)
+{
+    return "if [ -r " + pidFile + " ]; then pid=$(cat " + pidFile +
+           "); if [ -d /proc/$pid ] && grep -q testtools-agent "
+           "/proc/$pid/cmdline 2>/dev/null; then "
+           "uid=$(sed -n 's/^Uid:[[:space:]]*\\([0-9]*\\).*/\\1/p' "
+           "/proc/$pid/status 2>/dev/null); "
+           "if [ \"$uid\" = \"0\" ]; then echo RUNNING_ROOT; "
+           "else echo RUNNING_UID=$uid; fi; fi; fi";
+}
+
 std::string normalizeAndroidAbi(std::string abi)
 {
     abi = trim(std::move(abi));
@@ -102,6 +155,9 @@ AndroidAgentDeployment::deployAndForward(const std::string& serial,
         return result;
     }
     serialdemo::AdbTransport adb;
+    if (!ensureRootAdb(adb, serial, progress, result.error)) {
+        return result;
+    }
     if (progress) {
         progress("正在识别板端 ABI...");
     }
@@ -192,6 +248,13 @@ AndroidAgentDeployment::deployAndForward(const std::string& serial,
             "Agent 未正常监听: " + trim(logResult.standardOutput + logResult.standardError);
         return result;
     }
+    const auto identity = adb.runCommand(
+        serial, {"shell", rootAgentProbe(pidFile)}, std::chrono::seconds(3));
+    if (identity.standardOutput.find("RUNNING_ROOT") == std::string::npos) {
+        result.error = "Agent 已启动但未以 root 身份运行: " +
+                       trim(identity.standardOutput + identity.standardError);
+        return result;
+    }
     return createForward(adb, serial, result.abi, result.binaryPath, progress);
 }
 
@@ -208,15 +271,12 @@ AndroidAgentDeployment::reconnect(const std::string& serial, const ProgressCallb
         progress("正在探测已运行的板端 Agent...");
     }
     const std::string pidFile = std::string(RemoteDirectory) + "/agent.pid";
-    const auto probe =
-        adb.runCommand(serial,
-                       {"shell",
-                        "if [ -r " + pidFile + " ]; then pid=$(cat " + pidFile +
-                            "); if kill -0 $pid 2>/dev/null && grep -q testtools-agent "
-                            "/proc/$pid/cmdline 2>/dev/null; then echo RUNNING; fi; fi"},
-                       std::chrono::seconds(3));
-    if (probe.standardOutput.find("RUNNING") == std::string::npos) {
-        result.error = "板端 Agent 未运行，请重新部署";
+    const auto probe = adb.runCommand(
+        serial, {"shell", rootAgentProbe(pidFile)}, std::chrono::seconds(3));
+    if (probe.standardOutput.find("RUNNING_ROOT") == std::string::npos) {
+        result.error = probe.standardOutput.find("RUNNING_UID=") != std::string::npos
+                           ? "板端 Agent 不是 root 身份，请重新部署"
+                           : "板端 Agent 未运行，请重新部署";
         return result;
     }
     const auto abiResult =
@@ -276,6 +336,9 @@ bool AndroidAgentDeployment::stopRemote(const std::string& serial, std::string& 
         return false;
     }
     serialdemo::AdbTransport adb;
+    if (!ensureRootAdb(adb, serial, {}, error)) {
+        return false;
+    }
     const std::string pidFile = std::string(RemoteDirectory) + "/agent.pid";
     const std::string command = "if [ -r " + pidFile + " ]; then kill $(cat " + pidFile +
                                 ") 2>/dev/null || true; fi; "
