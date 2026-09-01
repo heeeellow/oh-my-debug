@@ -9,6 +9,7 @@ get_filename_component(TESTTOOLS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
 add_executable(testtools-core-tests
     core_application_tests.cpp
     ${TESTTOOLS_ROOT}/src/application/agent/agent_target.cpp
+    ${TESTTOOLS_ROOT}/src/application/agent/agent_bundle.cpp
     ${TESTTOOLS_ROOT}/src/application/serial/serial_session.cpp
     ${TESTTOOLS_ROOT}/src/application/serial/serial_workspace_state.cpp
     ${TESTTOOLS_ROOT}/src/application/support/background_task_group.cpp

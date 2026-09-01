@@ -27,6 +27,7 @@
     <ClCompile Include="src\application\agent\android_agent_deployment.cpp"><Filter>应用层\Agent</Filter></ClCompile>
     <ClCompile Include="src\application\agent\agent_connection_service.cpp"><Filter>应用层\Agent</Filter></ClCompile>
     <ClCompile Include="src\application\agent\agent_target.cpp"><Filter>应用层\Agent</Filter></ClCompile>
+    <ClCompile Include="src\application\agent\agent_bundle.cpp"><Filter>应用层\Agent</Filter></ClCompile>
     <ClCompile Include="src\application\agent\linux_agent_deployment.cpp"><Filter>应用层\Agent</Filter></ClCompile>
     <ClCompile Include="src\application\device\device_discovery.cpp"><Filter>应用层\设备</Filter></ClCompile>
     <ClCompile Include="src\application\serial\serial_session.cpp"><Filter>应用层\串口</Filter></ClCompile>
@@ -62,6 +63,7 @@
     <ClInclude Include="src\application\agent\adb_agent_deployment.h"><Filter>应用层\Agent</Filter></ClInclude>
     <ClInclude Include="src\application\agent\agent_connection_service.h"><Filter>应用层\Agent</Filter></ClInclude>
     <ClInclude Include="src\application\agent\agent_target.h"><Filter>应用层\Agent</Filter></ClInclude>
+    <ClInclude Include="src\application\agent\agent_bundle.h"><Filter>应用层\Agent</Filter></ClInclude>
     <ClInclude Include="src\application\agent\linux_agent_deployment.h"><Filter>应用层\Agent</Filter></ClInclude>
     <ClInclude Include="src\application\device\device_discovery.h"><Filter>应用层\设备</Filter></ClInclude>
     <ClInclude Include="src\application\serial\serial_session.h"><Filter>应用层\串口</Filter></ClInclude>

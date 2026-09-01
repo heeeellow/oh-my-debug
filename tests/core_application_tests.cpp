@@ -1,8 +1,10 @@
+#include "application/agent/agent_bundle.h"
 #include "application/agent/agent_target.h"
 #include "application/serial/serial_session.h"
 #include "application/serial/serial_workspace_state.h"
 #include "application/support/background_task_group.h"
 #include "core/protocol/agent_protocol.h"
+#include "core/protocol/agent_version.h"
 #include "core/serial/async_serial_sender.h"
 #include "core/serial/codec.h"
 #include "core/serial/serial_test_engine.h"
@@ -12,6 +14,8 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -97,14 +101,98 @@ int main()
         testtools::parseAndroidAgentAbi("x86_64") || testtools::parseLinuxAgentMachine("x86_64")) {
         return fail("ARM-only Agent target mapping");
     }
-    const auto androidPath = testtools::agentArtifactPath(
-        "application", {testtools::AgentPlatform::Android, *androidArm64});
-    const auto linuxPath =
-        testtools::agentArtifactPath("application", {testtools::AgentPlatform::Linux, *linuxArm64});
-    if (androidPath.generic_string() != "application/agents/android/arm64-v8a/testtools-agent" ||
-        linuxPath.generic_string() != "application/agents/linux/aarch64/testtools-agent") {
-        return fail("Agent artifact path mapping");
+    const auto bundleRoot =
+        std::filesystem::temp_directory_path() /
+        ("testtools-agent-bundle-contract-" +
+         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::error_code bundleEc;
+    std::filesystem::remove_all(bundleRoot, bundleEc);
+    std::filesystem::create_directories(bundleRoot / "agents/android/armeabi-v7a");
+    std::filesystem::create_directories(bundleRoot / "agents/android/arm64-v8a");
+    std::filesystem::create_directories(bundleRoot / "agents/linux/aarch64/glibc-2.31");
+    for (const auto& path : {"agents/android/armeabi-v7a/testtools-agent",
+                             "agents/android/arm64-v8a/testtools-agent",
+                             "agents/linux/aarch64/glibc-2.31/testtools-agent"}) {
+        std::ofstream(bundleRoot / path, std::ios::binary) << "hello";
     }
+    std::ofstream(bundleRoot / "agents/android/arm64-v8a/runner.bin", std::ios::binary)
+        << std::string(1000, 'a');
+    const char* digest = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
+    const char* runnerDigest = "41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3";
+    std::ofstream(bundleRoot / "manifest.json")
+        << R"({"schema_version":2,"product":"TestTools","agent_version":")"
+        << testtools::AgentVersion
+        << R"(","protocol":{"minimum":1,"maximum":1},"build":{"build_id":"m1-test"},"packages":[)"
+        << R"({"id":"android/armeabi-v7a","platform":"android","architecture":"armv7","root":"agents/android/armeabi-v7a","android":{"abi":"armeabi-v7a","minimum_api":23},"files":[{"path":"testtools-agent","role":"agent","executable":true,"size":5,"sha256":")"
+        << digest << R"("}]},)"
+        << R"({"id":"android/arm64-v8a","platform":"android","architecture":"aarch64","root":"agents/android/arm64-v8a","android":{"abi":"arm64-v8a","minimum_api":23},"files":[{"path":"testtools-agent","role":"agent","executable":true,"size":5,"sha256":")"
+        << digest
+        << R"("},{"path":"runner.bin","role":"runner","executable":false,"size":1000,"sha256":")"
+        << runnerDigest << R"("}]},)"
+        << R"({"id":"linux/aarch64/glibc-2.31","platform":"linux","architecture":"aarch64","root":"agents/linux/aarch64/glibc-2.31","linux":{"libc":"glibc","minimum_version":"2.31"},"files":[{"path":"testtools-agent","role":"agent","executable":true,"size":5,"sha256":")"
+        << digest << R"("}]}]})";
+    std::string bundleError;
+    const auto bundle = testtools::loadAgentBundle(bundleRoot, bundleError);
+    if (!bundle || !testtools::selectAndroidAgentPackage(*bundle, "arm64-v8a") ||
+        !testtools::selectLinuxAgentPackage(*bundle, "aarch64", "2.35")) {
+        return fail("Agent Bundle v2 target selection");
+    }
+    const std::string validManifest = [&] {
+        std::ifstream input(bundleRoot / "manifest.json", std::ios::binary);
+        return std::string((std::istreambuf_iterator<char>(input)),
+                           std::istreambuf_iterator<char>());
+    }();
+    const auto rejectsManifest = [&](const std::string& text, const char* name) {
+        std::ofstream output(bundleRoot / "manifest.json", std::ios::trunc);
+        output << text;
+        output.close();
+        if (testtools::loadAgentBundle(bundleRoot, bundleError))
+            return fail(name);
+        return 0;
+    };
+    std::string mutated = validManifest;
+    mutated.replace(mutated.find("\"size\":5"), 9, "\"size\":6");
+    if (rejectsManifest(mutated, "Agent Bundle size rejection") != 0)
+        return 1;
+    mutated = validManifest;
+    const auto hashStart = mutated.find("\"sha256\":\"") + 10;
+    mutated.replace(
+        hashStart, 64, "0000000000000000000000000000000000000000000000000000000000000000");
+    if (rejectsManifest(mutated, "Agent Bundle hash rejection") != 0)
+        return 1;
+    mutated = validManifest;
+    const std::string oldPath = "\"path\":\"testtools-agent\"";
+    const auto pathStart = mutated.find(oldPath);
+    mutated.replace(pathStart, oldPath.size(), "\"path\":\"../testtools-agent\"");
+    if (rejectsManifest(mutated, "Agent Bundle traversal rejection") != 0)
+        return 1;
+    mutated = validManifest;
+    const auto firstFiles = mutated.find("\"files\":[") + 9;
+    const auto firstFileEnd = mutated.find("}]", firstFiles);
+    std::string duplicateFile = mutated.substr(firstFiles, firstFileEnd - firstFiles + 1);
+    const auto duplicateRole = duplicateFile.find("\"role\":\"agent\"");
+    duplicateFile.replace(duplicateRole, 14, "\"role\":\"config\"");
+    mutated.insert(firstFileEnd + 1, "," + duplicateFile);
+    if (rejectsManifest(mutated, "Agent Bundle duplicate install path rejection") != 0)
+        return 1;
+    mutated = validManifest;
+    mutated.replace(mutated.find("\"role\":\"agent\""), 14, "\"role\":\"runner\"");
+    if (rejectsManifest(mutated, "Agent Bundle missing agent rejection") != 0)
+        return 1;
+    mutated = validManifest;
+    mutated.replace(mutated.find("\"executable\":true"), 17, "\"executable\":false");
+    if (rejectsManifest(mutated, "Agent Bundle executable agent rejection") != 0)
+        return 1;
+    {
+        std::ofstream corrupt(bundleRoot / "manifest.json", std::ios::trunc);
+        corrupt << "{\"schema_version\":2,\"product\":\"TestTools\",\"agent_version\":\""
+                << testtools::AgentVersion
+                << "\",\"protocol\":{\"minimum\":1,\"maximum\":1},\"build\":{\"build_id\":\"m1-"
+                   "test\"},\"packages\":[]}";
+    }
+    if (testtools::loadAgentBundle(bundleRoot, bundleError))
+        return fail("Agent Bundle missing package rejection");
+    std::filesystem::remove_all(bundleRoot, bundleEc);
 
     std::uint16_t port = 0;
     if (!testtools::parseTcpPort("27183", port) || port != 27183 ||

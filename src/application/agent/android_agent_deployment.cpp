@@ -1,5 +1,6 @@
 #include "application/agent/android_agent_deployment.h"
 
+#include "application/agent/agent_bundle.h"
 #include "application/agent/agent_target.h"
 
 #include "adapters/adb/adb_transport.h"
@@ -62,13 +63,11 @@ bool ensureRootAdb(serialdemo::AdbTransport& adb,
     }
     const auto root = adb.runCommand(serial, {"root"}, std::chrono::seconds(8));
     if (root.exitCode != 0 || root.timedOut) {
-        error = "Android Agent 需要 root shell 访问板端串口；ADB root 失败: " +
-                commandDetail(root);
+        error = "Android Agent 需要 root shell 访问板端串口；ADB root 失败: " + commandDetail(root);
         return false;
     }
 
-    const auto wait =
-        adb.runCommand(serial, {"wait-for-device"}, std::chrono::seconds(12));
+    const auto wait = adb.runCommand(serial, {"wait-for-device"}, std::chrono::seconds(12));
     if (wait.exitCode != 0 || wait.timedOut) {
         error = "ADB root 后等待设备重新上线失败: " + commandDetail(wait);
         return false;
@@ -173,38 +172,104 @@ AndroidAgentDeployment::deployAndForward(const std::string& serial,
         return result;
     }
 
-    const auto architecture = parseAndroidAgentAbi(result.abi);
-    const std::filesystem::path binary =
-        agentArtifactPath(applicationDirectory, {AgentPlatform::Android, *architecture});
-    std::error_code fileError;
-    if (!std::filesystem::is_regular_file(binary, fileError)) {
-        result.error = "缺少 " + result.abi + " Agent: " + binary.string();
+    std::string bundleError;
+    const auto bundle = loadAgentBundleFromApplication(applicationDirectory, bundleError);
+    const auto* package = bundle ? selectAndroidAgentPackage(*bundle, result.abi) : nullptr;
+    if (!package) {
+        result.error = bundleError.empty() ? "Bundle 中缺少匹配 Android ABI 的程序包" : bundleError;
         return result;
     }
-    result.binaryPath = binary.string();
+    const auto* agentFile = package->agentFile();
+    result.binaryPath = agentFile->sourcePath.string();
     result.remotePath = RemoteBinary;
+    const std::string remoteAgent = std::string(RemoteCurrent) + "/" + agentFile->path;
+    if (adb.runCommand(
+               serial, {"shell", "command -v sha256sum >/dev/null 2>&1"}, std::chrono::seconds(3))
+            .exitCode != 0) {
+        result.error = "Android 板端缺少 sha256sum，无法执行安全部署";
+        return result;
+    }
 
     if (progress) {
-        progress("正在部署真实板端 Agent...");
+        progress("正在部署 Android Agent Bundle...");
     }
     const auto prepare = adb.runCommand(
-        serial, {"shell", std::string("mkdir -p ") + RemoteDirectory}, std::chrono::seconds(4));
+        serial,
+        {"shell", std::string("mkdir -p ") + RemoteVersions + " " + RemoteDirectory + "/.staging"},
+        std::chrono::seconds(4));
     if (prepare.exitCode != 0 || prepare.timedOut) {
         result.error = "创建 Agent 目录失败: " + commandDetail(prepare);
         return result;
     }
-    const std::string temporary = std::string(RemoteBinary) + ".new";
-    const auto push =
-        adb.runCommand(serial, {"push", result.binaryPath, temporary}, std::chrono::seconds(20));
-    if (push.exitCode != 0 || push.timedOut) {
-        result.error = "推送 Agent 失败: " + commandDetail(push);
+    const std::string versionDirectory =
+        std::string(RemoteVersions) + "/" + bundle->agentVersion + "-" + bundle->buildId;
+    const std::string stagingDirectory =
+        std::string(RemoteDirectory) + "/.staging/" + bundle->agentVersion + "-" + bundle->buildId;
+    const auto prepareStaging =
+        adb.runCommand(serial,
+                       {"shell", "rm -rf " + stagingDirectory + " && mkdir -p " + stagingDirectory},
+                       std::chrono::seconds(4));
+    if (prepareStaging.exitCode != 0 || prepareStaging.timedOut) {
+        result.error = "准备 Android Bundle 临时目录失败";
         return result;
     }
-    const std::string install =
-        "chmod 755 " + temporary + " && mv -f " + temporary + " " + RemoteBinary;
-    const auto installResult = adb.runCommand(serial, {"shell", install}, std::chrono::seconds(5));
+    for (const auto& file : package->files) {
+        const std::string temporary = stagingDirectory + "/" + file.path;
+        const auto prepareFile = adb.runCommand(
+            serial, {"shell", "mkdir -p $(dirname " + temporary + ")"}, std::chrono::seconds(4));
+        if (prepareFile.exitCode != 0 || prepareFile.timedOut) {
+            adb.runCommand(
+                serial, {"shell", "rm -rf " + stagingDirectory}, std::chrono::seconds(3));
+            result.error = "准备 Android Bundle 文件目录失败: " + file.path;
+            return result;
+        }
+        const auto push = adb.runCommand(
+            serial, {"push", file.sourcePath.string(), temporary}, std::chrono::seconds(20));
+        if (push.exitCode != 0 || push.timedOut) {
+            adb.runCommand(
+                serial, {"shell", "rm -rf " + stagingDirectory}, std::chrono::seconds(3));
+            result.error = "推送 Android Bundle 文件失败: " + commandDetail(push);
+            return result;
+        }
+        const auto remoteHash =
+            adb.runCommand(serial, {"shell", "sha256sum " + temporary}, std::chrono::seconds(5));
+        const std::string hash = trim(remoteHash.standardOutput);
+        if (remoteHash.exitCode != 0 || remoteHash.timedOut || hash.size() < file.sha256.size() ||
+            !std::equal(
+                file.sha256.begin(), file.sha256.end(), hash.begin(), [](char lhs, char rhs) {
+                    return std::tolower(static_cast<unsigned char>(lhs)) ==
+                           std::tolower(static_cast<unsigned char>(rhs));
+                })) {
+            adb.runCommand(
+                serial, {"shell", "rm -rf " + stagingDirectory}, std::chrono::seconds(3));
+            result.error = "Android Bundle 文件远端 SHA-256 校验失败: " + file.path;
+            return result;
+        }
+        const auto permissions = adb.runCommand(
+            serial,
+            {"shell", std::string(file.executable ? "chmod 755 " : "chmod 644 ") + temporary},
+            std::chrono::seconds(3));
+        if (permissions.exitCode != 0 || permissions.timedOut) {
+            adb.runCommand(
+                serial, {"shell", "rm -rf " + stagingDirectory}, std::chrono::seconds(3));
+            result.error = "设置 Android Bundle 文件权限失败: " + file.path;
+            return result;
+        }
+    }
+    const std::string install = "rm -rf " + versionDirectory + " && mv " + stagingDirectory + " " +
+                                versionDirectory + " && rm -f " + RemotePrevious + " && if [ -L " +
+                                RemoteCurrent + " ] || [ -e " + RemoteCurrent + " ]; then mv " +
+                                RemoteCurrent + " " + RemotePrevious + "; fi && ln -s " +
+                                versionDirectory + " " + RemoteCurrent;
+    const auto installResult = adb.runCommand(serial, {"shell", install}, std::chrono::seconds(8));
     if (installResult.exitCode != 0 || installResult.timedOut) {
-        result.error = "安装 Agent 失败: " + commandDetail(installResult);
+        adb.runCommand(serial,
+                       {"shell",
+                        "if [ ! -e " + std::string(RemoteCurrent) + " ] && ([ -L " +
+                            RemotePrevious + " ] || [ -e " + RemotePrevious + " ]); then mv " +
+                            RemotePrevious + " " + RemoteCurrent + "; fi"},
+                       std::chrono::seconds(4));
+        result.error = "安装 Android Agent Bundle 失败: " + commandDetail(installResult);
         return result;
     }
 
@@ -219,14 +284,20 @@ AndroidAgentDeployment::deployAndForward(const std::string& serial,
                              "rm -f " +
                              pidFile;
     adb.runCommand(serial, {"shell", stop}, std::chrono::seconds(3));
+    const std::string rollback = "if [ -r " + pidFile + " ]; then kill \"$(cat " + pidFile +
+                                 ")\" 2>/dev/null || true; fi; rm -f " + pidFile + " " +
+                                 RemoteCurrent + "; if [ -L " + RemotePrevious + " ] || [ -e " +
+                                 RemotePrevious + " ]; then mv " + RemotePrevious + " " +
+                                 RemoteCurrent + "; fi";
     const std::string log = std::string(RemoteDirectory) + "/agent.log";
     // Android toybox provides setsid on some images, but its option set is not
     // consistent (the RK3562 image, for example, has no `setsid -f`).  nohup
     // plus an explicit background job works across both toybox and Ubuntu.
-    const std::string launch = ": >" + log + "; nohup " + std::string(RemoteBinary) +
-                               " --port 27183 >" + log + " 2>&1 </dev/null & echo $! >" + pidFile;
+    const std::string launch = ": >" + log + "; nohup " + remoteAgent + " --port 27183 >" + log +
+                               " 2>&1 </dev/null & echo $! >" + pidFile;
     const auto launchResult = adb.runCommand(serial, {"shell", launch}, std::chrono::seconds(5));
     if (launchResult.exitCode != 0 || launchResult.timedOut) {
+        adb.runCommand(serial, {"shell", rollback}, std::chrono::seconds(5));
         result.error = "启动 Agent 失败: " + commandDetail(launchResult);
         return result;
     }
@@ -244,13 +315,15 @@ AndroidAgentDeployment::deployAndForward(const std::string& serial,
     if (!running) {
         const auto logResult = adb.runCommand(
             serial, {"shell", "cat " + log + " 2>/dev/null"}, std::chrono::seconds(2));
+        adb.runCommand(serial, {"shell", rollback}, std::chrono::seconds(5));
         result.error =
             "Agent 未正常监听: " + trim(logResult.standardOutput + logResult.standardError);
         return result;
     }
-    const auto identity = adb.runCommand(
-        serial, {"shell", rootAgentProbe(pidFile)}, std::chrono::seconds(3));
+    const auto identity =
+        adb.runCommand(serial, {"shell", rootAgentProbe(pidFile)}, std::chrono::seconds(3));
     if (identity.standardOutput.find("RUNNING_ROOT") == std::string::npos) {
+        adb.runCommand(serial, {"shell", rollback}, std::chrono::seconds(5));
         result.error = "Agent 已启动但未以 root 身份运行: " +
                        trim(identity.standardOutput + identity.standardError);
         return result;
@@ -271,8 +344,8 @@ AndroidAgentDeployment::reconnect(const std::string& serial, const ProgressCallb
         progress("正在探测已运行的板端 Agent...");
     }
     const std::string pidFile = std::string(RemoteDirectory) + "/agent.pid";
-    const auto probe = adb.runCommand(
-        serial, {"shell", rootAgentProbe(pidFile)}, std::chrono::seconds(3));
+    const auto probe =
+        adb.runCommand(serial, {"shell", rootAgentProbe(pidFile)}, std::chrono::seconds(3));
     if (probe.standardOutput.find("RUNNING_ROOT") == std::string::npos) {
         result.error = probe.standardOutput.find("RUNNING_UID=") != std::string::npos
                            ? "板端 Agent 不是 root 身份，请重新部署"

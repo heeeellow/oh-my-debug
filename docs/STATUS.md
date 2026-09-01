@@ -38,6 +38,9 @@
 - ADB Agent 部署门面按 Android/Linux 用户空间选择部署器；Linux 部署校验 Bundle manifest、远端
   SHA-256、aarch64、glibc >= 2.31 和 root adbd，并使用版本目录、`current`/`previous`、固定日志
   与 PID 路径管理启动和回退。
+- Agent Bundle v2 已统一 Android/Linux 部署来源：清单使用目标包 + 文件列表模型，按 ABI 或
+  `aarch64/glibc-2.31` 选择包，逐文件校验大小/SHA-256，并推送至版本目录后切换
+  `current`/`previous`。Visual Studio 只复制已有 Bundle，不再触发单 ABI Agent 编译。
 - Android Agent 部署和停止会请求并复核 root adbd；自动重连只读核验已有 Agent 身份。Android
   连接只接受有效 UID 0 的 Agent，避免普通 `shell` 用户无法打开 `radio:radio` 串口节点。
 - Agent 更新使用单一程序版本识别：后台发现只读握手；用户主动“连接并同步 Agent”时，版本不一致
@@ -53,12 +56,13 @@
 | --- | --- | --- |
 | GUI 启动 | 2026-08-29，主解决方案只启动 Qt GUI | 已验证；记录于 `DEVLOG.md` |
 | 基线静态检查 | 2026-09-01，当前工作树 | 文档链接、差异空白、Qt 边界、UI 适配器边界、工程文件完整性和生成物跟踪检查通过 |
-| Windows Release 构建 | 2026-09-01，标准输出目录 | 编译和链接通过；Qt 运行时与平台插件、Android Agent `armeabi-v7a` 同步生成；仅有可选 Direct3D 12 DLL 未找到提示 |
-| Windows Debug 构建 | 2026-09-01，标准输出目录 | 编译和链接通过；Qt 运行时与平台插件、Android Agent `armeabi-v7a` 同步生成；仅有可选 Direct3D 12 DLL 未找到提示 |
+| Windows Release 构建 | 2026-09-01，当前工作树 | 编译和链接通过；构建前验证并复制完整 Bundle v2，不再隐式编译单 ABI Agent；仅有一次增量构建出现可选 Direct3D 12 DLL 未找到提示 |
+| Windows Debug 构建 | 2026-09-01，当前工作树 | 编译和链接通过；构建前验证并复制完整 Bundle v2，不再隐式编译单 ABI Agent；仅有可选 Direct3D 12 DLL 未找到提示 |
 | Core/Application 主机测试 | 2026-09-01，CTest | 1/1 通过；覆盖串口会话和 ARM-only 产物映射，不依赖 Qt、ADB 或串口设备 |
 | Agent 主机契约测试 | 2026-09-01，CTest | 1/1 通过；覆盖版本、字段类型、枚举和范围拒绝路径，不访问设备 |
+| Agent Bundle v2 主机契约测试 | 2026-09-01，MSVC + CTest | 1/1 通过；覆盖三目标选择、多文件包、分块 SHA-256、路径穿越、重复安装路径、缺少/不可执行 Agent、文件大小和摘要拒绝，不访问设备 |
 | Agent 固定矩阵与 Bundle | 2026-08-31，统一入口首次及重复运行 | Android 两 ABI、Linux aarch64 均 Release 构建通过；build id 和三个产物 SHA-256 重复运行稳定；manifest 独立校验通过 |
-| Agent 0.2.3 固定矩阵 | 2026-09-01，Windows PowerShell 5.1 + WSL2 | Android 两 ABI、Linux aarch64/glibc-2.31 构建及 Bundle 校验通过；修复矩阵脚本对新版 .NET API 的隐式依赖 |
+| Agent 0.2.3 Bundle v2 固定矩阵 | 2026-09-01，Windows PowerShell 5.1 + WSL2 | Android `armeabi-v7a`/`arm64-v8a`、Linux aarch64/glibc-2.31 一次构建及 Bundle v2 校验通过；Android 两种 ABI 的版本目录切换、摘要校验和重连已实机验证，Linux 新部署流程本轮无在线设备验证 |
 | Linux ADB Agent 自动部署 | 2026-08-31，Nexus4 ADB 设备 `976ccefbf0c7e61b` | 自动识别 Ubuntu/aarch64/glibc 2.35、选择 glibc-2.31 Bundle、远端 SHA-256、版本目录切换、启动、真实 PID、ADB 转发和四项协议只读冒烟均通过；已清理临时部署 |
 | Android ARM Agent 构建 | 2026-08-31，NDK 27.3.13750724 Release | `armeabi-v7a` 为 ELF32/ARM，`arm64-v8a` 为 ELF64/AArch64；两者均通过矩阵构建 |
 | Linux ARM Agent 构建 | 2026-08-31，WSL2 + Debian Bullseye 固定工具链 | ARM64 ELF，动态依赖含 `libc.so.6`，最高 GLIBC 符号 `2.17`，不高于 2.31 |
@@ -69,6 +73,7 @@
 | 内置自检 | 2026-09-01，当前 Release 产物 | 通过；识别在线 ADB 设备，仅执行安全转发，不发送串口数据 |
 | Android Agent 0.2.2 部署 | 2026-09-01，设备 `e2ea0f728463744a` | 自动切换 root adbd，Agent 有效 UID/GID 均为 0；部署、重连、`system.info` 和 `serial.list` 通过，未发送串口数据 |
 | Android Agent 0.2.3 部署 | 2026-09-01，同一设备 | 部署冒烟退出码 0；握手确认 0.2.3、有效 UID 0，并读到 RK3562 厂商/产品、CPU、内存、Android 构建、内核和 SELinux；未发送串口数据 |
+| Android Agent 0.2.3 Bundle v2 双 ABI 部署 | 2026-09-01，RK3568 `485A67FF3432`、RK3562 `ac7f17a16344038` | `arm64-v8a`/`armeabi-v7a` 均完成部署和已有 Agent 重连；`current` 均指向 `0.2.3-m1-3d141a5b0d04c89d`，板端摘要与各自清单一致，shell 和 Agent 进程 UID 均为 0；只查询 `serial.list`，未打开或发送串口 |
 | Linux Agent 0.2.3 部署 | 2026-09-01，Nexus4 ADB 设备 `cd22f09dbb8d83ad` | 固定 Bundle 部署冒烟退出码 0；GUI 自动重连、握手、板级信息和能力展示通过；未打开或写入串口 |
 | Agent 非法端口参数 | 2026-08-30，同一设备 | `--port invalid` 确定返回退出码 2，未异常崩溃 |
 | `/dev/ttyUSB2` 数据通道 | 2026-09-01，经 root Agent 打开并保持 5 秒 | 实机通过；未发送任何字节 |

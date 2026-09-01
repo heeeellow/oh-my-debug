@@ -170,11 +170,14 @@ created -> queued -> running -> succeeded
 
 ## 9. 部署与安全
 
-- 开发期：Android 和 Linux 通过 ADB 部署和转发；Linux 固定使用 aarch64/glibc-2.31 Bundle。
+- 开发期：Android 和 Linux 通过同一份版本化 Agent Bundle 部署和转发；Bundle v2 按 Android
+  armeabi-v7a/arm64-v8a 或 Linux aarch64/glibc-2.31 选择目标包。每个包是安全相对 root 下的文件
+  列表，当前只含 role=agent 文件，为未来 runner/config 保留扩展位。
 - 稳定期：Android 使用受控 init/service 集成，Linux/Buildroot 使用 systemd 或包配置安装；ADB
   部署仍保留为开发与维修入口。
 - 上位机与 Agent 独立版本，握手协商协议范围和能力版本。
-- 升级失败不能破坏 ADB；需要保留版本查询、产物校验和回退入口。
+- 升级失败不能破坏 ADB；需要保留版本查询、逐文件产物校验和 current/previous 回退入口。AgentVersion
+  是整个包的唯一版本标识，SHA-256 只用于完整性校验。
 - 当前安全依赖已有 ADB 授权和回环监听；网络认证、包签名和量产权限仍是开放项。
 
 ## 10. 演进规则

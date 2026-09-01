@@ -51,13 +51,15 @@ termios 兼容字段，不代表 USB 总线或模块内部 UART 的物理速率�
 - ADB 只负责发现、部署和端口转发，不承担串口业务语义。
 - 不提供任意 shell RPC；每个新能力必须有固定方法、参数校验和风险等级。
 - `/dev/ttyUSB1` 等被系统进程占用的端点会返回明确占用者，不会抢占系统服务。
-- Android 和 Linux 开发部署依赖已有 ADB 授权。Android 部署会请求并校验 root adbd，保证 Agent
+- Android 和 Linux 开发部署依赖已有 ADB 授权。两端均从 Bundle v2 选择匹配目标包并逐文件校验；Android 部署会请求并校验 root adbd，保证 Agent
   以有效 UID 0 运行后才允许连接；自动重连只读检查已有 Agent 身份，不隐式提权。Linux 部署要求
   设备已有可写的 root adbd。部署会校验 Bundle 清单和 SHA-256。量产阶段仍需补充包签名和
   init/systemd 服务集成。
-- 上位机以 `session.hello.agent_version` 判断板端程序是否与当前源码配套。后台设备发现只读握手；
+- 上位机以 `session.hello.agent_version` 判断整个板端程序包是否与当前源码配套。后台设备发现只读握手；
   用户点击“连接并同步 Agent”时，版本不一致才自动部署当前产物。任何改变 Agent 行为、能力或返回
-  字段的修改都必须同步递增 `src/core/protocol/agent_version.h` 中的 `AgentVersion`。
+  字段，或改变随包部署的 Runner/配置的修改，都必须同步递增
+  `src/core/protocol/agent_version.h` 中的 `AgentVersion`。SHA-256 和构建标识只用于完整性、目录隔离
+  与诊断，不参与是否升级的判断。
 
 ## 请求示例
 

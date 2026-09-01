@@ -1,6 +1,5 @@
 #pragma once
 
-#include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -19,7 +18,4 @@ std::optional<AgentArchitecture> parseAndroidAgentAbi(std::string_view value);
 std::optional<AgentArchitecture> parseLinuxAgentMachine(std::string_view value);
 std::string agentPlatformName(AgentPlatform platform);
 std::string agentArchitectureName(const AgentTarget& target);
-std::filesystem::path agentArtifactPath(const std::filesystem::path& applicationDirectory,
-                                        const AgentTarget& target);
-
 } // namespace testtools

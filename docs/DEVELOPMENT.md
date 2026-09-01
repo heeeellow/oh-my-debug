@@ -73,7 +73,8 @@ Android Agent 的 CMake/Ninja 也必须来自 PATH 或显式环境变量；例�
 
 修改 `src/agent/`、Agent 协议行为或板端返回字段时，必须先递增
 `src/core/protocol/agent_version.h` 中的 `AgentVersion`。这是上位机判断板端 Agent 是否需要
-升级的唯一版本来源，不再增加第二套二进制指纹。启动后的后台发现只做只读握手；用户点击
+升级的唯一版本来源；以后新增或修改随包部署的 Runner/配置时也必须递增该版本，不再增加第二套
+二进制指纹。启动后的后台发现只做只读握手；用户点击
 “连接并同步 Agent”时，如果板端版本不同，上位机会自动推送并启动当前构建产物。
 
 如果 Qt 未注册为工程中的 `QtInstall` 版本，先在 Qt VS Tools 中注册与工程配置一致的 Qt 安装；
@@ -85,10 +86,10 @@ Android Agent 的 CMake/Ninja 也必须来自 PATH 或显式环境变量；例�
 
 ### 4.1 Android ARM Agent
 
-Visual Studio 构建主程序时，如果能从 `TestToolsNdkRoot`、`ANDROID_NDK_ROOT`、
-`ANDROID_NDK_HOME` 或本机 Android SDK 目录找到 NDK，会自动构建 Agent 并复制到与主程序相同的
-Debug/Release 运行目录。默认目标为 `armeabi-v7a`，可通过 MSBuild 属性
-`TestToolsAndroidAgentAbi=arm64-v8a` 切换。也可单独运行仓库脚本：
+Visual Studio 构建主程序只复制已经生成的 `build/agent-bundle/`，不在 GUI 增量构建中隐式触发
+Android 或 WSL 编译。复制前会验证 Bundle v2 的结构、文件完整性及其 AgentVersion 是否与当前
+源码一致；缺少 Bundle 时给出警告，陈旧或损坏的 Bundle 会阻止复制。完整矩阵统一由
+`build-agent-matrix.ps1` 生成。也可单独运行仓库脚本：
 
 ```powershell
 .\scripts\build-android-agent.ps1 `
@@ -98,16 +99,15 @@ Debug/Release 运行目录。默认目标为 `armeabi-v7a`，可通过 MSBuild �
 ```
 
 `-Abi` 只接受 `armeabi-v7a` 和 `arm64-v8a`。主程序产物位于
-`build/windows/x64/Release/TestTools.exe`，Agent 位于同目录的
-`agents/android/<abi>/testtools-agent`。上位机根据 `ro.product.cpu.abi` 选择产物。
+`build/windows/x64/Release/TestTools.exe`，Bundle 位于程序旁的
+`agent-bundle/agents/android/<abi>/testtools-agent`。上位机通过 Bundle v2 根据
+`ro.product.cpu.abi` 选择目标包。
 
 Android 产物使用 NDK/Bionic，最低 API 为 23。同一 ABI 可以覆盖 Android 11、13、14 等更高版本；
 更换系统版本后仍需重新验证 SELinux、设备节点权限和系统服务占用。
 
-因此日常只修改当前 Android ABI 时，直接重新构建 `TestTools.vcxproj` 即可；若目标板 ABI 与默认
-`armeabi-v7a` 不同，构建时传入 `/p:TestToolsAndroidAgentAbi=arm64-v8a`。需要同时更新 Android
-双 ABI 和 Linux ARM64 时，运行 4.2 节的 `build-agent-matrix.ps1`，再重建桌面程序以把 Bundle
-复制到运行目录。
+因此日常修改 Agent 后统一运行 4.2 节的 `build-agent-matrix.ps1`，再重建桌面程序以把完整 Bundle
+复制到运行目录；不会再有单 ABI 的第二套来源。
 
 ### 4.2 Linux ARM Agent
 
@@ -147,12 +147,14 @@ ADB 自动部署要求构建后将 `build/agent-bundle/` 复制到程序旁的 `
 .\scripts\validate-agent-bundle.ps1 -BundleDirectory .\build\agent-bundle
 ```
 
-Bundle 的 `manifest.json` 记录 Agent/协议版本、平台、架构、ABI 或 libc 基线、相对路径、大小、
-SHA-256、构建配置、固定构建标识和构建时间。构建 wrapper 会检查 Linux ELF 架构、动态 glibc
+Bundle 的 `manifest.json` 使用 schema v2 的目标包 + 文件列表模型，记录 Agent/协议版本、平台、架构、ABI
+或 libc 基线、包 root、安装相对路径、角色、大小、SHA-256、构建配置、固定构建标识和构建时间。
+构建 wrapper 会检查 Linux ELF 架构、动态 glibc
 依赖和最高 GLIBC 符号版本不得高于 `2.31`；交叉构建不代替板端契约测试。
 
 GUI 通过统一 ADB 部署入口按设备用户空间分流：Android 读取 ABI，Linux 读取 `uname -m`、glibc
-和 root adbd 状态。Linux 部署只接受 `aarch64/glibc-2.31` Bundle，推送前后校验 SHA-256，并使用
+和 root adbd 状态。两端均推送所选包的全部文件并逐文件校验 SHA-256；Linux 部署只接受
+`aarch64/glibc-2.31` 包，并使用
 `/opt/testtools-agent/versions/<version>-<build-id>/`、`current`、`previous`、
 `/var/log/testtools-agent/` 和 `/run/testtools-agent/` 管理版本、启动和回退；控制端口仍通过
 ADB `forward` 接入。暂不接入 SSH、systemd 或 GUI 外的自动服务安装。

@@ -35,7 +35,11 @@ class AndroidAgentDeployment {
     static constexpr std::uint16_t ControlPort = 27183;
     static constexpr const char* RequiredAgentVersion = AgentVersion;
     static constexpr const char* RemoteDirectory = "/data/local/tmp/testtools-agent";
-    static constexpr const char* RemoteBinary = "/data/local/tmp/testtools-agent/testtools-agent";
+    static constexpr const char* RemoteVersions = "/data/local/tmp/testtools-agent/versions";
+    static constexpr const char* RemoteCurrent = "/data/local/tmp/testtools-agent/current";
+    static constexpr const char* RemotePrevious = "/data/local/tmp/testtools-agent/previous";
+    static constexpr const char* RemoteBinary =
+        "/data/local/tmp/testtools-agent/current/testtools-agent";
 };
 
 } // namespace testtools

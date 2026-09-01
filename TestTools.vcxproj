@@ -126,6 +126,7 @@
     <ClCompile Include="src\application\agent\android_agent_deployment.cpp" />
     <ClCompile Include="src\application\agent\agent_connection_service.cpp" />
     <ClCompile Include="src\application\agent\agent_target.cpp" />
+    <ClCompile Include="src\application\agent\agent_bundle.cpp" />
     <ClCompile Include="src\application\agent\linux_agent_deployment.cpp" />
     <ClCompile Include="src\application\device\device_discovery.cpp" />
     <ClCompile Include="src\application\serial\serial_session.cpp" />
@@ -161,6 +162,7 @@
     <ClInclude Include="src\application\agent\adb_agent_deployment.h" />
     <ClInclude Include="src\application\agent\agent_connection_service.h" />
     <ClInclude Include="src\application\agent\agent_target.h" />
+    <ClInclude Include="src\application\agent\agent_bundle.h" />
     <ClInclude Include="src\application\agent\linux_agent_deployment.h" />
     <ClInclude Include="src\application\device\device_discovery.h" />
     <ClInclude Include="src\application\serial\serial_session.h" />
@@ -190,33 +192,19 @@
   </ImportGroup>
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
-  <PropertyGroup Label="TestToolsAndroidAgent">
-    <TestToolsAndroidAgentAbi Condition="'$(TestToolsAndroidAgentAbi)'==''">armeabi-v7a</TestToolsAndroidAgentAbi>
-    <TestToolsNdkRoot Condition="'$(TestToolsNdkRoot)'=='' AND '$(ANDROID_NDK_ROOT)'!=''">$(ANDROID_NDK_ROOT)</TestToolsNdkRoot>
-    <TestToolsNdkRoot Condition="'$(TestToolsNdkRoot)'=='' AND '$(ANDROID_NDK_HOME)'!=''">$(ANDROID_NDK_HOME)</TestToolsNdkRoot>
-    <TestToolsNdkRoot Condition="'$(TestToolsNdkRoot)'=='' AND Exists('$(LOCALAPPDATA)\Android\Sdk\ndk\27.3.13750724\build\cmake\android.toolchain.cmake')">$(LOCALAPPDATA)\Android\Sdk\ndk\27.3.13750724</TestToolsNdkRoot>
-    <TestToolsCMakeProgram Condition="'$(TestToolsCMakeProgram)'=='' AND '$(TESTTOOLS_CMAKE_PROGRAM)'!=''">$(TESTTOOLS_CMAKE_PROGRAM)</TestToolsCMakeProgram>
-    <TestToolsCMakeProgram Condition="'$(TestToolsCMakeProgram)'==''">cmake</TestToolsCMakeProgram>
-    <TestToolsNinjaProgram Condition="'$(TestToolsNinjaProgram)'=='' AND '$(TESTTOOLS_NINJA_PROGRAM)'!=''">$(TESTTOOLS_NINJA_PROGRAM)</TestToolsNinjaProgram>
-    <TestToolsNinjaProgram Condition="'$(TestToolsNinjaProgram)'==''">ninja</TestToolsNinjaProgram>
-  </PropertyGroup>
-  <Target Name="BuildTestToolsAndroidAgent" AfterTargets="Build"
-          Condition="'$(DesignTimeBuild)'!='true' AND Exists('$(TestToolsNdkRoot)\build\cmake\android.toolchain.cmake')">
-    <Message Importance="High" Text="Building Android Agent for $(Configuration) output..." />
-    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)scripts\build-android-agent.ps1&quot; -NdkRoot &quot;$(TestToolsNdkRoot)&quot; -Abi &quot;$(TestToolsAndroidAgentAbi)&quot; -Configuration &quot;$(Configuration)&quot; -OutputDirectory &quot;$(OutDir).&quot; -CMakeProgram &quot;$(TestToolsCMakeProgram)&quot; -NinjaProgram &quot;$(TestToolsNinjaProgram)&quot;" />
-  </Target>
-  <Target Name="WarnMissingTestToolsAndroidAgent" AfterTargets="Build"
-          Condition="'$(DesignTimeBuild)'!='true' AND !Exists('$(TestToolsNdkRoot)\build\cmake\android.toolchain.cmake')">
-    <Warning Text="Android NDK not found; TestTools can connect an existing Agent, but cannot deploy a new one. Set TestToolsNdkRoot or ANDROID_NDK_ROOT." />
-  </Target>
   <ItemGroup Condition="Exists('$(ProjectDir)build\agent-bundle\manifest.json')">
     <TestToolsAgentBundleFiles Include="$(ProjectDir)build\agent-bundle\**\*" />
   </ItemGroup>
   <Target Name="CopyTestToolsAgentBundleForRun" AfterTargets="Build"
           Condition="Exists('$(ProjectDir)build\agent-bundle\manifest.json')">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)scripts\validate-agent-bundle.ps1&quot; -BundleDirectory &quot;$(ProjectDir)build\agent-bundle&quot;" />
     <MakeDir Directories="$(OutDir)agent-bundle" />
     <Copy SourceFiles="@(TestToolsAgentBundleFiles)"
           DestinationFiles="@(TestToolsAgentBundleFiles->'$(OutDir)agent-bundle\%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="WarnMissingTestToolsAgentBundle" AfterTargets="Build"
+          Condition="'$(DesignTimeBuild)'!='true' AND !Exists('$(ProjectDir)build\agent-bundle\manifest.json')">
+    <Warning Text="Agent Bundle not found; TestTools can reconnect to an existing Agent but cannot install or upgrade one. Run scripts\build-agent-matrix.ps1 to build all Android and Linux Agent targets." />
   </Target>
 </Project>

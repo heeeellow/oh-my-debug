@@ -37,11 +37,4 @@ std::string agentArchitectureName(const AgentTarget& target)
     return target.architecture == AgentArchitecture::Arm64 ? "aarch64" : "armv7";
 }
 
-std::filesystem::path agentArtifactPath(const std::filesystem::path& applicationDirectory,
-                                        const AgentTarget& target)
-{
-    return applicationDirectory / "agents" / agentPlatformName(target.platform) /
-           agentArchitectureName(target) / "testtools-agent";
-}
-
 } // namespace testtools

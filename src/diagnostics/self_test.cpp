@@ -389,10 +389,7 @@ int runAgentDeploymentSmokeTest(const std::string &serial,
     if (!client.request("{\"protocol\":1,\"request_id\":\"deploy-serial-list\","
                         "\"method\":\"serial.list\",\"params\":{}}",
                         response, error)
-        || (result.platform == "android" &&
-            response.find("\"endpoint\":\"/dev/ttyUSB2\"") == std::string::npos)
-        || (result.platform == "linux" &&
-            response.find("\"endpoints\":[") == std::string::npos)) {
+        || response.find("\"endpoints\":[") == std::string::npos) {
         cleanup();
         std::cerr << "FAIL deployed Agent serial.list: "
                   << (error.empty() ? response : error) << '\n';

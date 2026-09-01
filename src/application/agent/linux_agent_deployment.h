@@ -27,7 +27,7 @@ class LinuxAgentDeployment {
                                                 const std::string& applicationDirectory,
                                                 const ProgressCallback& progress = {}) const;
     LinuxAgentDeploymentResult reconnect(const std::string& serial,
-                                        const ProgressCallback& progress = {}) const;
+                                         const ProgressCallback& progress = {}) const;
     void removeForward(const std::string& serial, std::uint16_t localPort) const;
     void removeControlForwards(const std::string& serial) const;
     bool stopRemote(const std::string& serial, std::string& error) const;
@@ -40,7 +40,7 @@ class LinuxAgentDeployment {
     static constexpr const char* RemotePrevious = "/opt/testtools-agent/previous";
     static constexpr const char* RemoteLog = "/var/log/testtools-agent/agent.log";
     static constexpr const char* RemotePid = "/run/testtools-agent/agent.pid";
-    static constexpr const char* RemoteTemporaryRoot = "/var/tmp/testtools-agent-validation";
+    static constexpr const char* RemoteStagingRoot = "/opt/testtools-agent/.staging";
 };
 
 } // namespace testtools
