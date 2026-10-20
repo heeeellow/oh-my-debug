@@ -5,10 +5,14 @@ find_package(Threads REQUIRED)
 
 add_executable(testtools-agent
     agent_main.cpp
+    board_capability.cpp
+    board_test_job.cpp
     agent_service.cpp
+    native_board_observations.cpp
     serial_bridge.cpp
     ../core/support/command_line.cpp
     ../core/protocol/agent_protocol.cpp
+    ../core/protocol/json_value.cpp
 )
 
 target_compile_features(testtools-agent PRIVATE cxx_std_17)
@@ -62,9 +66,13 @@ if(TESTTOOLS_BUILD_TESTS)
     enable_testing()
     add_executable(testtools-agent-tests
         agent_service_test.cpp
+        board_capability.cpp
+        board_test_job.cpp
         agent_service.cpp
+        native_board_observations.cpp
         serial_bridge.cpp
         ../core/support/command_line.cpp
+        ../core/protocol/json_value.cpp
     )
     target_compile_features(testtools-agent-tests PRIVATE cxx_std_17)
     target_include_directories(testtools-agent-tests PRIVATE ..)

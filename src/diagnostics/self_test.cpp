@@ -375,7 +375,17 @@ int runAgentDeploymentSmokeTest(const std::string &serial,
         deployment.removeForward(serial, result.localPort);
     };
     if (!client.connect("127.0.0.1", result.localPort, error)
-        || !client.request("{\"protocol\":1,\"request_id\":\"deploy-info\","
+        || !client.request("{\"protocol\":1,\"request_id\":\"deploy-hello\","
+                           "\"method\":\"session.hello\",\"params\":{}}",
+                           response, error)
+        || response.find(std::string("\"agent_version\":\"") + testtools::AgentVersion + "\"") ==
+               std::string::npos) {
+        cleanup();
+        std::cerr << "FAIL deployed Agent version: "
+                  << (error.empty() ? response : error) << '\n';
+        return 71;
+    }
+    if (!client.request("{\"protocol\":1,\"request_id\":\"deploy-info\","
                            "\"method\":\"system.info\",\"params\":{}}",
                            response, error)
         || response.find(std::string("\"platform\":\"") + result.platform + "\"") ==
@@ -384,7 +394,7 @@ int runAgentDeploymentSmokeTest(const std::string &serial,
         cleanup();
         std::cerr << "FAIL deployed Agent system.info: "
                   << (error.empty() ? response : error) << '\n';
-        return 71;
+        return 72;
     }
     if (!client.request("{\"protocol\":1,\"request_id\":\"deploy-serial-list\","
                         "\"method\":\"serial.list\",\"params\":{}}",
@@ -393,7 +403,7 @@ int runAgentDeploymentSmokeTest(const std::string &serial,
         cleanup();
         std::cerr << "FAIL deployed Agent serial.list: "
                   << (error.empty() ? response : error) << '\n';
-        return 72;
+        return 79;
     }
     cleanup();
     std::cout << "PASS adb-agent-deploy platform=" << result.platform

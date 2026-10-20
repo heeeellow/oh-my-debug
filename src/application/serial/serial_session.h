@@ -73,6 +73,7 @@ class SerialSession {
                                                serialdemo::PeriodicSendPlan::Clock::now());
 
     SerialSessionSnapshot snapshot() const;
+    void resetCounters();
     std::uint64_t generation() const;
     bool isActive() const;
     bool isOpen() const;

@@ -22,7 +22,7 @@ Windows 上位机工程为根目录 `TestTools.vcxproj`；板端无 Qt Agent 位
 src/
 ├── adapters/      ADB、Agent TCP 和 Windows COM 等具体适配器
 ├── agent/         无 Qt 的真实板端 Agent；本机服务仅为可选协议测试夹具
-├── application/   按 agent/device/serial/support 组织的用例和生命周期
+├── application/   按 agent/device/serial/support/testing 组织的用例和生命周期
 ├── core/          按 protocol/serial/support 组织的平台无关逻辑
 ├── diagnostics/   内置自检和实机冒烟入口
 ├── ui/            Qt 界面与 GUI 线程桥接
@@ -71,10 +71,11 @@ Android Agent 的 CMake/Ninja 也必须来自 PATH 或显式环境变量；例�
 `TESTTOOLS_CMAKE_PROGRAM`、`TESTTOOLS_NINJA_PROGRAM`，或直接向 Agent 构建脚本传入
 `-CMakeProgram`、`-NinjaProgram`。工程不内置开发者机器的工具链绝对路径。
 
-修改 `src/agent/`、Agent 协议行为或板端返回字段时，必须先递增
+修改 `src/agent/`、Agent 协议行为或板端返回字段时，必须在构建或实机同步前先递增
 `src/core/protocol/agent_version.h` 中的 `AgentVersion`。这是上位机判断板端 Agent 是否需要
 升级的唯一版本来源；以后新增或修改随包部署的 Runner/配置时也必须递增该版本，不再增加第二套
-二进制指纹。启动后的后台发现只做只读握手；用户点击
+二进制指纹。同一版本号下重建不会触发升级，因此已用于任何板卡验证的版本号不得复用。
+启动后的后台发现只做只读握手；用户点击
 “连接并同步 Agent”时，如果板端版本不同，上位机会自动推送并启动当前构建产物。
 
 如果 Qt 未注册为工程中的 `QtInstall` 版本，先在 Qt VS Tools 中注册与工程配置一致的 Qt 安装；
@@ -162,6 +163,22 @@ ADB `forward` 接入。暂不接入 SSH、systemd 或 GUI 外的自动服务安�
 Kernel 5.10 与 6.1 通常共享同一用户空间产物。切换内核时重点回归串口驱动、节点名称、termios、
 `/proc`/`/sys` 可见性和权限策略，而不是为每个内核建立一套源码。
 
+Linux 部署优先通过 `ldd --version` 判断 glibc；精简 Buildroot 没有 `ldd` 时，会只读执行
+`/lib/libc.so.6` 或 `/lib64/libc.so.6` 获取版本。两条路径都必须识别为 glibc 且版本不低于
+Bundle 声明的 2.31，否则拒绝部署。
+
+### 4.3 板级能力与 RK Runner
+
+`memory.capacity`、`storage.device.info` 和 `storage.device.health` 编译进通用 Agent，只读访问
+`/proc`、`/sys`，不要求 RK SDK Runner 或能力标记。新增/修改 Agent 能力后必须递增 Agent 程序版本
+并重建固定三目标矩阵；只修改 Board Profile 不改变板端程序时不需要重编 Agent。
+
+RK PCBA 的 `echo_*` 程序仍由对应 SDK/rootfs 所有，不复制进通用 Agent Bundle，也不启动或抢占
+`echo_pcbatest_server`。当前原厂 Runner 集成只保留为历史试点和未来 `rk_reference` 适配输入；不得
+把旧标记作为三个原生只读能力的可用性条件。未来接入 Runner Pack、SDK/BSP 或 RK Reference 前，
+先按 [`ADR-0003`](decisions/0003-stable-board-capabilities-and-providers.md) 固定 entry、版本、ABI、
+摘要、参数硬上限和恢复规则，再进行单独审核。
+
 所有构建目录和二进制均不提交 Git。
 
 ## 5. 验证层级
@@ -183,8 +200,10 @@ Kernel 5.10 与 6.1 通常共享同一用户空间产物。切换内核时重点
 
 - 核心静态检查：依赖方向、输入校验、线程关闭和错误边界。
 - Core/Application 主机契约测试：由 `tests/CMakeLists.txt` 构建，不依赖 Qt、ADB 或串口设备，覆盖
-  编解码、发送计划、异步队列、串口会话代次与关闭、工作区状态、资源冲突和后台任务所有权。
-- Agent 主机契约测试：由 CTest 验证协议版本、字段类型、枚举和范围拒绝路径，不访问真实设备。
+  编解码、发送计划、异步队列、串口会话代次与关闭、工作区状态、资源冲突、板级任务响应校验和
+  Board Profile 评估、共享 JSON 限额与后台任务所有权。
+- Agent 主机契约测试：由 CTest 验证协议版本、严格字段拒绝、静态 Provider 分派和注入的 `/proc`、
+  `/sys` 只读观察夹具，不访问真实设备。
 - `--self-test`：编码、异步发送队列、串口可靠性帧、Agent 帧、ADB 枚举和安全转发冒烟检查。
 - `--agent-smoke <host> <port>`：验证真实或测试 Agent 的 hello 与能力发现。
 - `--agent-deploy-smoke <adb-serial>`：执行真实 ABI 识别、root 身份校验、部署、启动、控制转发、
@@ -197,13 +216,37 @@ Kernel 5.10 与 6.1 通常共享同一用户空间产物。切换内核时重点
 - `--adb-serial-smoke` 仅保留用于复现旧固件 ADB 设备节点转发问题，不是产品串口路径。
 - `--ui-snapshot <png>`：保存概览页快照；可加 `--ui-page serial`、`tests`、`history`
   或 `settings` 选择待验收页面，并用 `--ui-size 1366x768` 指定逻辑窗口尺寸。串口页可再加
-  `--ui-serial-mode single|dual` 验收两种调试方式；可靠性压测位于双端调试中。
+  `--ui-serial-mode single|dual` 验收两种调试方式；可靠性压测位于双端调试中。测试中心快照应在
+  已连接真实 Agent 时同时检查能力发现、主动作启停和结果证据区。
 - UI 快照：检查主要分辨率和 DPI 下的裁切、重叠、文字清晰度、状态层级和主动作。
 - 实机验证：串口连接、收发、双向验证和异常断开。
 - Agent 阶段：协议单元测试、真实板端部署、能力枚举、稳定保持，再进行已知安全指令的收发测试。
 
 构建通过不等于实机通过。当前验证摘要更新到 `STATUS.md`；只有会影响后续判断的里程碑和决定性
 证据才写入 `DEVLOG.md`，避免把每次命令输出变成永久文档。
+
+### 5.1 无设备运行与界面验收
+
+```powershell
+.\build\windows\x64\Release\TestTools.exe --offline --ui-page tests --demo-scenario pass
+cmake -S tests -B build/host-tests-vs-local
+cmake --build build/host-tests-vs-local --config Release --parallel
+ctest --test-dir build/host-tests-vs-local -C Release --output-on-failure
+```
+
+主机 CTest 包含 `core-application-contract`、`run-store-contract` 和 `run-service-contract`。
+Qt 演示与主机测试均不要求连接开发板。`--offline` 跳过 ADB 发现、连接和退出清理；场景只改变模拟执行器。
+离线标志与设备冒烟或需要 ADB 的 `--self-test` 同时出现时返回 2，不执行设备命令。
+
+- `--demo-scenario pass|fail|no-data|no-standard|error|timeout|disconnected` 选择模拟情况，隐含离线模式；
+  不加 `--demo-start` 时只准备方案，等待用户点击开始。
+- `--ui-snapshot <png> --snapshot-delay 3500` 保存真实 Qt 窗口，同时写入 `<png>.json` 记录控件状态与表格，
+  便于核对主动作启停、来源与结果。延迟允许 100–30000 ms。
+- 仅模拟诊断允许 `--demo-action stop|close|new-round|rerun-failed|export|retry-save`，通过同一按钮执行，
+  用 `--demo-action-delay <ms>` 指定时点。控件禁用或缺失返回 3；参数错误返回 2。
+- `TESTTOOLS_DATA_DIR` 可指定隔离的记录根目录；默认记录位于本地应用数据目录。离线时可用
+  `TESTTOOLS_REPORT_DIR` 指定报告父目录以验证导出按钮；日常操作使用目录选择框。
+- 主机模拟取消只能验证调度与记录；真实板端停止、执行截止时间、资源释放、设备恢复与突然断电均另行验收。
 
 ## 6. 新增功能
 
@@ -244,3 +287,22 @@ Kernel 5.10 与 6.1 通常共享同一用户空间产物。切换内核时重点
 
 建立版本基线前更新 `VERSION.txt` 和 `STATUS.md`，完成规定验证后创建源码提交与附注标签。标签只表示
 该提交的版本身份；是否推送、制作安装包或发布给使用者仍是独立交付动作。
+
+## 9. 按任务分工的开发试行
+
+多代理只用于能独立验收的子任务。主负责人掌握需求、架构、文件所有权和最终差异，子任务返回定位、
+修改及验证证据；采用结论前核对关键原文或源码。优先分派只读接口盘点、已有契约下的局部实现、
+确定性测试和机械整理；线程生命周期、协议身份、跨层设计及设备操作由主负责人集中审核。
+
+一次委派写清目标、允许读写文件、输入契约、验收条件与返回格式。默认先用一个工作代理；只传必要
+上下文，不重复整段会话或让多个代理全文重审同一仓库。并行修改按文件划分，公共接口先确定；有
+依赖的任务顺序执行。局部任务返工一次仍偏离契约时由主负责人接手，避免反复扩大代理数量。
+
+模型按当次可用列表选择。边界清楚的任务可用 Luna 等较低成本模型，中等推理为起点，涉及调用链和
+边界核对时按需提高；不把 Max 设为所有子任务的默认值。小于交接与复核成本的工作直接完成。
+既有构建和检查在对应改动后集中执行一次，发现新问题再补验证，不能为省额度省略必要验收。
+
+是否保留这种分工，依据实际返工次数、主负责人复核量和交付质量判断；如有可靠的任务用量数据，再
+比较总消耗。不用 API 单价推算订阅额度，也不承诺固定节省比例。多代理会增加独立上下文和工具工作，
+更高推理通常也增加用量；这些边界见 [官方子代理说明](https://developers.openai.com/codex/subagents)。
+先在本项目试行，不据单次结果安装全局规则或额外工具。

@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -127,10 +127,13 @@
     <ClCompile Include="src\application\agent\agent_connection_service.cpp" />
     <ClCompile Include="src\application\agent\agent_target.cpp" />
     <ClCompile Include="src\application\agent\agent_bundle.cpp" />
+    <ClCompile Include="src\application\agent\board_profile.cpp" />
+    <ClCompile Include="src\application\agent\board_test_job_client.cpp" />
     <ClCompile Include="src\application\agent\linux_agent_deployment.cpp" />
     <ClCompile Include="src\application\device\device_discovery.cpp" />
-    <ClCompile Include="src\application\serial\serial_session.cpp" />
-    <ClCompile Include="src\application\serial\serial_transport_service.cpp" />
+      <ClCompile Include="src\application\serial\serial_session.cpp" />
+      <ClCompile Include="src\application\serial\at_command_library.cpp" />
+      <ClCompile Include="src\application\serial\serial_transport_service.cpp" />
     <ClCompile Include="src\application\serial\serial_workspace_state.cpp" />
     <ClCompile Include="src\application\support\background_task_group.cpp" />
     <ClCompile Include="src\adapters\adb\adb_transport.cpp" />
@@ -139,6 +142,7 @@
     <ClCompile Include="src\adapters\agent\agent_serial_transport.cpp" />
     <ClCompile Include="src\adapters\serial\cserialport_transport.cpp" />
     <ClCompile Include="src\core\protocol\agent_protocol.cpp" />
+    <ClCompile Include="src\core\protocol\json_value.cpp" />
     <ClCompile Include="src\core\serial\async_serial_sender.cpp" />
     <ClCompile Include="src\core\serial\codec.cpp" />
     <ClCompile Include="src\core\serial\serial_test_engine.cpp" />
@@ -163,10 +167,13 @@
     <ClInclude Include="src\application\agent\agent_connection_service.h" />
     <ClInclude Include="src\application\agent\agent_target.h" />
     <ClInclude Include="src\application\agent\agent_bundle.h" />
+    <ClInclude Include="src\application\agent\board_profile.h" />
+    <ClInclude Include="src\application\agent\board_test_job_client.h" />
     <ClInclude Include="src\application\agent\linux_agent_deployment.h" />
     <ClInclude Include="src\application\device\device_discovery.h" />
-    <ClInclude Include="src\application\serial\serial_session.h" />
-    <ClInclude Include="src\application\serial\serial_transport_service.h" />
+      <ClInclude Include="src\application\serial\serial_session.h" />
+      <ClInclude Include="src\application\serial\at_command_library.h" />
+      <ClInclude Include="src\application\serial\serial_transport_service.h" />
     <ClInclude Include="src\application\serial\serial_workspace_state.h" />
     <ClInclude Include="src\application\support\background_task_group.h" />
     <ClInclude Include="src\adapters\adb\adb_transport.h" />
@@ -177,6 +184,7 @@
     <ClInclude Include="src\core\protocol\agent_protocol.h" />
     <ClInclude Include="src\core\protocol\agent_connection.h" />
     <ClInclude Include="src\core\protocol\agent_version.h" />
+    <ClInclude Include="src\core\protocol\json_value.h" />
     <ClInclude Include="src\core\serial\async_serial_sender.h" />
     <ClInclude Include="src\core\serial\codec.h" />
     <ClInclude Include="src\core\serial\serial_test_engine.h" />

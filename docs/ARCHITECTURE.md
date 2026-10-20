@@ -59,20 +59,20 @@ TestTools 从串口助手演进为设备中心的调试与测试工作台。架�
 | 层 | 源码所有权 | 边界 |
 | --- | --- | --- |
 | Presentation | `src/ui/main_window.*`、`src/ui/pages/serial_workspace.*`、`src/ui/theme.*` | Qt 控件、文案和 GUI 线程映射 |
-| Application | `src/application/{agent,device,serial,support}/` | 设备发现、部署、串口工作区状态、传输创建边界和后台任务所有权 |
+| Application | `src/application/{agent,device,serial,support}/` | 设备连接、串口会话、日志缓冲与偏好持久化；Qt 只读取快照 |
 | Core | `src/core/{protocol,serial,support}/` | 协议、值对象、接口、编解码、发送与测试逻辑；标准 C++，不得依赖 Qt |
 | Host adapters | `src/adapters/{adb,agent,serial}/` | ADB、进程、Agent TCP 和 Windows COM 的具体实现；不保存产品用例状态 |
-| Board Agent | `src/agent/agent_service.*`、`serial_bridge.*` | 固定能力、参数校验和板端资源访问 |
-| 通用任务/历史/产物 | 规划中的 application/core 职责 | 不为匹配架构图创建空类型 |
+| Board Agent | `src/agent/agent_service.*`、`serial_bridge.*`、`board_capability.*`、`board_test_job.*`、`native_board_observations.*` | 固定能力、参数校验和板端资源访问 |
+| 快捷指令与偏好 | `src/application/serial/at_command_library.*` | 无 Qt 的快捷指令（AT/HEX）与串口界面偏好值对象、边界校验和版本化本地 JSON；界面只负责编辑、选择与发送意图 |
 
-`DeviceSession`、`FeatureRegistry`、`JobCoordinator`、`HistoryStore` 等名称只表示规划中的职责，
+`DeviceSession`、`FeatureRegistry`、`JobCoordinator` 等名称只表示规划中的职责，
 不是已经存在的类。新增代码应优先按职责补齐，不为匹配文档一次性创建空类型。
 
 ## 4. Windows 端职责
 
 ### 4.1 Presentation
 
-- 显示当前设备、连接状态、Agent 兼容性和全局风险。
+- 显示当前设备、连接状态、设备服务兼容性和全局风险。
 - 把用户意图转换为 application 用例，不拥有协议和测试业务状态机。
 - 将异步领域状态映射到 Qt 控件，并只在 GUI 线程更新界面。
 - 为复杂能力提供专用页面；界面模式不应通过隐式端口名称推断。
@@ -86,10 +86,17 @@ Application 层负责跨接口用例和生命周期，目标职责包括：
 
 - 设备会话：把一个物理设备、ADB 状态、Agent 状态和能力快照关联起来。
 - 串口会话：连接代次、端点配置、计划发送状态和断线收敛。
+- AT 指令库：保存名称、正文和发送数据区的共享行尾，执行边界校验与本地持久化；不拥有串口连接或第二套发送队列。
 - 任务协调：启动、取消、恢复、进度和资源冲突的上位机映射。
 - 运行历史：保存参数、设备快照、结果摘要和产物索引。
 
+当前 `AgentConnectionService` 集中处理重连、按需部署、协议握手、版本校验、能力和系统信息发现，
+并在失败时回收端口转发。`MainWindow` 只负责把该同步用例放入后台任务，并将结果映射到 Qt 控件。
+连接客户端的具体创建仍由现有工厂完成；只有出现第二种实际传输实现时才把装配继续外移。
+
 该层只能依赖 core 接口和值对象，不包含 Qt 或具体 ADB 命令。
+当前板级任务客户端只拥有请求构造、响应校验和快照值对象；轮询定时器与界面文案仍属于
+Presentation，不能为了复用一个页面提前增加通用任务控制器层级。
 
 ### 4.3 Core
 
@@ -108,8 +115,8 @@ Agent 产物由“操作系统用户空间 + ARM 架构”确定：Android 使�
 `arm64-v8a`，固定构建矩阵的 Linux 第一阶段使用 glibc 2.31 基线的 `aarch64`。内核版本不作为
 产物目录维度；更换内核后重新验证设备节点、驱动、termios、权限和安全策略。
 
-Agent v1 的最小能力族包含会话握手、能力查询、系统信息、串口枚举和串口托管；实际开放范围见
-`STATUS.md`。扩展能力时按需要逐步加入：
+Agent v1 的最小能力族包含会话握手、能力查询、系统信息、串口枚举、串口托管和静态注册的板级
+能力；实际开放范围见 `STATUS.md`。扩展能力时按需要逐步加入：
 
 - `SessionManager`：协议协商、心跳和会话恢复。
 - `CapabilityRegistry`：稳定能力 ID、参数、风险、资源和版本。
@@ -122,6 +129,12 @@ Agent v1 的最小能力族包含会话握手、能力查询、系统信息、�
 Agent 不提供任意 shell RPC。每项能力必须映射到受控实现或允许的测试程序，并声明参数、资源、
 风险、超时和取消能力。
 
+板级能力 ID 只表达稳定语义，Provider 身份只表达当前实现来源。静态 ProviderBinding 把能力定义、
+可用性探测和固定执行函数绑定；边界只允许 `agent_native`、`runner_pack`、`sdk_bsp` 和可选
+`rk_reference` 四类，不建立动态插件或任意路径执行。执行结果、能力专用 observations、上位机
+Board Profile evaluation 和最终 verdict 分层处理，详细契约见
+[`ADR-0003`](decisions/0003-stable-board-capabilities-and-providers.md)。
+
 ## 6. 协议与数据通道
 
 控制连接使用长度前缀帧：
@@ -132,8 +145,9 @@ Agent 不提供任意 shell RPC。每项能力必须映射到受控实现或允�
 payload
 ```
 
-控制 JSON 使用 UTF-8，请求至少包含协议版本、请求 ID、方法和参数。协议和串口数据通道定义以
-[`AGENT_PROTOCOL_V1.md`](AGENT_PROTOCOL_V1.md) 为准。
+控制 JSON 使用 UTF-8，请求至少包含协议版本、请求 ID、方法和参数。Agent 与 application 共享无 Qt、
+有输入/深度/集合/字符串限额的 JSON 值模型，拒绝重复字段、非法 UTF-8、非整数数值和未知契约字段。
+协议和串口数据通道定义以 [`AGENT_PROTOCOL_V1.md`](AGENT_PROTOCOL_V1.md) 为准。
 
 串口等持续数据不与控制 JSON 混流：`serial.open` 返回只监听回环地址的临时数据端口，上位机通过
 当前设备连接器建立独立隧道。未来任务事件和产物若共享控制连接，必须使用通道 ID、有界队列和公平调度；
@@ -179,6 +193,10 @@ created -> queued -> running -> succeeded
 - 升级失败不能破坏 ADB；需要保留版本查询、逐文件产物校验和 current/previous 回退入口。AgentVersion
   是整个包的唯一版本标识，SHA-256 只用于完整性校验。
 - 当前安全依赖已有 ADB 授权和回环监听；网络认证、包签名和量产权限仍是开放项。
+
+第一阶段内存容量和存储信息/健康由 Agent 原生读取 `/proc`、`/sys`，不依赖或启动原厂 PCBA server。
+后续确需复用固件单项 Runner 时仍遵守 SDK/BSP 所有权和 Bundle ABI 边界，当前迁移边界见
+[`ADR-0003`](decisions/0003-stable-board-capabilities-and-providers.md)。
 
 ## 10. 演进规则
 

@@ -13,6 +13,7 @@ class QComboBox;
 class QLabel;
 class QPushButton;
 class QStackedWidget;
+class QTimer;
 class QWidget;
 class SerialWorkspace;
 namespace testtools {
@@ -28,22 +29,19 @@ class MainWindow final : public QMainWindow {
     bool navigateTo(const QString& pageName);
     bool setSerialModeForDiagnostics(const QString& modeName);
 
+  protected:
+    void closeEvent(QCloseEvent* event) override;
+
   private:
     enum class StatusTone { Neutral, Good, Warning, Error };
 
-    enum PageIndex { OverviewPage = 0, SerialPage, TestCenterPage, HistoryPage, SettingsPage };
+    enum PageIndex { SerialPage = 0, DeviceInfoPage };
 
     void buildUi();
     QWidget* buildTopBar();
     QWidget* buildNavigation();
-    QWidget* buildOverviewPage();
     QWidget* buildSerialPage();
-    QWidget* buildTestCenterPage();
-    QWidget* buildSettingsPage();
-    QWidget* buildEmptyPage(const QString& title,
-                            const QString& subtitle,
-                            const QString& heading,
-                            const QString& body);
+    QWidget* buildDeviceInfoPage();
     QWidget* wrapPage(const QString& title,
                       const QString& subtitle,
                       QWidget* content,
@@ -51,6 +49,7 @@ class MainWindow final : public QMainWindow {
     QPushButton* addNavigationButton(const QString& text, int pageIndex);
 
     void refreshDevices();
+    void startDeviceScan(bool automatic);
     void deploySelectedAgent();
     void connectSelectedAgent(bool allowDeploy);
     void stopSelectedAgent();
@@ -58,13 +57,12 @@ class MainWindow final : public QMainWindow {
     void setAgentStatus(const QString& text, StatusTone tone, const QString& detail = {});
     void updateAgentControls();
     void prepareForShutdown();
-    void applyDeviceScan(testtools::DeviceScanResult result);
+    void applyDeviceScan(testtools::DeviceScanResult result, bool automatic);
     void applySelectedDevice();
     serialdemo::AdbDevice selectedDevice() const;
     void showPage(int pageIndex);
     void setAdbStatus(const QString& text, StatusTone tone = StatusTone::Good);
     void setActivity(const QString& message);
-    void updateOverview();
     void updateDeviceControls();
 
     QComboBox* deviceCombo_ = nullptr;
@@ -72,12 +70,10 @@ class MainWindow final : public QMainWindow {
     QLabel* agentStatusLabel_ = nullptr;
     QPushButton* agentActionButton_ = nullptr;
     QPushButton* refreshButton_ = nullptr;
+    QTimer* deviceRefreshTimer_ = nullptr;
     QStackedWidget* pages_ = nullptr;
     SerialWorkspace* serialWorkspace_ = nullptr;
     QLabel* activityLabel_ = nullptr;
-    QLabel* overviewDeviceValue_ = nullptr;
-    QLabel* overviewAdbValue_ = nullptr;
-    QLabel* overviewAgentValue_ = nullptr;
     QLabel* agentDeviceValue_ = nullptr;
     QPushButton* deployAgentButton_ = nullptr;
     QPushButton* disconnectAgentButton_ = nullptr;
@@ -96,6 +92,7 @@ class MainWindow final : public QMainWindow {
     testtools::BackgroundTaskGroup scanTasks_;
     testtools::BackgroundTaskGroup agentTasks_;
     QString agentSummary_ = QStringLiteral("未连接");
+    QString lastDeviceScanSignature_;
     std::string agentAdbSerial_;
     std::uint16_t agentForwardPort_ = 0;
     std::uint64_t agentGeneration_ = 0;

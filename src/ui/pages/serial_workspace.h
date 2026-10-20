@@ -1,5 +1,6 @@
 #pragma once
 
+#include "application/serial/at_command_library.h"
 #include "application/serial/serial_session.h"
 #include "application/serial/serial_workspace_state.h"
 #include "application/support/background_task_group.h"
@@ -10,6 +11,7 @@
 
 #include <array>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
@@ -19,6 +21,7 @@ class QComboBox;
 class QEvent;
 class QFrame;
 class QGroupBox;
+class QHBoxLayout;
 class QLabel;
 class QPlainTextEdit;
 class QPushButton;
@@ -50,6 +53,10 @@ class SerialWorkspace final : public QWidget {
 
     struct ChannelUi {
         QGroupBox* group = nullptr;
+        QWidget* headerWidget = nullptr;
+        QHBoxLayout* headerLayout = nullptr;
+        QHBoxLayout* settingsRowLayout = nullptr;
+        QWidget* actionsContainer = nullptr;
         QLabel* badgeLabel = nullptr;
         QLabel* titleLabel = nullptr;
         QComboBox* sourceCombo = nullptr;
@@ -59,6 +66,7 @@ class SerialWorkspace final : public QWidget {
         QComboBox* parityCombo = nullptr;
         QComboBox* stopBitsCombo = nullptr;
         QComboBox* flowControlCombo = nullptr;
+        QPushButton* refreshPortsButton = nullptr;
         QPushButton* advancedSettingsButton = nullptr;
         QWidget* advancedSettingsArea = nullptr;
         QPushButton* connectButton = nullptr;
@@ -67,15 +75,26 @@ class SerialWorkspace final : public QWidget {
         QCheckBox* receiveHexCheck = nullptr;
         QCheckBox* sendHexCheck = nullptr;
         QCheckBox* timestampCheck = nullptr;
+        QCheckBox* autoScrollCheck = nullptr;
+        QPushButton* resetCounterButton = nullptr;
+        QPushButton* saveLogButton = nullptr;
+        QPushButton* clearReceiveButton = nullptr;
+        QPushButton* clearSendButton = nullptr;
         QComboBox* lineEndingCombo = nullptr;
         QPushButton* sendButton = nullptr;
         QPushButton* autoSendButton = nullptr;
         QLabel* statusLabel = nullptr;
         QLabel* counterLabel = nullptr;
         QLabel* sendShortcutHint = nullptr;
+        QPushButton* toggleAtBarButton = nullptr;
         QWidget* manualSendArea = nullptr;
+        QWidget* atCommandArea = nullptr;
+        QComboBox* atCommandCombo = nullptr;
+        QPushButton* fillAtCommandButton = nullptr;
+        QPushButton* sendAtCommandButton = nullptr;
 
         testtools::SerialSession session;
+        testtools::SerialLogBuffer logBuffer;
         std::string expectedFrame;
         std::string detectionBuffer;
         int autoIntervalMs = 1000;
@@ -102,6 +121,8 @@ class SerialWorkspace final : public QWidget {
     void applyWorkspaceMode();
     void refreshAgentPorts();
     void applyPorts(int index);
+    void applyPreferencesToUi();
+    void savePreferences();
     void connectChannel(int index);
     void disconnectChannel(int index, bool showClosedStatus = true);
     void completeChannelDisconnect(int index, std::uint64_t generation, bool showClosedStatus);
@@ -121,12 +142,22 @@ class SerialWorkspace final : public QWidget {
     serialdemo::ByteBuffer manualPayload(int index, bool& ok);
     bool sendBytes(int index, const serialdemo::ByteBuffer& data, bool echo = true);
     void sendManual(int index);
+    void sendAtCommand(int index);
+    void fillAtCommandToInput(int index);
+    void showAtCommandManager();
+    void refreshAtCommandChoices();
+    bool saveAtCommands();
     void toggleAutoSend(int index);
     void stopAutoSend(int index, bool announce = false);
     void processScheduledSends();
     void appendTransmitted(int index, const serialdemo::ByteBuffer& data);
     void appendReceived(int index, const serialdemo::ByteBuffer& data);
+    void appendNotice(int index, const QString& message);
+    void renderReceiveLog(int index);
+    void applyLogAppendResult(int index, const testtools::SerialLogAppendResult& result);
     void updateCounter(int index);
+    void resetChannelCounters(int index);
+    void saveChannelLog(int index);
     void runBidirectionalTest();
     void updateBidirectionalResult(bool timedOut = false);
     void showStressDialog();
@@ -166,6 +197,12 @@ class SerialWorkspace final : public QWidget {
     bool stressAwaitingReceive_ = false;
     bool shuttingDown_ = false;
     testtools::SerialWorkspaceState workspaceState_;
+    testtools::AtCommandLibrary atCommandLibrary_;
+    std::filesystem::path atCommandStorePath_;
+    testtools::SerialWorkspacePreferences preferences_;
+    std::filesystem::path preferencesStorePath_;
+    bool preferencesLoaded_ = false;
+    bool applyingPreferences_ = false;
     std::array<StressDirection, 2> stressDirections_;
     std::uint64_t testGeneration_ = 0;
     std::uint64_t stressGeneration_ = 0;

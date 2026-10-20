@@ -2,6 +2,18 @@
 param([Parameter(Mandatory = $true)][string]$BundleDirectory)
 
 $ErrorActionPreference = 'Stop'
+
+function Get-Sha256([string]$Path) {
+    $stream = [System.IO.File]::OpenRead($Path)
+    $algorithm = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return ([System.BitConverter]::ToString($algorithm.ComputeHash($stream)) -replace '-', '').ToLowerInvariant()
+    } finally {
+        $algorithm.Dispose()
+        $stream.Dispose()
+    }
+}
+
 $bundleRoot = [System.IO.Path]::GetFullPath($BundleDirectory)
 $manifestPath = Join-Path $bundleRoot 'manifest.json'
 if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw "Agent Bundle manifest not found: $manifestPath" }
@@ -47,7 +59,7 @@ foreach ($package in $manifest.packages) {
         if (-not (Test-Path -LiteralPath $filePath -PathType Leaf)) { throw "Missing bundle file: $canonical" }
         $actual = Get-Item -LiteralPath $filePath
         if ([int64]$file.size -ne $actual.Length) { throw "Size mismatch: $canonical" }
-        $hash = (Get-FileHash -LiteralPath $filePath -Algorithm SHA256).Hash.ToLowerInvariant()
+        $hash = Get-Sha256 $filePath
         if ([string]$file.sha256 -ne $hash -or [string]$file.sha256 -notmatch '^[0-9a-fA-F]{64}$') { throw "SHA-256 mismatch: $canonical" }
         if ([string]::IsNullOrWhiteSpace([string]$file.role) -or $null -eq $file.executable) { throw "File role or executable flag missing: $canonical" }
         if ([string]$file.role -eq 'agent') { ++$agentCount }

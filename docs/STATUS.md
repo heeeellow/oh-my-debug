@@ -2,112 +2,75 @@
 
 [返回项目首页](../README.md)
 
-更新日期：2026-09-01
+更新日期：2026-10-20
 
-本页是当前实现、验证、交付和开放项的唯一汇总。历史过程和旧结论见 [`DEVLOG.md`](DEVLOG.md)，
-稳定产品与架构规则分别见 [`PRODUCT.md`](PRODUCT.md) 和 [`ARCHITECTURE.md`](ARCHITECTURE.md)。
+本页是当前实现、验证、交付和开放风险的唯一汇总。产品规则见 [`PRODUCT.md`](PRODUCT.md)，架构规则见 [`ARCHITECTURE.md`](ARCHITECTURE.md)，历史过程见 [`DEVLOG.md`](DEVLOG.md)。
 
 ## 1. 当前基线
 
-- 分支：`master`
-- 产品版本：`0.1.0`，由 Git 标签 `v0.1.0` 标记首个可交付开发基线。
-- 交付状态：`v0.1.0` 已在本地创建标签；当前 `master` 继续包含 Linux Agent 自动部署、发布运行
-  修复和 Android Agent root 身份修复，均未推送到远端。
-- 当前产品入口：根目录 `TestTools.slnx`，其中只包含 Qt GUI 工程。
-- 当前板端路径：Windows 可通过 ADB 自动部署并连接 Android Agent；Linux `aarch64/glibc-2.31`
-  Agent 已可由固定矩阵构建并生成 Bundle，当前 GUI 已接入 Linux ADB 自动部署、版本切换和连接。
-- 当前 Agent：协议版本 1，程序版本 `0.2.3`；只支持一个板端串口会话。
+- 分支：`master`。
+- 产品版本：`0.1.0`；本地标签 `v0.1.0` 标记首个可交付开发基线。
+- 主入口：`TestTools.slnx`，Windows x64 Qt GUI。
+- 设备侧源码与本地 Bundle 版本为 `0.3.7`，协议版本为 `1`（包含 Android `armeabi-v7a`、`arm64-v8a` 与 Linux `aarch64/glibc-2.31` 三个预编译目标包）。
+- 当前工作树聚焦于**串口调试工作台**与**设备连接诊断**：已清理历史遗留的 `rk_pcba_runner` 试点文件、`board_test_page` 测试中心页面、`run_*` 本地运行记录模块、冗余的“概览”页及 `build/` 下的历史审计目录；应用启动直接进入“串口调试”，主导航精简为“串口调试 / 设备信息”。
 
-## 2. 已实现能力
+## 2. 已实现
 
-- ADB 设备发现、Agent ABI 识别、按需部署、启动、控制端口转发和现有 Agent 重连。
-- Agent `session.hello`、`capability.list`、`system.info`、`serial.list`、`serial.open` 和
-  `serial.close`。
-- Windows 本地串口与板端串口的连接、文本/HEX 收发、TX/RX 显示和字节统计。
-- 普通定时/次数发送、双向验证和基于序号/CRC 的可靠性测试。
-- 串口工作台默认单串口调试，并可显式切换双端调试；双向验证和可靠性压测是双端调试的按需子功能。
-- 通用串口提供文本/HEX 和显式行尾选择，端口名称不改变发送语义。
-- UI 页面快照、自检、Agent 部署/重连、无发送串口保持和显式 AT 冒烟入口。
-- Application 已承接串口工作区模式/资源冲突规则、具体传输创建边界、短任务生命周期和单端
-  `SerialSession`。会话统一拥有传输、连接代次、异步发送队列、收发统计和普通计划发送；异步断开
-  不在 GUI 线程等待 Agent 数据通道退出。
-- Agent 对协议版本、串口字段类型、范围和枚举执行拒绝式校验；命令行端口解析不再因非法输入异常
-  终止。
-- Agent 产物目标只接受 ARM：Android 为 `armeabi-v7a/arm64-v8a`，固定矩阵的 Linux 为
-  `aarch64/glibc-2.31`；UI 通过应用层连接服务创建客户端，Android/ADB 部署类使用明确的平台命名。
-- ADB Agent 部署门面按 Android/Linux 用户空间选择部署器；Linux 部署校验 Bundle manifest、远端
-  SHA-256、aarch64、glibc >= 2.31 和 root adbd，并使用版本目录、`current`/`previous`、固定日志
-  与 PID 路径管理启动和回退。
-- Agent Bundle v2 已统一 Android/Linux 部署来源：清单使用目标包 + 文件列表模型，按 ABI 或
-  `aarch64/glibc-2.31` 选择包，逐文件校验大小/SHA-256，并推送至版本目录后切换
-  `current`/`previous`。Visual Studio 只复制已有 Bundle，不再触发单 ABI Agent 编译。
-- Android Agent 部署和停止会请求并复核 root adbd；自动重连只读核验已有 Agent 身份。Android
-  连接只接受有效 UID 0 的 Agent，避免普通 `shell` 用户无法打开 `radio:radio` 串口节点。
-- Agent 更新使用单一程序版本识别：后台发现只读握手；用户主动“连接并同步 Agent”时，版本不一致
-  自动部署当前产物。system.info 已补充厂商/产品、Android 构建、CPU、内存和 SELinux 信息。
-- 仓库提供 UTF-8/LF/格式规范和 `scripts/check-baseline.ps1` 统一检查入口。
+### 设备与连接
 
-串口两种调试方式和轻量视觉基线已经实现。可靠性压测复用双端配置并使用独立状态与确定性帧；
-结构化结果页、任务历史和可导出报告仍待通用任务模型落地。
+- 发现 Android/Linux ADB 设备，识别目标架构，按需部署、启动、连接、断开和版本切换。
+- Android 连接核验 root 身份；Linux 部署核验清单、SHA-256、aarch64、glibc 与 root adbd。
+- 设备信息包括型号、厂商、产品、CPU、内存、系统、内核、构建和安全状态。
+- 设备连接应用服务负责重连、按需准备、握手、版本校验、能力发现、系统信息读取和失败清理；Qt 窗口只负责后台调度与界面映射。
+- 空闲时每 2.5 秒静默检查 ADB 设备列表；列表未变化不刷新界面，插拔后保留当前选择且不自动切换到另一台设备，串口任务运行时暂停轮询。
+- 设备侧 `testtools-agent`（v0.3.7）仅开放固定能力（系统信息查询、串口枚举与托管、只读硬件观察），不提供任意 shell RPC。
 
-## 3. 验证状态
+### 串口调试
 
-| 范围 | 最近证据 | 状态与边界 |
+- Windows 本地串口与设备串口支持连接、断开、文本/HEX 收发、行尾、TX/RX 显示、字节统计与一键“计数清零”（`SerialSession::resetCounters`）。
+- 接收缓冲（`SerialLogBuffer`）支持按行与 250ms 窗口合并连续 RX 分片、跨分片 UTF-8 字符完整性保护，以及动态切换“HEX 显示 / 时间戳”重绘已有日志；收发记录标题栏提供“自动滚动”开关与一键“保存日志…”。
+- 单串口模式将位置、串口、波特率与“刷新串口、更多参数、状态、连接”合并为同一行并限制下拉框最大宽度，释放纵向空间给收发记录窗口；发送框“清空”按钮移至发送输入框下方工具栏（与“定时 / 次数…”和“发送”同排），避免紧贴接收窗口正下方引起误解。
+- 单串口模式提供可收起/展开的快捷指令栏，下拉框同时展示“名称 — 指令预览”，支持文本与 HEX 两种快捷指令格式、“填入输入”（填入下方发送框并同步 HEX 勾选）与“发送指令”（立即发送）；文本快捷指令与手动发送共用发送数据区唯一的行尾选项，单串口默认 CRLF。
+- 串口界面偏好（`SerialPreferencesStore`，保存于本地应用数据目录 `serial-preferences.json`）支持按端点保存和恢复来源（单串口默认 Windows 本地串口）、端口、波特率、数据位、校验、停止位、流控、行尾、显示开关与快捷指令栏展开状态。
+- 单串口为默认方式；双端方式提供双向验证和基于序号/CRC 的可靠性压测。
+- 普通定时/次数发送与可靠性压测保持独立参数、状态和结果。
+- 串口连接、异步发送队列、计划发送和统计由无 Qt 会话层拥有，GUI 线程不等待设备数据通道退出。
+
+### 界面
+
+- 主导航精简为“串口调试”（启动默认页）和“设备信息”，移除与顶部全局设备栏信息重复的“概览”页。
+- 设备信息页保留连接、断开、重置、兼容性与硬件信息，普通文案不展示内部连接机制。
+- 全局主题采用暖中性的浅灰白、深灰和克制的低饱和棕红，降低边框对比并使用 7–10px 圆角；成功状态仅使用小面积低饱和绿色。
+- 自绘抗锯齿下拉箭头与复选框勾选图标，收发记录和文本框选中态固定为浅棕红底、石墨色文字；“清空 / 计数清零 / 保存日志…”使用带柔和边框的次级按钮。
+
+## 3. 最近验证
+
+| 范围 | 日期与环境 | 结果与边界 |
 | --- | --- | --- |
-| GUI 启动 | 2026-08-29，主解决方案只启动 Qt GUI | 已验证；记录于 `DEVLOG.md` |
-| 基线静态检查 | 2026-09-01，当前工作树 | 文档链接、差异空白、Qt 边界、UI 适配器边界、工程文件完整性和生成物跟踪检查通过 |
-| Windows Release 构建 | 2026-09-01，当前工作树 | 编译和链接通过；构建前验证并复制完整 Bundle v2，不再隐式编译单 ABI Agent；仅有一次增量构建出现可选 Direct3D 12 DLL 未找到提示 |
-| Windows Debug 构建 | 2026-09-01，当前工作树 | 编译和链接通过；构建前验证并复制完整 Bundle v2，不再隐式编译单 ABI Agent；仅有可选 Direct3D 12 DLL 未找到提示 |
-| Core/Application 主机测试 | 2026-09-01，CTest | 1/1 通过；覆盖串口会话和 ARM-only 产物映射，不依赖 Qt、ADB 或串口设备 |
-| Agent 主机契约测试 | 2026-09-01，CTest | 1/1 通过；覆盖版本、字段类型、枚举和范围拒绝路径，不访问设备 |
-| Agent Bundle v2 主机契约测试 | 2026-09-01，MSVC + CTest | 1/1 通过；覆盖三目标选择、多文件包、分块 SHA-256、路径穿越、重复安装路径、缺少/不可执行 Agent、文件大小和摘要拒绝，不访问设备 |
-| Agent 固定矩阵与 Bundle | 2026-08-31，统一入口首次及重复运行 | Android 两 ABI、Linux aarch64 均 Release 构建通过；build id 和三个产物 SHA-256 重复运行稳定；manifest 独立校验通过 |
-| Agent 0.2.3 Bundle v2 固定矩阵 | 2026-09-01，Windows PowerShell 5.1 + WSL2 | Android `armeabi-v7a`/`arm64-v8a`、Linux aarch64/glibc-2.31 一次构建及 Bundle v2 校验通过；Android 两种 ABI 的版本目录切换、摘要校验和重连已实机验证，Linux 新部署流程本轮无在线设备验证 |
-| Linux ADB Agent 自动部署 | 2026-08-31，Nexus4 ADB 设备 `976ccefbf0c7e61b` | 自动识别 Ubuntu/aarch64/glibc 2.35、选择 glibc-2.31 Bundle、远端 SHA-256、版本目录切换、启动、真实 PID、ADB 转发和四项协议只读冒烟均通过；已清理临时部署 |
-| Android ARM Agent 构建 | 2026-08-31，NDK 27.3.13750724 Release | `armeabi-v7a` 为 ELF32/ARM，`arm64-v8a` 为 ELF64/AArch64；两者均通过矩阵构建 |
-| Linux ARM Agent 构建 | 2026-08-31，WSL2 + Debian Bullseye 固定工具链 | ARM64 ELF，动态依赖含 `libc.so.6`，最高 GLIBC 符号 `2.17`，不高于 2.31 |
-| Linux Agent 临时实机验证 | 2026-08-31，Nexus4 ADB 设备 `976ccefbf0c7e61b` | 设备实际为 Ubuntu 22.04.5/aarch64、glibc 2.35；临时版本目录部署 SHA-256 一致，`session.hello`、`capability.list`、`system.info`、`serial.list` 均通过；已清理，不含串口读写 |
-| 当前串口界面 | 2026-08-31，Release 构建 | 1366x768 单串口/双端、1920x1080 单串口快照通过；未打开串口或发送数据 |
-| Agent 设置界面 | 2026-09-01，Release 构建 | 1366x768 快照通过；连接 Linux Agent 0.2.3 后版本状态、同步动作和结构化板级信息无裁切或重叠 |
-| Release 自包含启动与 ADB 发现 | 2026-08-31，清理 Qt 环境变量的 Release 进程 | `TestTools.exe` 直接启动成功，同目录 Qt DLL/平台插件有效，发现 2 台 ADB 设备并连接现有 Agent；未部署、未打开或写入串口 |
-| 内置自检 | 2026-09-01，当前 Release 产物 | 通过；识别在线 ADB 设备，仅执行安全转发，不发送串口数据 |
-| Android Agent 0.2.2 部署 | 2026-09-01，设备 `e2ea0f728463744a` | 自动切换 root adbd，Agent 有效 UID/GID 均为 0；部署、重连、`system.info` 和 `serial.list` 通过，未发送串口数据 |
-| Android Agent 0.2.3 部署 | 2026-09-01，同一设备 | 部署冒烟退出码 0；握手确认 0.2.3、有效 UID 0，并读到 RK3562 厂商/产品、CPU、内存、Android 构建、内核和 SELinux；未发送串口数据 |
-| Android Agent 0.2.3 Bundle v2 双 ABI 部署 | 2026-09-01，RK3568 `485A67FF3432`、RK3562 `ac7f17a16344038` | `arm64-v8a`/`armeabi-v7a` 均完成部署和已有 Agent 重连；`current` 均指向 `0.2.3-m1-3d141a5b0d04c89d`，板端摘要与各自清单一致，shell 和 Agent 进程 UID 均为 0；只查询 `serial.list`，未打开或发送串口 |
-| Linux Agent 0.2.3 部署 | 2026-09-01，Nexus4 ADB 设备 `cd22f09dbb8d83ad` | 固定 Bundle 部署冒烟退出码 0；GUI 自动重连、握手、板级信息和能力展示通过；未打开或写入串口 |
-| Agent 非法端口参数 | 2026-08-30，同一设备 | `--port invalid` 确定返回退出码 2，未异常崩溃 |
-| `/dev/ttyUSB2` 数据通道 | 2026-09-01，经 root Agent 打开并保持 5 秒 | 实机通过；未发送任何字节 |
-| `/dev/ttyUSB2` AT 收发 | 2026-08-31，用户通过当前主界面复测 | 实机通过；AT 指令收到板端返回 |
+| 设备侧 0.3.7 三目标与 Bundle | 2026-09-06，NDK 27.3 + WSL2 | Android 两 ABI、Linux aarch64 Release 构建和 Bundle v2 大小/SHA-256 校验通过；未部署设备 |
+| Windows GUI | 2026-10-20，MSVC Release | Release 编译、链接、Qt 部署与 Bundle 校验通过；`--self-test` 通过；未发布 |
+| Core/Application | 2026-10-20，Release CTest | `core-application-contract` 通过；覆盖 `resetCounters`、`SerialLogBuffer` 分片合并/UTF-8 边界/动态重绘、AT/HEX 快捷指令校验、`SerialPreferencesStore` 持久化及板端协议模型 |
+| 设备侧主机契约 | 2026-10-20，Release CTest | `agent-request-contract` 通过；覆盖任务成功、失败、超时、取消、资源忙、析构和并发终态 |
+| Qt 目标尺寸 | 2026-10-20，Release，Windows 125% | 1366×768（启动默认单串口、双端串口、设备信息页）与 1920×1080（单串口）离线快照通过；移除概览页与搁置测试页后主导航精简为“串口调试 / 设备信息”，控件无裁切；100%/150% DPI 未重跑 |
+| 静态与文档 | 2026-10-20 | `check-baseline.ps1`、`check-project-docs.ps1`、源文件登记、Qt 依赖边界、Git 差异空白与文档链接检查通过 |
+| Android/Linux 设备 | 2026-09-02—03，RK3562/RK3572 | 0.3.4—0.3.6 部署、握手与只读信息通过；0.3.7 和本轮界面未实机验证 |
+| `/dev/ttyUSB2` | 2026-08-31—09-01 | root 连接保持与 AT 收发通过；当前工作树未重复验证 |
 
-验证状态与交付状态分开记录。旧实机结果只能证明当时的设备和产物，不自动升级为当前工作树的
-回归结果。
+验证与交付分开：历史设备结果只证明当时的设备和产物；本地通过不表示已发布。
 
-## 4. 当前设计与技术债务
+## 4. 开放风险
 
-- `SerialWorkspace` 已不再持有串口连接实例、发送线程、普通计划或字节统计，但仍协调双向验证与
-  可靠性压测；这些跨端点流程应在通用任务模型确定后下沉，不为减少 QWidget 行数提前制造空层。
-- Core、Application 和具体适配器已按职责分目录；`SerialWorkspace` 仍是较大的 Qt 页面实现，后续拆分
-  必须继续先下沉状态和用例，不能只移动 QWidget 代码。
-- `MainWindow` 仍同时协调 Agent 部署/握手和设置页呈现；`AgentConnectionService` 目前只是很薄的
-  静态工厂。后续应先抽出可测试的连接用例，再决定是否保留工厂，避免只为缩短文件制造新类。
-- Linux Agent 部署器仍集中处理 Bundle 解析、平台探测、部署事务和进程管理；后续按纯解析、板端探测
-  和部署事务拆成少量函数/组件即可，不建立多层继承体系。
-- 可靠性压测已集成到双端调试，且与普通发送保持独立状态；结果仍主要显示在顶部摘要，尚无完整结构化结果页。
-- 完整 AT 指令库、响应分组和 URC 识别尚未实现。
-- Agent 只有单串口会话，控制 JSON 仍使用受限字段读取而非完整结构化解析；还缺少连接上限、资源表、
-  心跳、断线恢复、认证和正式 Android service 集成。
-- Linux 固定矩阵和 glibc 2.31 Bundle 已完成；Linux ADB 部署与 GUI 连接已接入，systemd 服务和包签名仍未实现。
-- Windows Release 目录已包含 Qt 运行时，可直接启动；正式安装包、签名和升级分发仍未实现。
-- 测试中心、运行记录和多数板级测试仍是产品骨架，尚未形成完整任务与产物闭环。
-- 历史代码仍混用 `serialdemo` 与 `testtools` 命名空间；不影响行为，但应在独立机械重构中统一。
-- 当前没有 CI 和 clang-tidy 门禁；统一脚本和格式文件已建立本地可执行基线。
+- 串口桥接仍需处理阻塞发送、短写、关闭边界、原始记录完整性和 GUI 接收队列上限。
+- `MainWindow` 仍保存连接的界面状态和异步代次，`SerialWorkspace` 仍协调双端验证与可靠性压测；后续只在需要复用或独立验证时继续下沉。
+- 历史代码仍混用 `serialdemo` 与 `testtools` 命名空间，应在独立机械重构中统一。
 
-## 5. 下一阶段顺序
+## 5. 下一版本
 
-1. 在更多 Linux ARM 板卡上验证 ADB 部署、版本回退、串口枚举和服务运行，再评估 systemd 管理与
-   包签名；Android 继续使用 ADB 连接器。
-2. 补充 `/dev/ttyUSB2` 计划发送和断开响应的主界面回归；AT 收发已经通过。
-3. 用结构化 JSON 请求模型和稳定错误分类加固 Agent，再扩展连接上限、资源表、心跳和断线恢复；
-   在此之前不开放多板端串口并发。
-4. 在新增并发板级测试前定义通用任务、资源、结果和产物契约，并下沉双向验证/可靠性压测协调。
-5. 任务模型稳定后接入完整 AT 工具、首批真实板级测试、结构化结果和运行记录。
+下一阶段迭代方案已记录于 [`ADR-0004：串口终端模式、内置 ADB 打包与串口调试补强方案`](decisions/0004-serial-terminal-and-adb-integration.md)，按以下顺序推进：
+
+1. **内置 ADB 打包与一键唤起系统 ADB 终端**：内置精简 `platform-tools`（`adb.exe` 及配套 DLL），顶栏提供「ADB 终端」快捷入口（优先拉起 `wt.exe`，失败自动回退 `cmd.exe`）。
+2. **串口调试三项补强**：补充 RK 常用 `1500000` 波特率预设、接收区关键字搜索/过滤（`Ctrl+F`）、快捷指令库 JSON 导入/导出、本地串口 `DTR` / `RTS` 硬件控制线开关。
+3. **「串口终端」模式（Debug 串口控制台）**：在串口调试顶部切换栏新增「串口终端」模式，用于 ADB 无法连接时通过 Debug 串口查看启动日志与交互式执行命令（支持 `Tab` 补全、`Ctrl+C` 中断、`↑/↓` 历史命令与 ANSI 颜色解析）。
+4. **实机验证与后续扩展**：在真实开发板上验证上述能力，后续按需推进 Android 端屏幕投屏（基于 `scrcpy`）。
+
+当前构建与验证范围见上表；未连接真实设备，串口实发、热插拔、异常断线、压力与 100%/150% DPI 未验证。

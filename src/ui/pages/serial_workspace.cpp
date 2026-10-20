@@ -6,17 +6,21 @@
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDateTime>
 #include <QtCore/QEvent>
+#include <QtCore/QFile>
 #include <QtCore/QMetaObject>
 #include <QtCore/QPointer>
 #include <QtCore/QSignalBlocker>
+#include <QtCore/QStandardPaths>
 #include <QtCore/QTimer>
 #include <QtGui/QKeyEvent>
+#include <QtGui/QTextBlock>
 #include <QtGui/QTextCursor>
 #include <QtWidgets/QButtonGroup>
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QDialog>
 #include <QtWidgets/QDialogButtonBox>
+#include <QtWidgets/QFileDialog>
 #include <QtWidgets/QFormLayout>
 #include <QtWidgets/QFrame>
 #include <QtWidgets/QGridLayout>
@@ -24,16 +28,20 @@
 #include <QtWidgets/QHBoxLayout>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QLineEdit>
+#include <QtWidgets/QListWidget>
 #include <QtWidgets/QMessageBox>
 #include <QtWidgets/QPlainTextEdit>
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QScrollArea>
+#include <QtWidgets/QScrollBar>
 #include <QtWidgets/QSplitter>
 #include <QtWidgets/QSpinBox>
 #include <QtWidgets/QStyle>
 #include <QtWidgets/QVBoxLayout>
 
 #include <algorithm>
+#include <chrono>
+#include <functional>
 #include <utility>
 
 using namespace serialdemo;
@@ -70,6 +78,34 @@ LineEnding lineEndingFromIndex(int index)
     }
 }
 
+testtools::AtCommandLineEnding storedLineEndingFromIndex(int index)
+{
+    switch (index) {
+    case 1:
+        return testtools::AtCommandLineEnding::Lf;
+    case 2:
+        return testtools::AtCommandLineEnding::Cr;
+    case 3:
+        return testtools::AtCommandLineEnding::CrLf;
+    default:
+        return testtools::AtCommandLineEnding::None;
+    }
+}
+
+int storedLineEndingIndex(testtools::AtCommandLineEnding ending)
+{
+    switch (ending) {
+    case testtools::AtCommandLineEnding::Lf:
+        return 1;
+    case testtools::AtCommandLineEnding::Cr:
+        return 2;
+    case testtools::AtCommandLineEnding::CrLf:
+        return 3;
+    default:
+        return 0;
+    }
+}
+
 void setVisualRole(QLabel *label, const QString &objectName)
 {
     label->setObjectName(objectName);
@@ -82,11 +118,47 @@ void setVisualRole(QLabel *label, const QString &objectName)
 SerialWorkspace::SerialWorkspace(QWidget *parent)
     : QWidget(parent)
 {
+    const auto configuredStorage = qEnvironmentVariable("TESTTOOLS_DATA_DIR");
+    const auto storageRoot = configuredStorage.isEmpty()
+                                 ? QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
+                                 : configuredStorage;
+    atCommandStorePath_ =
+        std::filesystem::path(storageRoot.toStdWString()) / L"at-commands.json";
+    std::error_code existsError;
+    const bool commandFileExists = std::filesystem::exists(atCommandStorePath_, existsError);
+    std::string commandStoreError;
+    const bool loaded = !existsError &&
+                        testtools::AtCommandStore::load(
+                            atCommandStorePath_, atCommandLibrary_, commandStoreError);
+    if (loaded && !commandFileExists)
+        testtools::AtCommandStore::save(
+            atCommandStorePath_, atCommandLibrary_, commandStoreError);
+
+    preferencesStorePath_ =
+        std::filesystem::path(storageRoot.toStdWString()) / L"serial-preferences.json";
+    std::error_code prefExistsError;
+    const bool prefFileExists = std::filesystem::exists(preferencesStorePath_, prefExistsError);
+    std::string prefStoreError;
+    preferencesLoaded_ = !prefExistsError && prefFileExists &&
+                         testtools::SerialPreferencesStore::load(
+                             preferencesStorePath_, preferences_, prefStoreError);
+    if (!preferencesLoaded_) {
+        preferences_.channels[1].lineEnding =
+            storedLineEndingIndex(atCommandLibrary_.lineEnding());
+    }
+
     buildUi();
+    applyPreferencesToUi();
+    refreshAtCommandChoices();
     for (int index = 0; index < static_cast<int>(channels_.size()); ++index) {
         attachSessionCallbacks(index);
     }
     refreshTargets();
+    if (!commandStoreError.empty()) {
+        const QString message = QStringLiteral("AT \u6307\u4ee4\u5e93\u672a\u80fd\u4ece\u672c\u5730\u6587\u4ef6\u6062\u590d\uff1a%1")
+                                    .arg(fromUtf8(commandStoreError));
+        QTimer::singleShot(0, this, [this, message] { emit activityChanged(message); });
+    }
 }
 
 SerialWorkspace::~SerialWorkspace()
@@ -128,16 +200,22 @@ void SerialWorkspace::buildUi()
 {
     auto *rootLayout = new QVBoxLayout(this);
     rootLayout->setContentsMargins(0, 0, 0, 0);
-    rootLayout->setSpacing(12);
+    rootLayout->setSpacing(8);
 
     auto *modeBar = new QFrame(this);
     modeBar->setObjectName(QStringLiteral("taskModeBar"));
     auto *modeLayout = new QHBoxLayout(modeBar);
-    modeLayout->setContentsMargins(12, 8, 12, 8);
-    modeLayout->setSpacing(4);
-    auto *modeLabel = new QLabel(QStringLiteral("调试方式"), modeBar);
-    modeLabel->setObjectName(QStringLiteral("fieldLabel"));
-    modeLayout->addWidget(modeLabel);
+    modeLayout->setContentsMargins(2, 0, 2, 2);
+    modeLayout->setSpacing(12);
+    auto *pageTitle = new QLabel(QStringLiteral("串口调试"), modeBar);
+    pageTitle->setObjectName(QStringLiteral("pageTitle"));
+    modeLayout->addWidget(pageTitle);
+
+    auto *segmentedBar = new QFrame(modeBar);
+    segmentedBar->setObjectName(QStringLiteral("segmentedBar"));
+    auto *segmentedLayout = new QHBoxLayout(segmentedBar);
+    segmentedLayout->setContentsMargins(3, 3, 3, 3);
+    segmentedLayout->setSpacing(2);
 
     auto *modeGroup = new QButtonGroup(this);
     modeGroup->setExclusive(true);
@@ -146,17 +224,18 @@ void SerialWorkspace::buildUi()
         QStringLiteral("双端调试"),
     };
     for (int index = 0; index < static_cast<int>(modeButtons_.size()); ++index) {
-        auto *button = new QPushButton(modeNames[static_cast<std::size_t>(index)], modeBar);
+        auto *button = new QPushButton(modeNames[static_cast<std::size_t>(index)], segmentedBar);
         button->setObjectName(QStringLiteral("modeButton"));
         button->setCheckable(true);
         button->setChecked(index == 0);
         modeGroup->addButton(button, index);
         modeButtons_[static_cast<std::size_t>(index)] = button;
-        modeLayout->addWidget(button);
+        segmentedLayout->addWidget(button);
         connect(button, &QPushButton::clicked, this, [this, index] {
             setWorkspaceMode(static_cast<WorkspaceMode>(index));
         });
     }
+    modeLayout->addWidget(segmentedBar);
     modeDescriptionLabel_ = new QLabel(modeBar);
     modeDescriptionLabel_->setObjectName(QStringLiteral("modeDescription"));
     modeDescriptionLabel_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
@@ -167,8 +246,10 @@ void SerialWorkspace::buildUi()
     linkBar_ = new QFrame(this);
     linkBar_->setObjectName(QStringLiteral("linkBar"));
     auto *linkLayout = new QHBoxLayout(linkBar_);
-    linkLayout->setContentsMargins(16, 11, 16, 11);
+    linkLayout->setContentsMargins(10, 4, 10, 5);
+    linkLayout->setSpacing(6);
     auto *routeArea = new QVBoxLayout;
+    routeArea->setContentsMargins(0, 0, 0, 0);
     routeArea->setSpacing(2);
     routeLabel_ = new QLabel(QStringLiteral("A  未选择   ⇄   B  未选择"), linkBar_);
     routeLabel_->setObjectName(QStringLiteral("routeSummary"));
@@ -178,10 +259,18 @@ void SerialWorkspace::buildUi()
     stressResultLabel_->setObjectName(QStringLiteral("testStatusNeutral"));
     stressResultLabel_->setToolTip(
         QStringLiteral("BER 统计已成功解析帧的有效载荷；丢帧和格式错误单独显示"));
+
+    auto *testStatusLayout = new QHBoxLayout;
+    testStatusLayout->setContentsMargins(0, 0, 0, 0);
+    testStatusLayout->setSpacing(12);
+    testStatusLayout->addWidget(testResultLabel_);
+    testStatusLayout->addWidget(stressResultLabel_);
+    testStatusLayout->addStretch();
+
     routeArea->addWidget(routeLabel_);
-    routeArea->addWidget(testResultLabel_);
-    routeArea->addWidget(stressResultLabel_);
+    routeArea->addLayout(testStatusLayout);
     linkLayout->addLayout(routeArea, 1);
+
     connectBothButton_ = new QPushButton(QStringLiteral("连接两端"), linkBar_);
     connectBothButton_->setObjectName(QStringLiteral("primaryButton"));
     disconnectBothButton_ = new QPushButton(QStringLiteral("断开两端"), linkBar_);
@@ -225,8 +314,8 @@ void SerialWorkspace::buildUi()
                 QMessageBox::information(
                     this,
                     QStringLiteral("当前为单板串口会话"),
-                    QStringLiteral("当前板端服务一次管理一个板端串口。可使用一路 Windows "
-                                   "串口和一路板端串口；多板端会话会在后续扩展。"));
+                    QStringLiteral("当前设备连接一次只能使用一个设备串口。可同时使用一路 Windows "
+                                   "串口和一路设备串口。"));
                 return;
             }
             if (conflict == testtools::SerialEndpointConflict::SameResource) {
@@ -321,10 +410,22 @@ void SerialWorkspace::applyWorkspaceMode()
     channels_[1].group->setVisible(true);
     channels_[0].manualSendArea->setVisible(true);
     channels_[1].manualSendArea->setVisible(true);
+    channels_[0].atCommandArea->hide();
+    channels_[0].toggleAtBarButton->hide();
+    channels_[1].toggleAtBarButton->setVisible(single);
+    channels_[1].atCommandArea->setVisible(single && channels_[1].toggleAtBarButton->isChecked());
     channels_[0].sendShortcutHint->setVisible(single);
     channels_[1].sendShortcutHint->setVisible(single);
     for (auto &channel : channels_) {
-        channel.sendEdit->setFixedHeight(single ? 72 : 48);
+        channel.sendEdit->setFixedHeight(single ? 56 : 44);
+        channel.receiveHexCheck->setText(single ? QStringLiteral("HEX 显示")
+                                                : QStringLiteral("HEX"));
+        channel.autoScrollCheck->setText(single ? QStringLiteral("自动滚动")
+                                                : QStringLiteral("滚动"));
+        channel.resetCounterButton->setText(single ? QStringLiteral("计数清零")
+                                                   : QStringLiteral("清零"));
+        channel.saveLogButton->setText(single ? QStringLiteral("保存日志…")
+                                              : QStringLiteral("保存…"));
     }
     linkBar_->setVisible(!single);
     testResultLabel_->setVisible(!single);
@@ -333,17 +434,31 @@ void SerialWorkspace::applyWorkspaceMode()
     stressTestButton_->setVisible(!single);
 
     if (single) {
-        channels_[1].badgeLabel->hide();
-        channels_[1].titleLabel->setText(QStringLiteral("当前串口"));
+        channels_[1].headerLayout->removeWidget(channels_[1].actionsContainer);
+        if (channels_[1].settingsRowLayout->indexOf(channels_[1].actionsContainer) < 0) {
+            channels_[1].settingsRowLayout->addWidget(channels_[1].actionsContainer);
+        }
+        channels_[1].headerWidget->hide();
+        channels_[1].refreshPortsButton->setText(QStringLiteral("刷新串口"));
+        channels_[1].portCombo->setMaximumWidth(320);
         modeDescriptionLabel_->setText(QStringLiteral("连接一个串口，查看 TX / RX 并发送数据"));
     } else {
         for (int index = 0; index < 2; ++index) {
+            channels_[index].settingsRowLayout->removeWidget(channels_[index].actionsContainer);
+            if (channels_[index].headerLayout->indexOf(channels_[index].actionsContainer) < 0) {
+                channels_[index].headerLayout->addWidget(channels_[index].actionsContainer);
+            }
+            channels_[index].headerWidget->show();
             channels_[index].badgeLabel->show();
             channels_[index].titleLabel->setText(channelName(index));
+            channels_[index].refreshPortsButton->setText(QStringLiteral("刷新"));
+            channels_[index].portCombo->setMaximumWidth(250);
         }
         modeDescriptionLabel_->setText(
             QStringLiteral("配置端点 A / B；独立收发、双向验证和可靠性压测按需使用"));
     }
+    updateCounter(0);
+    updateCounter(1);
 }
 
 QWidget *SerialWorkspace::buildChannelPanel(int index)
@@ -352,51 +467,73 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     channel.group = new QGroupBox(this);
     channel.group->setObjectName(QStringLiteral("endpointCard"));
     auto *layout = new QVBoxLayout(channel.group);
-    layout->setContentsMargins(16, 14, 16, 14);
-    layout->setSpacing(9);
+    layout->setContentsMargins(14, 10, 14, 12);
+    layout->setSpacing(8);
 
-    auto *header = new QHBoxLayout;
-    channel.badgeLabel = new QLabel(index == 0 ? QStringLiteral("A") : QStringLiteral("B"), channel.group);
+    channel.headerWidget = new QWidget(channel.group);
+    channel.headerLayout = new QHBoxLayout(channel.headerWidget);
+    channel.headerLayout->setContentsMargins(0, 0, 0, 0);
+    channel.headerLayout->setSpacing(6);
+    channel.badgeLabel = new QLabel(
+        index == 0 ? QStringLiteral("A") : QStringLiteral("B"), channel.headerWidget);
     channel.badgeLabel->setAlignment(Qt::AlignCenter);
-    channel.badgeLabel->setFixedSize(24, 24);
+    channel.badgeLabel->setFixedSize(22, 22);
     channel.badgeLabel->setObjectName(index == 0 ? QStringLiteral("endpointBadgeA")
-                                                  : QStringLiteral("endpointBadgeB"));
-    channel.titleLabel = new QLabel(channelName(index), channel.group);
+                                                 : QStringLiteral("endpointBadgeB"));
+    channel.titleLabel = new QLabel(channelName(index), channel.headerWidget);
     channel.titleLabel->setObjectName(QStringLiteral("endpointTitle"));
-    channel.statusLabel = new QLabel(QStringLiteral("未连接"), channel.group);
+    channel.headerLayout->addWidget(channel.badgeLabel);
+    channel.headerLayout->addWidget(channel.titleLabel);
+    channel.headerLayout->addStretch();
+
+    channel.actionsContainer = new QWidget(channel.group);
+    auto *actionsLayout = new QHBoxLayout(channel.actionsContainer);
+    actionsLayout->setContentsMargins(0, 0, 0, 0);
+    actionsLayout->setSpacing(6);
+    channel.refreshPortsButton =
+        new QPushButton(QStringLiteral("刷新串口"), channel.actionsContainer);
+    channel.refreshPortsButton->setObjectName(QStringLiteral("ghostButton"));
+    channel.refreshPortsButton->setToolTip(QStringLiteral("重新扫描本地与设备串口列表"));
+    channel.advancedSettingsButton =
+        new QPushButton(QStringLiteral("更多参数"), channel.actionsContainer);
+    channel.advancedSettingsButton->setObjectName(QStringLiteral("ghostButton"));
+    channel.advancedSettingsButton->setCheckable(true);
+    channel.statusLabel = new QLabel(QStringLiteral("● 未连接"), channel.actionsContainer);
     channel.statusLabel->setObjectName(QStringLiteral("connectionStatusIdle"));
     channel.statusLabel->setAlignment(Qt::AlignCenter);
-    channel.statusLabel->setMinimumWidth(72);
-    channel.advancedSettingsButton = new QPushButton(QStringLiteral("更多参数"), channel.group);
-    channel.advancedSettingsButton->setCheckable(true);
-    channel.connectButton = new QPushButton(QStringLiteral("连接"), channel.group);
-    channel.connectButton->setMinimumWidth(82);
-    header->addWidget(channel.badgeLabel);
-    header->addWidget(channel.titleLabel);
-    header->addStretch();
-    header->addWidget(channel.advancedSettingsButton);
-    header->addWidget(channel.statusLabel);
-    header->addWidget(channel.connectButton);
-    layout->addLayout(header);
+    channel.connectButton = new QPushButton(QStringLiteral("连接"), channel.actionsContainer);
+    channel.connectButton->setMinimumWidth(78);
+    actionsLayout->addWidget(channel.refreshPortsButton);
+    actionsLayout->addWidget(channel.advancedSettingsButton);
+    actionsLayout->addWidget(channel.statusLabel);
+    actionsLayout->addWidget(channel.connectButton);
 
-    auto *settings = new QGridLayout;
-    settings->setHorizontalSpacing(8);
-    settings->setVerticalSpacing(7);
-    channel.sourceCombo = new QComboBox(channel.group);
+    channel.headerLayout->addWidget(channel.actionsContainer);
+    layout->addWidget(channel.headerWidget);
+
+    auto *connectionRow = new QFrame(channel.group);
+    connectionRow->setObjectName(QStringLiteral("connectionRow"));
+    channel.settingsRowLayout = new QHBoxLayout(connectionRow);
+    channel.settingsRowLayout->setContentsMargins(0, 0, 0, 8);
+    channel.settingsRowLayout->setSpacing(6);
+    channel.sourceCombo = new QComboBox(connectionRow);
     channel.sourceCombo->addItem(QStringLiteral("Windows 本地串口"), false);
-    channel.sourceCombo->addItem(QStringLiteral("板端串口"), true);
-    if (index == 1) {
-        channel.sourceCombo->setCurrentIndex(1);
-    }
-    channel.portCombo = new QComboBox(channel.group);
+    channel.sourceCombo->addItem(QStringLiteral("设备串口"), true);
+    channel.sourceCombo->setMinimumWidth(148);
+    channel.sourceCombo->setMaximumWidth(176);
+
+    channel.portCombo = new QComboBox(connectionRow);
     channel.portCombo->setEditable(true);
-    channel.portCombo->setMinimumContentsLength(18);
-    channel.baudCombo = new QComboBox(channel.group);
+    channel.portCombo->setMinimumContentsLength(12);
+    channel.portCombo->setMaximumWidth(320);
+
+    channel.baudCombo = new QComboBox(connectionRow);
     channel.baudCombo->setEditable(true);
     channel.baudCombo->addItems({QStringLiteral("9600"), QStringLiteral("19200"),
                                  QStringLiteral("38400"), QStringLiteral("57600"),
                                  QStringLiteral("115200"), QStringLiteral("921600")});
-    channel.baudCombo->setMinimumWidth(88);
+    channel.baudCombo->setMinimumWidth(106);
+    channel.baudCombo->setMaximumWidth(128);
     channel.baudCombo->setCurrentText(QStringLiteral("115200"));
     channel.baudCombo->setToolTip(
         QStringLiteral("物理 UART 使用该波特率；ttyUSB/ttyACM 是 USB 虚拟串口，驱动可能忽略该数值，"
@@ -408,12 +545,14 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
         label->setObjectName(QStringLiteral("fieldLabel"));
         return label;
     };
-    settings->addWidget(fieldLabel(QStringLiteral("位置")), 0, 0);
-    settings->addWidget(channel.sourceCombo, 0, 1);
-    settings->addWidget(fieldLabel(QStringLiteral("串口")), 0, 2);
-    settings->addWidget(channel.portCombo, 0, 3, 1, 2);
-    settings->addWidget(fieldLabel(QStringLiteral("波特率")), 0, 5);
-    settings->addWidget(channel.baudCombo, 0, 6);
+    channel.settingsRowLayout->addWidget(fieldLabel(QStringLiteral("位置")));
+    channel.settingsRowLayout->addWidget(channel.sourceCombo);
+    channel.settingsRowLayout->addWidget(fieldLabel(QStringLiteral("串口")));
+    channel.settingsRowLayout->addWidget(channel.portCombo, 1);
+    channel.settingsRowLayout->addWidget(fieldLabel(QStringLiteral("波特率")));
+    channel.settingsRowLayout->addWidget(channel.baudCombo);
+    channel.settingsRowLayout->addStretch();
+    layout->addWidget(connectionRow);
 
     channel.dataBitsCombo = new QComboBox(channel.group);
     channel.dataBitsCombo->addItems({QStringLiteral("5"), QStringLiteral("6"), QStringLiteral("7"), QStringLiteral("8")});
@@ -424,18 +563,15 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     channel.stopBitsCombo->addItems({QStringLiteral("1 停止位"), QStringLiteral("2 停止位")});
     channel.flowControlCombo = new QComboBox(channel.group);
     channel.flowControlCombo->addItems({QStringLiteral("无流控"), QStringLiteral("硬件流控"), QStringLiteral("软件流控")});
-    settings->setColumnStretch(1, 1);
-    settings->setColumnStretch(3, 2);
-    layout->addLayout(settings);
 
     channel.advancedSettingsArea = new QWidget(channel.group);
     auto *advancedSettings = new QHBoxLayout(channel.advancedSettingsArea);
-    advancedSettings->setContentsMargins(0, 0, 0, 0);
-    advancedSettings->setSpacing(8);
-    channel.dataBitsCombo->setMinimumWidth(72);
-    channel.parityCombo->setMinimumWidth(104);
-    channel.stopBitsCombo->setMinimumWidth(100);
-    channel.flowControlCombo->setMinimumWidth(104);
+    advancedSettings->setContentsMargins(0, 0, 0, 2);
+    advancedSettings->setSpacing(6);
+    channel.dataBitsCombo->setMinimumWidth(68);
+    channel.parityCombo->setMinimumWidth(92);
+    channel.stopBitsCombo->setMinimumWidth(92);
+    channel.flowControlCombo->setMinimumWidth(92);
     advancedSettings->addWidget(fieldLabel(QStringLiteral("数据位")));
     advancedSettings->addWidget(channel.dataBitsCombo);
     advancedSettings->addWidget(fieldLabel(QStringLiteral("校验")));
@@ -448,91 +584,193 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     channel.advancedSettingsArea->hide();
     layout->addWidget(channel.advancedSettingsArea);
 
-    channel.counterLabel = new QLabel(QStringLiteral("RX: 0 B  TX: 0 B"), channel.group);
-    channel.counterLabel->setObjectName(QStringLiteral("mutedLabel"));
-    auto *receiveHeader = new QHBoxLayout;
-    auto *receiveTitle = new QLabel(QStringLiteral("收发记录"), channel.group);
+    auto *terminalFrame = new QFrame(channel.group);
+    terminalFrame->setObjectName(QStringLiteral("terminalFrame"));
+    auto *terminalLayout = new QVBoxLayout(terminalFrame);
+    terminalLayout->setContentsMargins(0, 0, 0, 0);
+    terminalLayout->setSpacing(0);
+
+    auto *terminalHeader = new QFrame(terminalFrame);
+    terminalHeader->setObjectName(QStringLiteral("terminalHeader"));
+    auto *receiveHeader = new QHBoxLayout(terminalHeader);
+    receiveHeader->setContentsMargins(12, 5, 10, 5);
+    receiveHeader->setSpacing(8);
+
+    auto *receiveTitle = new QLabel(QStringLiteral("收发记录"), terminalHeader);
     receiveTitle->setObjectName(QStringLiteral("sectionLabel"));
+
+    channel.receiveHexCheck = new QCheckBox(QStringLiteral("HEX 显示"), terminalHeader);
+    channel.timestampCheck = new QCheckBox(QStringLiteral("时间戳"), terminalHeader);
+    channel.autoScrollCheck = new QCheckBox(QStringLiteral("自动滚动"), terminalHeader);
+    channel.autoScrollCheck->setChecked(true);
+    channel.autoScrollCheck->setToolTip(
+        QStringLiteral("收到新数据时自动滚动到底部；取消勾选后可固定视图查看或复制历史日志"));
+
+    channel.counterLabel = new QLabel(QStringLiteral("RX: 0 B  |  TX: 0 B"), terminalHeader);
+    channel.counterLabel->setObjectName(QStringLiteral("mutedLabel"));
+    channel.counterLabel->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
+
+    channel.resetCounterButton = new QPushButton(QStringLiteral("计数清零"), terminalHeader);
+    channel.resetCounterButton->setObjectName(QStringLiteral("clearButton"));
+    channel.resetCounterButton->setToolTip(QStringLiteral("将当前端点的 RX / TX 字节计数归零"));
+
+    channel.saveLogButton = new QPushButton(QStringLiteral("保存日志…"), terminalHeader);
+    channel.saveLogButton->setObjectName(QStringLiteral("clearButton"));
+    channel.saveLogButton->setToolTip(QStringLiteral("将当前收发记录导出为文本或日志文件"));
+
+    channel.clearReceiveButton = new QPushButton(QStringLiteral("清空"), terminalHeader);
+    channel.clearReceiveButton->setObjectName(QStringLiteral("clearButton"));
+    channel.clearReceiveButton->setToolTip(QStringLiteral("清空当前收发记录显示区"));
+
     receiveHeader->addWidget(receiveTitle);
+    receiveHeader->addWidget(channel.receiveHexCheck);
+    receiveHeader->addWidget(channel.timestampCheck);
+    receiveHeader->addWidget(channel.autoScrollCheck);
     receiveHeader->addStretch();
     receiveHeader->addWidget(channel.counterLabel);
-    layout->addLayout(receiveHeader);
+    receiveHeader->addWidget(channel.resetCounterButton);
+    receiveHeader->addWidget(channel.saveLogButton);
+    receiveHeader->addWidget(channel.clearReceiveButton);
+    terminalLayout->addWidget(terminalHeader);
 
-    channel.receiveEdit = new QPlainTextEdit(channel.group);
+    channel.receiveEdit = new QPlainTextEdit(terminalFrame);
     channel.receiveEdit->setObjectName(QStringLiteral("receiveConsole"));
     channel.receiveEdit->setReadOnly(true);
     channel.receiveEdit->setMaximumBlockCount(5000);
     channel.receiveEdit->setPlaceholderText(
         QStringLiteral("等待数据；发送成功显示 TX，接收数据显示 RX"));
-    layout->addWidget(channel.receiveEdit, 1);
-
-    auto *receiveTools = new QHBoxLayout;
-    channel.receiveHexCheck = new QCheckBox(QStringLiteral("HEX 显示"), channel.group);
-    channel.timestampCheck = new QCheckBox(QStringLiteral("时间戳"), channel.group);
-    auto *clearReceive = new QPushButton(QStringLiteral("清空"), channel.group);
-    receiveTools->addWidget(channel.receiveHexCheck);
-    receiveTools->addWidget(channel.timestampCheck);
-    receiveTools->addStretch();
-    receiveTools->addWidget(clearReceive);
-    layout->addLayout(receiveTools);
+    terminalLayout->addWidget(channel.receiveEdit, 1);
+    layout->addWidget(terminalFrame, 1);
 
     channel.manualSendArea = new QWidget(channel.group);
     auto *sendAreaLayout = new QVBoxLayout(channel.manualSendArea);
     sendAreaLayout->setContentsMargins(0, 0, 0, 0);
-    sendAreaLayout->setSpacing(8);
-    auto *sendHeader = new QHBoxLayout;
-    auto *sendTitle = new QLabel(QStringLiteral("发送数据"), channel.manualSendArea);
-    sendTitle->setObjectName(QStringLiteral("sectionLabel"));
-    channel.sendShortcutHint = new QLabel(QStringLiteral("Enter 发送 · Shift+Enter 换行"),
-                                          channel.manualSendArea);
-    channel.sendShortcutHint->setObjectName(QStringLiteral("fieldLabel"));
-    sendHeader->addWidget(sendTitle);
-    sendHeader->addStretch();
-    sendHeader->addWidget(channel.sendShortcutHint);
-    sendAreaLayout->addLayout(sendHeader);
-    channel.sendEdit = new QPlainTextEdit(channel.manualSendArea);
+    sendAreaLayout->setSpacing(6);
+
+    channel.atCommandArea = new QFrame(channel.manualSendArea);
+    channel.atCommandArea->setObjectName(QStringLiteral("atCommandBar"));
+    auto *atCommandLayout = new QHBoxLayout(channel.atCommandArea);
+    atCommandLayout->setContentsMargins(8, 5, 8, 5);
+    atCommandLayout->setSpacing(6);
+    auto *atCommandLabel = new QLabel(QStringLiteral("快捷指令"), channel.atCommandArea);
+    atCommandLabel->setObjectName(QStringLiteral("shortcutTag"));
+    channel.atCommandCombo = new QComboBox(channel.atCommandArea);
+    channel.atCommandCombo->setMinimumContentsLength(18);
+    channel.atCommandCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    auto *manageAtCommands = new QPushButton(QStringLiteral("管理指令…"), channel.atCommandArea);
+    manageAtCommands->setObjectName(QStringLiteral("clearButton"));
+    channel.fillAtCommandButton = new QPushButton(QStringLiteral("填入输入"), channel.atCommandArea);
+    channel.fillAtCommandButton->setObjectName(QStringLiteral("clearButton"));
+    channel.fillAtCommandButton->setToolTip(
+        QStringLiteral("将所选快捷指令填入下方发送输入框，便于修改参数后再发送"));
+    channel.sendAtCommandButton = new QPushButton(QStringLiteral("发送指令"), channel.atCommandArea);
+    channel.sendAtCommandButton->setObjectName(QStringLiteral("verifyButton"));
+    atCommandLayout->addWidget(atCommandLabel);
+    atCommandLayout->addWidget(channel.atCommandCombo, 1);
+    atCommandLayout->addWidget(manageAtCommands);
+    atCommandLayout->addWidget(channel.fillAtCommandButton);
+    atCommandLayout->addWidget(channel.sendAtCommandButton);
+    sendAreaLayout->addWidget(channel.atCommandArea);
+
+    auto *composerFrame = new QFrame(channel.manualSendArea);
+    composerFrame->setObjectName(QStringLiteral("composerFrame"));
+    auto *composerLayout = new QVBoxLayout(composerFrame);
+    composerLayout->setContentsMargins(0, 0, 0, 0);
+    composerLayout->setSpacing(0);
+
+    channel.sendEdit = new QPlainTextEdit(composerFrame);
     channel.sendEdit->setObjectName(QStringLiteral("sendEditor"));
-    channel.sendEdit->setFixedHeight(72);
+    channel.sendEdit->setFixedHeight(52);
     channel.sendEdit->setPlaceholderText(QStringLiteral("输入要发送的数据"));
     channel.sendEdit->installEventFilter(this);
-    sendAreaLayout->addWidget(channel.sendEdit);
+    composerLayout->addWidget(channel.sendEdit);
 
-    auto *sendTools = new QHBoxLayout;
-    channel.sendHexCheck = new QCheckBox(QStringLiteral("HEX 发送"), channel.manualSendArea);
-    channel.lineEndingCombo = new QComboBox(channel.manualSendArea);
+    auto *composerFooter = new QFrame(composerFrame);
+    composerFooter->setObjectName(QStringLiteral("composerFooter"));
+    auto *sendTools = new QHBoxLayout(composerFooter);
+    sendTools->setContentsMargins(10, 5, 10, 5);
+    sendTools->setSpacing(8);
+    channel.sendHexCheck = new QCheckBox(QStringLiteral("HEX 发送"), composerFooter);
+    channel.lineEndingCombo = new QComboBox(composerFooter);
     channel.lineEndingCombo->addItems({QStringLiteral("无"), QStringLiteral("LF"),
                                        QStringLiteral("CR"), QStringLiteral("CRLF")});
+    if (index == 1)
+        channel.lineEndingCombo->setCurrentIndex(
+            storedLineEndingIndex(atCommandLibrary_.lineEnding()));
     channel.lineEndingCombo->setToolTip(
-        QStringLiteral("发送时显式追加的行尾字节；切换端口不会改变此选择。"));
-    auto *clearSend = new QPushButton(QStringLiteral("清空"), channel.manualSendArea);
-    clearReceive->setObjectName(QStringLiteral("ghostButton"));
-    clearSend->setObjectName(QStringLiteral("ghostButton"));
-    channel.sendButton = new QPushButton(QStringLiteral("发送"), channel.manualSendArea);
+        QStringLiteral("手动发送和文本快捷指令共用此行尾；切换端口不会改变选择。"));
+    channel.lineEndingCombo->setMinimumWidth(84);
+
+    auto *endingLabel = new QLabel(QStringLiteral("行尾"), composerFooter);
+    endingLabel->setObjectName(QStringLiteral("fieldLabel"));
+
+    channel.sendShortcutHint = new QLabel(QStringLiteral("Enter 发送 · Shift+Enter 换行"),
+                                          composerFooter);
+    channel.sendShortcutHint->setObjectName(QStringLiteral("fieldLabel"));
+
+    channel.toggleAtBarButton =
+        new QPushButton(QStringLiteral("收起快捷指令"), composerFooter);
+    channel.toggleAtBarButton->setObjectName(QStringLiteral("ghostButton"));
+    channel.toggleAtBarButton->setCheckable(true);
+    channel.toggleAtBarButton->setChecked(true);
+    channel.toggleAtBarButton->setToolTip(QStringLiteral("显示或隐藏上方快捷指令栏"));
+
+    channel.clearSendButton = new QPushButton(QStringLiteral("清空"), composerFooter);
+    channel.clearSendButton->setObjectName(QStringLiteral("clearButton"));
+    channel.clearSendButton->setToolTip(QStringLiteral("清空上方发送输入框内容"));
+
+    channel.sendButton = new QPushButton(QStringLiteral("发送"), composerFooter);
     channel.sendButton->setObjectName(QStringLiteral("primaryButton"));
     channel.sendButton->setEnabled(false);
-    channel.autoSendButton = new QPushButton(QStringLiteral("定时 / 次数…"), channel.manualSendArea);
+    channel.sendButton->setMinimumWidth(72);
+
+    channel.autoSendButton = new QPushButton(QStringLiteral("定时 / 次数…"), composerFooter);
+    channel.autoSendButton->setObjectName(QStringLiteral("clearButton"));
     channel.autoSendButton->setEnabled(false);
+
     sendTools->addWidget(channel.sendHexCheck);
-    sendTools->addWidget(new QLabel(QStringLiteral("行尾"), channel.manualSendArea));
+    sendTools->addWidget(endingLabel);
     sendTools->addWidget(channel.lineEndingCombo);
+    sendTools->addWidget(channel.sendShortcutHint);
     sendTools->addStretch();
-    sendTools->addWidget(clearSend);
+    sendTools->addWidget(channel.toggleAtBarButton);
+    sendTools->addWidget(channel.clearSendButton);
     sendTools->addWidget(channel.autoSendButton);
     sendTools->addWidget(channel.sendButton);
-    sendAreaLayout->addLayout(sendTools);
+    composerLayout->addWidget(composerFooter);
+
+    sendAreaLayout->addWidget(composerFrame);
     layout->addWidget(channel.manualSendArea);
 
     connect(channel.sourceCombo, &QComboBox::currentIndexChanged, this, [this, index] {
         applyPorts(index);
         updateRouteSummary();
         updateGlobalControls();
+        savePreferences();
     });
     connect(channel.portCombo, &QComboBox::currentTextChanged, this, [this, index] {
         updateRouteSummary();
         updateGlobalControls();
+        savePreferences();
     });
     connect(channel.baudCombo, &QComboBox::currentTextChanged, this, [this] {
         updateGlobalControls();
+        savePreferences();
+    });
+    connect(channel.dataBitsCombo, &QComboBox::currentIndexChanged, this, [this] {
+        savePreferences();
+    });
+    connect(channel.parityCombo, &QComboBox::currentIndexChanged, this, [this] {
+        savePreferences();
+    });
+    connect(channel.stopBitsCombo, &QComboBox::currentIndexChanged, this, [this] {
+        savePreferences();
+    });
+    connect(channel.flowControlCombo, &QComboBox::currentIndexChanged, this, [this] {
+        savePreferences();
+    });
+    connect(channel.refreshPortsButton, &QPushButton::clicked, this, [this] {
+        refreshTargets();
     });
     connect(
         channel.advancedSettingsButton, &QPushButton::toggled, this, [this, index](bool visible) {
@@ -547,12 +785,70 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
             connectChannel(index);
         }
     });
+    connect(channel.receiveHexCheck, &QCheckBox::toggled, this, [this, index] {
+        renderReceiveLog(index);
+        savePreferences();
+    });
+    connect(channel.timestampCheck, &QCheckBox::toggled, this, [this, index] {
+        renderReceiveLog(index);
+        savePreferences();
+    });
+    connect(channel.autoScrollCheck, &QCheckBox::toggled, this, [this, index](bool checked) {
+        if (checked && channels_[index].receiveEdit->verticalScrollBar()) {
+            channels_[index].receiveEdit->verticalScrollBar()->setValue(
+                channels_[index].receiveEdit->verticalScrollBar()->maximum());
+        }
+        savePreferences();
+    });
+    connect(channel.resetCounterButton, &QPushButton::clicked, this, [this, index] {
+        resetChannelCounters(index);
+    });
+    connect(channel.saveLogButton, &QPushButton::clicked, this, [this, index] {
+        saveChannelLog(index);
+    });
+    connect(channel.clearReceiveButton, &QPushButton::clicked, this, [this, index] {
+        channels_[index].logBuffer.clear();
+        channels_[index].receiveEdit->clear();
+    });
+    connect(channel.toggleAtBarButton, &QPushButton::toggled, this, [this, index](bool visible) {
+        channels_[index].toggleAtBarButton->setText(visible ? QStringLiteral("收起快捷指令")
+                                                            : QStringLiteral("展开快捷指令"));
+        if (workspaceState_.mode() == WorkspaceMode::Single && index == 1) {
+            channels_[index].atCommandArea->setVisible(visible);
+        }
+        savePreferences();
+    });
     connect(channel.sendButton, &QPushButton::clicked, this, [this, index] { sendManual(index); });
+    connect(channel.fillAtCommandButton,
+            &QPushButton::clicked,
+            this,
+            [this, index] { fillAtCommandToInput(index); });
+    connect(channel.sendAtCommandButton,
+            &QPushButton::clicked,
+            this,
+            [this, index] { sendAtCommand(index); });
+    connect(manageAtCommands,
+            &QPushButton::clicked,
+            this,
+            &SerialWorkspace::showAtCommandManager);
+    connect(channel.sendHexCheck, &QCheckBox::toggled, this, [this] { savePreferences(); });
+    connect(channel.lineEndingCombo,
+            &QComboBox::currentIndexChanged,
+            this,
+            [this, index](int selected) {
+                if (index == 1) {
+                    atCommandLibrary_.setLineEnding(storedLineEndingFromIndex(selected));
+                    saveAtCommands();
+                }
+                savePreferences();
+            });
     connect(channel.autoSendButton, &QPushButton::clicked, this, [this, index] {
         toggleAutoSend(index);
     });
-    connect(clearReceive, &QPushButton::clicked, channel.receiveEdit, &QPlainTextEdit::clear);
-    connect(clearSend, &QPushButton::clicked, channel.sendEdit, &QPlainTextEdit::clear);
+    connect(channel.clearSendButton,
+            &QPushButton::clicked,
+            channel.sendEdit,
+            &QPlainTextEdit::clear);
 
     setChannelStatus(index, QStringLiteral("未连接"));
     return channel.group;
@@ -607,14 +903,14 @@ void SerialWorkspace::refreshAgentPorts()
     if (!selectedAgentIsOnline()) {
         scanning_ = false;
         emit activityChanged(currentAdbDevice_.serial.empty()
-                                 ? QStringLiteral("未选择 ADB 设备，板端串口列表为空")
-                                 : QStringLiteral("请先在设置中部署并连接该设备的 Agent"));
+                                 ? QStringLiteral("未选择设备，设备串口列表为空")
+                                 : QStringLiteral("请先在设备信息中连接当前设备"));
         updateGlobalControls();
         return;
     }
 
     scanning_ = true;
-    emit activityChanged(QStringLiteral("正在通过 Agent 读取 %1 的板端串口")
+    emit activityChanged(QStringLiteral("正在读取 %1 的设备串口")
                              .arg(fromUtf8(currentAdbDevice_.serial)));
     updateGlobalControls();
     const std::uint16_t controlPort = agentControlPort_;
@@ -635,7 +931,7 @@ void SerialWorkspace::refreshAgentPorts()
                 if (!error.empty()) {
                     emit guard->activityChanged(fromUtf8(error));
                 } else {
-                    emit guard->activityChanged(QStringLiteral("Agent 已发现 %1 个板端串口")
+                    emit guard->activityChanged(QStringLiteral("已发现 %1 个设备串口")
                                                     .arg(guard->agentPorts_.size()));
                 }
                 guard->updateGlobalControls();
@@ -679,6 +975,8 @@ void SerialWorkspace::applyPorts(int index)
     }
     const QString previousData = channel.portCombo->currentData().toString();
     const QString previousText = channel.portCombo->currentText();
+    const QString preferredEndpoint =
+        fromUtf8(preferences_.channels[static_cast<std::size_t>(index)].endpoint);
     const QSignalBlocker blocker(channel.portCombo);
     channel.portCombo->clear();
 
@@ -695,7 +993,7 @@ void SerialWorkspace::applyPorts(int index)
                                            ? endpoint : endpoint + QStringLiteral(" — ") + detail,
                                        endpoint);
         }
-        channel.portCombo->setToolTip(QStringLiteral("由板端服务枚举和独占管理的串口节点"));
+        channel.portCombo->setToolTip(QStringLiteral("当前连接设备提供的串口节点"));
     } else {
         for (const auto &port : localPorts_) {
             const QString name = fromUtf8(port.name);
@@ -710,13 +1008,105 @@ void SerialWorkspace::applyPorts(int index)
     if (restoreIndex < 0) {
         restoreIndex = channel.portCombo->findData(previousText);
     }
+    if (restoreIndex < 0 && !preferredEndpoint.isEmpty()) {
+        restoreIndex = channel.portCombo->findData(preferredEndpoint);
+    }
     if (restoreIndex >= 0) {
         channel.portCombo->setCurrentIndex(restoreIndex);
+    } else if (!preferredEndpoint.isEmpty() && channel.portCombo->count() == 0) {
+        channel.portCombo->setEditText(preferredEndpoint);
     }
     if (channel.portCombo->lineEdit()) {
         channel.portCombo->lineEdit()->setCursorPosition(0);
     }
     updateRouteSummary();
+}
+
+void SerialWorkspace::applyPreferencesToUi()
+{
+    applyingPreferences_ = true;
+    for (int index = 0; index < 2; ++index) {
+        auto& channel = channels_[static_cast<std::size_t>(index)];
+        const auto& pref = preferences_.channels[static_cast<std::size_t>(index)];
+        const QSignalBlocker b1(channel.sourceCombo);
+        const QSignalBlocker b2(channel.portCombo);
+        const QSignalBlocker b3(channel.baudCombo);
+        const QSignalBlocker b4(channel.dataBitsCombo);
+        const QSignalBlocker b5(channel.parityCombo);
+        const QSignalBlocker b6(channel.stopBitsCombo);
+        const QSignalBlocker b7(channel.flowControlCombo);
+        const QSignalBlocker b8(channel.lineEndingCombo);
+        const QSignalBlocker b9(channel.receiveHexCheck);
+        const QSignalBlocker b10(channel.timestampCheck);
+        const QSignalBlocker b11(channel.autoScrollCheck);
+        const QSignalBlocker b12(channel.sendHexCheck);
+
+        channel.sourceCombo->setCurrentIndex(pref.useAgent ? 1 : 0);
+        channel.baudCombo->setCurrentText(QString::number(pref.baudRate));
+        if (channel.baudCombo->lineEdit()) {
+            channel.baudCombo->lineEdit()->setCursorPosition(0);
+        }
+        channel.dataBitsCombo->setCurrentText(QString::number(pref.dataBits));
+        channel.parityCombo->setCurrentIndex(std::clamp(pref.parity, 0, 2));
+        channel.stopBitsCombo->setCurrentIndex(std::clamp(pref.stopBits, 0, 1));
+        channel.flowControlCombo->setCurrentIndex(std::clamp(pref.flowControl, 0, 2));
+        channel.lineEndingCombo->setCurrentIndex(std::clamp(pref.lineEnding, 0, 3));
+        channel.receiveHexCheck->setChecked(pref.receiveHex);
+        channel.timestampCheck->setChecked(pref.timestamp);
+        channel.autoScrollCheck->setChecked(pref.autoScroll);
+        channel.sendHexCheck->setChecked(pref.sendHex);
+        if (!pref.endpoint.empty()) {
+            channel.portCombo->setEditText(fromUtf8(pref.endpoint));
+            if (channel.portCombo->lineEdit()) {
+                channel.portCombo->lineEdit()->setCursorPosition(0);
+            }
+        }
+    }
+    if (channels_[1].toggleAtBarButton) {
+        const QSignalBlocker bToggle(channels_[1].toggleAtBarButton);
+        channels_[1].toggleAtBarButton->setChecked(preferences_.shortcutBarVisible);
+        channels_[1].toggleAtBarButton->setText(preferences_.shortcutBarVisible
+                                                    ? QStringLiteral("收起快捷指令")
+                                                    : QStringLiteral("展开快捷指令"));
+    }
+    applyingPreferences_ = false;
+    applyWorkspaceMode();
+}
+
+void SerialWorkspace::savePreferences()
+{
+    if (applyingPreferences_ || shuttingDown_ || preferencesStorePath_.empty()) {
+        return;
+    }
+    for (int index = 0; index < 2; ++index) {
+        const auto& channel = channels_[static_cast<std::size_t>(index)];
+        auto& pref = preferences_.channels[static_cast<std::size_t>(index)];
+        pref.useAgent = channelUsesAgent(index);
+        const QString portData = channel.portCombo->currentData().toString();
+        const QString endpointText =
+            portData.isEmpty() ? channel.portCombo->currentText().trimmed() : portData;
+        if (!endpointText.isEmpty()) {
+            pref.endpoint = toUtf8(endpointText);
+        }
+        const int baud = channel.baudCombo->currentText().toInt();
+        if (baud > 0) {
+            pref.baudRate = baud;
+        }
+        pref.dataBits = channel.dataBitsCombo->currentText().toInt();
+        pref.parity = channel.parityCombo->currentIndex();
+        pref.stopBits = channel.stopBitsCombo->currentIndex();
+        pref.flowControl = channel.flowControlCombo->currentIndex();
+        pref.lineEnding = channel.lineEndingCombo->currentIndex();
+        pref.receiveHex = channel.receiveHexCheck->isChecked();
+        pref.timestamp = channel.timestampCheck->isChecked();
+        pref.autoScroll = channel.autoScrollCheck->isChecked();
+        pref.sendHex = channel.sendHexCheck->isChecked();
+    }
+    if (channels_[1].toggleAtBarButton) {
+        preferences_.shortcutBarVisible = channels_[1].toggleAtBarButton->isChecked();
+    }
+    std::string ignoredError;
+    testtools::SerialPreferencesStore::save(preferencesStorePath_, preferences_, ignoredError);
 }
 
 SerialConfig SerialWorkspace::channelConfig(int index) const
@@ -749,7 +1139,7 @@ bool SerialWorkspace::validateChannel(int index, QString &error) const
         return false;
     }
     if (channelUsesAgent(index) && !selectedAgentIsOnline()) {
-        error = QStringLiteral("请先在设置中部署并连接板端 Agent，再连接") + channelDisplayName(index);
+        error = QStringLiteral("请先在设备信息中连接当前设备，再连接") + channelDisplayName(index);
         return false;
     }
 
@@ -758,7 +1148,7 @@ bool SerialWorkspace::validateChannel(int index, QString &error) const
     const auto conflict = testtools::SerialWorkspaceState::endpointConflict(
         candidate, endpointSelection(1 - index));
     if (conflict == testtools::SerialEndpointConflict::AgentSingleSession) {
-        error = QStringLiteral("当前 Agent 版本一次管理一个板端串口");
+        error = QStringLiteral("当前设备连接一次只能使用一个设备串口");
         return false;
     }
     if (conflict == testtools::SerialEndpointConflict::SameResource) {
@@ -1005,6 +1395,11 @@ void SerialWorkspace::updateGlobalControls()
     for (int index = 0; index < 2; ++index) {
         const auto session = channels_[index].session.snapshot();
         const bool open = session.open;
+        const bool hasShortcut = channels_[index].atCommandCombo &&
+                                 channels_[index].atCommandCombo->currentData().toInt() >= 0;
+        if (channels_[index].refreshPortsButton) {
+            channels_[index].refreshPortsButton->setEnabled(!scanning_ && !anyActive);
+        }
         if (channels_[index].disconnectPending ||
             session.state == testtools::SerialSessionState::Disconnecting) {
             channels_[index].connectButton->setEnabled(false);
@@ -1015,6 +1410,12 @@ void SerialWorkspace::updateGlobalControls()
         }
         channels_[index].sendButton->setEnabled(open && !stressTestRunning_ &&
                                                 !session.scheduledSend.running);
+        if (channels_[index].fillAtCommandButton) {
+            channels_[index].fillAtCommandButton->setEnabled(
+                !stressTestRunning_ && !session.scheduledSend.running && hasShortcut);
+        }
+        channels_[index].sendAtCommandButton->setEnabled(
+            open && !stressTestRunning_ && !session.scheduledSend.running && hasShortcut);
         channels_[index].autoSendButton->setEnabled(open && !stressTestRunning_);
     }
     const bool missingChannelsReady =
@@ -1061,7 +1462,7 @@ void SerialWorkspace::setChannelStatus(int index, const QString& message, bool e
         display = QStringLiteral("异常");
         role = QStringLiteral("connectionStatusError");
     }
-    label->setText(display);
+    label->setText(QStringLiteral("● ") + display);
     label->setToolTip(message);
     setVisualRole(label, role);
 }
@@ -1074,7 +1475,7 @@ void SerialWorkspace::updateRouteSummary()
     const auto endpoint = [this](int index) {
         const auto& channel = channels_[index];
         const QString type =
-            channelUsesAgent(index) ? QStringLiteral("板端") : QStringLiteral("Windows");
+            channelUsesAgent(index) ? QStringLiteral("设备") : QStringLiteral("Windows");
         const QString data = channel.portCombo->currentData().toString();
         const QString port = data.isEmpty() ? channel.portCombo->currentText() : data;
         return QStringLiteral("%1 · %2").arg(type,
@@ -1154,6 +1555,251 @@ void SerialWorkspace::sendManual(int index)
         return;
     }
     sendBytes(index, data);
+}
+
+void SerialWorkspace::sendAtCommand(int index)
+{
+    const int commandIndex = channels_[index].atCommandCombo->currentData().toInt();
+    const auto& commands = atCommandLibrary_.commands();
+    if (commandIndex < 0 || commandIndex >= static_cast<int>(commands.size())) {
+        QMessageBox::information(
+            this, QStringLiteral("未选择指令"), QStringLiteral("请先选择要发送的快捷指令。"));
+        return;
+    }
+    if (!channels_[index].session.isOpen()) {
+        QMessageBox::information(
+            this, QStringLiteral("尚未连接"), QStringLiteral("请先连接当前串口。"));
+        return;
+    }
+    const auto& command = commands[static_cast<std::size_t>(commandIndex)];
+    ByteBuffer data;
+    if (command.hex) {
+        std::string error;
+        if (!parseHex(command.command, data, error)) {
+            QMessageBox::warning(this, QStringLiteral("HEX 指令格式错误"), fromUtf8(error));
+            return;
+        }
+    } else {
+        data.assign(command.command.begin(), command.command.end());
+        appendLineEnding(data, lineEndingFromIndex(channels_[index].lineEndingCombo->currentIndex()));
+    }
+    if (sendBytes(index, data)) {
+        emit activityChanged(QStringLiteral("%1 已发送快捷指令：%2")
+                                 .arg(channelDisplayName(index), fromUtf8(command.name)));
+    }
+}
+
+void SerialWorkspace::fillAtCommandToInput(int index)
+{
+    const int commandIndex = channels_[index].atCommandCombo->currentData().toInt();
+    const auto& commands = atCommandLibrary_.commands();
+    if (commandIndex < 0 || commandIndex >= static_cast<int>(commands.size())) {
+        QMessageBox::information(
+            this, QStringLiteral("未选择指令"), QStringLiteral("请先选择要填入的快捷指令。"));
+        return;
+    }
+    const auto& command = commands[static_cast<std::size_t>(commandIndex)];
+    auto& channel = channels_[index];
+    channel.sendHexCheck->setChecked(command.hex);
+    channel.sendEdit->setPlainText(fromUtf8(command.command));
+    channel.sendEdit->setFocus();
+    channel.sendEdit->moveCursor(QTextCursor::End);
+    emit activityChanged(
+        QStringLiteral("已将快捷指令“%1”填入发送输入框").arg(fromUtf8(command.name)));
+}
+
+void SerialWorkspace::refreshAtCommandChoices()
+{
+    for (auto& channel : channels_) {
+        if (!channel.atCommandCombo)
+            continue;
+        const int previousCommandIndex = channel.atCommandCombo->currentData().toInt();
+        const QSignalBlocker blocker(channel.atCommandCombo);
+        channel.atCommandCombo->clear();
+        const auto& commands = atCommandLibrary_.commands();
+        if (commands.empty()) {
+            channel.atCommandCombo->addItem(QStringLiteral("尚未保存指令"), -1);
+        } else {
+            for (int index = 0; index < static_cast<int>(commands.size()); ++index) {
+                const auto& command = commands[static_cast<std::size_t>(index)];
+                QString preview = fromUtf8(command.command).simplified();
+                if (preview.size() > 36) {
+                    preview = preview.left(34) + QStringLiteral("…");
+                }
+                const QString label =
+                    command.hex
+                        ? QStringLiteral("%1 — [HEX] %2").arg(fromUtf8(command.name), preview)
+                        : QStringLiteral("%1 — %2").arg(fromUtf8(command.name), preview);
+                channel.atCommandCombo->addItem(label, index);
+                channel.atCommandCombo->setItemData(
+                    index,
+                    fromUtf8(command.command),
+                    Qt::ToolTipRole);
+            }
+            const int restored = channel.atCommandCombo->findData(previousCommandIndex);
+            channel.atCommandCombo->setCurrentIndex(restored >= 0 ? restored : 0);
+        }
+    }
+    updateGlobalControls();
+}
+
+bool SerialWorkspace::saveAtCommands()
+{
+    std::string error;
+    if (!testtools::AtCommandStore::save(atCommandStorePath_, atCommandLibrary_, error)) {
+        QMessageBox::warning(
+            this,
+            QStringLiteral("\u6307\u4ee4\u672a\u4fdd\u5b58"),
+            QStringLiteral("%1\n\u672c\u6b21\u4fee\u6539\u4ecd\u53ef\u5728\u5f53\u524d\u4f1a\u8bdd\u4f7f\u7528\u3002").arg(fromUtf8(error)));
+        return false;
+    }
+    return true;
+}
+
+void SerialWorkspace::showAtCommandManager()
+{
+    QDialog dialog(this);
+    dialog.setObjectName(QStringLiteral("atCommandDialog"));
+    dialog.setWindowTitle(QStringLiteral("管理快捷指令"));
+    dialog.resize(660, 420);
+    auto *root = new QVBoxLayout(&dialog);
+    root->setContentsMargins(16, 16, 16, 14);
+    root->setSpacing(12);
+
+    auto *body = new QHBoxLayout;
+    body->setSpacing(14);
+    auto *commandList = new QListWidget(&dialog);
+    commandList->setMinimumWidth(190);
+    body->addWidget(commandList, 1);
+
+    auto *editor = new QWidget(&dialog);
+    auto *editorLayout = new QVBoxLayout(editor);
+    editorLayout->setContentsMargins(0, 0, 0, 0);
+    editorLayout->setSpacing(10);
+    auto *form = new QFormLayout;
+    form->setHorizontalSpacing(12);
+    auto *nameEdit = new QLineEdit(editor);
+    nameEdit->setMaxLength(40);
+    nameEdit->setPlaceholderText(QStringLiteral("例如：信号质量 / 握手帧"));
+    auto *hexCheck = new QCheckBox(QStringLiteral("HEX 十六进制格式（按原始字节发送，不附加行尾）"), editor);
+    auto *commandEdit = new QPlainTextEdit(editor);
+    commandEdit->setFixedHeight(96);
+    commandEdit->setPlaceholderText(QStringLiteral("例如：AT+CSQ 或 55 AA 01 0D 0A"));
+    form->addRow(QStringLiteral("名称"), nameEdit);
+    form->addRow(QStringLiteral("格式"), hexCheck);
+    form->addRow(QStringLiteral("指令内容"), commandEdit);
+    editorLayout->addLayout(form);
+    auto *hint = new QLabel(
+        QStringLiteral("文本指令发送时使用主页发送数据区的行尾设置；HEX 指令直接发送原始字节。"), editor);
+    hint->setObjectName(QStringLiteral("fieldLabel"));
+    hint->setWordWrap(true);
+    editorLayout->addWidget(hint);
+    editorLayout->addStretch();
+
+    auto *actions = new QHBoxLayout;
+    auto *newButton = new QPushButton(QStringLiteral("新建"), editor);
+    auto *deleteButton = new QPushButton(QStringLiteral("删除"), editor);
+    auto *saveButton = new QPushButton(QStringLiteral("保存指令"), editor);
+    saveButton->setObjectName(QStringLiteral("primaryButton"));
+    actions->addWidget(newButton);
+    actions->addWidget(deleteButton);
+    actions->addStretch();
+    actions->addWidget(saveButton);
+    editorLayout->addLayout(actions);
+    body->addWidget(editor, 2);
+    root->addLayout(body, 1);
+
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+    buttons->button(QDialogButtonBox::Close)->setText(QStringLiteral("完成"));
+    root->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    std::function<void(int)> populateForm = [&](int row) {
+        const auto& commands = atCommandLibrary_.commands();
+        if (row < 0 || row >= static_cast<int>(commands.size())) {
+            nameEdit->clear();
+            hexCheck->setChecked(false);
+            commandEdit->clear();
+            deleteButton->setEnabled(false);
+            return;
+        }
+        const auto& command = commands[static_cast<std::size_t>(row)];
+        nameEdit->setText(fromUtf8(command.name));
+        hexCheck->setChecked(command.hex);
+        commandEdit->setPlainText(fromUtf8(command.command));
+        deleteButton->setEnabled(true);
+    };
+    std::function<void(int)> refreshList = [&](int selectedRow) {
+        const QSignalBlocker blocker(commandList);
+        commandList->clear();
+        for (const auto& command : atCommandLibrary_.commands()) {
+            const QString itemLabel =
+                command.hex
+                    ? QStringLiteral("[HEX] %1").arg(fromUtf8(command.name))
+                    : fromUtf8(command.name);
+            commandList->addItem(itemLabel);
+        }
+        if (selectedRow >= 0 && selectedRow < commandList->count())
+            commandList->setCurrentRow(selectedRow);
+        else
+            commandList->setCurrentRow(commandList->count() > 0 ? 0 : -1);
+        populateForm(commandList->currentRow());
+    };
+
+    connect(commandList,
+            &QListWidget::currentRowChanged,
+            &dialog,
+            [&](int row) { populateForm(row); });
+    connect(newButton, &QPushButton::clicked, &dialog, [&] {
+        commandList->setCurrentRow(-1);
+        populateForm(-1);
+        nameEdit->setFocus();
+    });
+    connect(saveButton, &QPushButton::clicked, &dialog, [&] {
+        testtools::AtCommand command;
+        command.name = toUtf8(nameEdit->text().trimmed());
+        command.command = toUtf8(commandEdit->toPlainText().trimmed());
+        command.hex = hexCheck->isChecked();
+        std::string error;
+        const int row = commandList->currentRow();
+        const bool saved = row >= 0
+                               ? atCommandLibrary_.update(
+                                     static_cast<std::size_t>(row), std::move(command), error)
+                               : atCommandLibrary_.add(std::move(command), error);
+        if (!saved) {
+            QMessageBox::information(&dialog,
+                                     QStringLiteral("无法保存指令"),
+                                     fromUtf8(error));
+            return;
+        }
+        const int selected = row >= 0 ? row
+                                      : static_cast<int>(atCommandLibrary_.commands().size()) - 1;
+        saveAtCommands();
+        refreshAtCommandChoices();
+        refreshList(selected);
+    });
+    connect(deleteButton, &QPushButton::clicked, &dialog, [&] {
+        const int row = commandList->currentRow();
+        if (row < 0)
+            return;
+        if (QMessageBox::question(
+                &dialog,
+                QStringLiteral("删除快捷指令"),
+                QStringLiteral("确定删除“%1”吗？").arg(commandList->currentItem()->text())) !=
+            QMessageBox::Yes) {
+            return;
+        }
+        atCommandLibrary_.remove(static_cast<std::size_t>(row));
+        saveAtCommands();
+        refreshAtCommandChoices();
+        refreshList(std::min(row, commandList->count() - 1));
+    });
+
+    const int selected = channels_[1].atCommandCombo
+                             ? channels_[1].atCommandCombo->currentData().toInt()
+                             : 0;
+    refreshList(selected);
+    dialog.exec();
 }
 
 void SerialWorkspace::toggleAutoSend(int index)
@@ -1301,24 +1947,12 @@ void SerialWorkspace::appendTransmitted(int index, const ByteBuffer &data)
         return;
     }
     auto &channel = channels_[index];
-    QString display;
-    if (channel.timestampCheck->isChecked()) {
-        display += QDateTime::currentDateTime().toString(QStringLiteral("[HH:mm:ss.zzz] "));
-    }
-    display += QStringLiteral("TX  ");
-    if (channel.receiveHexCheck->isChecked()) {
-        display += fromUtf8(toHex(data));
-    } else {
-        QString payload = QString::fromUtf8(reinterpret_cast<const char*>(data.data()),
-                                            static_cast<qsizetype>(data.size()));
-        payload.replace(QStringLiteral("\r"), QStringLiteral("\\r"));
-        payload.replace(QStringLiteral("\n"), QStringLiteral("\\n"));
-        display += payload;
-    }
-    display += QLatin1Char('\n');
-    channel.receiveEdit->moveCursor(QTextCursor::End);
-    channel.receiveEdit->insertPlainText(display);
-    channel.receiveEdit->moveCursor(QTextCursor::End);
+    const auto now = QDateTime::currentDateTime();
+    const auto result = channel.logBuffer.appendTx(
+        data,
+        now.toMSecsSinceEpoch(),
+        toUtf8(now.toString(QStringLiteral("HH:mm:ss.zzz"))));
+    applyLogAppendResult(index, result);
 }
 
 void SerialWorkspace::appendReceived(int index, const ByteBuffer& data)
@@ -1350,32 +1984,162 @@ void SerialWorkspace::appendReceived(int index, const ByteBuffer& data)
         }
     }
 
-    QString display;
-    if (channel.timestampCheck->isChecked()) {
-        display += QDateTime::currentDateTime().toString(QStringLiteral("[HH:mm:ss.zzz] "));
-    }
-    display += QStringLiteral("RX  ");
-    if (channel.receiveHexCheck->isChecked()) {
-        display += fromUtf8(toHex(data));
-    } else {
-        display += QString::fromUtf8(reinterpret_cast<const char*>(data.data()),
-                                     static_cast<qsizetype>(data.size()));
-    }
-    if (!display.endsWith(QLatin1Char('\n'))) {
-        display += QLatin1Char('\n');
-    }
-    channel.receiveEdit->moveCursor(QTextCursor::End);
-    channel.receiveEdit->insertPlainText(display);
-    channel.receiveEdit->moveCursor(QTextCursor::End);
+    const auto now = QDateTime::currentDateTime();
+    const auto result = channel.logBuffer.appendRx(
+        data,
+        now.toMSecsSinceEpoch(),
+        toUtf8(now.toString(QStringLiteral("HH:mm:ss.zzz"))));
+    applyLogAppendResult(index, result);
     updateCounter(index);
+}
+
+void SerialWorkspace::appendNotice(int index, const QString& message)
+{
+    auto& channel = channels_[index];
+    const auto now = QDateTime::currentDateTime();
+    const auto result = channel.logBuffer.appendNotice(
+        toUtf8(message),
+        now.toMSecsSinceEpoch(),
+        toUtf8(now.toString(QStringLiteral("HH:mm:ss.zzz"))));
+    applyLogAppendResult(index, result);
+}
+
+void SerialWorkspace::renderReceiveLog(int index)
+{
+    auto& channel = channels_[index];
+    auto* edit = channel.receiveEdit;
+    if (!edit) {
+        return;
+    }
+    auto* vbar = edit->verticalScrollBar();
+    const int previousScroll = vbar ? vbar->value() : 0;
+    const bool atBottom = vbar ? (previousScroll >= vbar->maximum() - 4) : true;
+    const bool autoScroll = !channel.autoScrollCheck || channel.autoScrollCheck->isChecked();
+    const bool hex = channel.receiveHexCheck && channel.receiveHexCheck->isChecked();
+    const bool showTimestamp = channel.timestampCheck && channel.timestampCheck->isChecked();
+
+    edit->setPlainText(fromUtf8(channel.logBuffer.formatAll(hex, showTimestamp)));
+    if (vbar) {
+        if (autoScroll || atBottom) {
+            vbar->setValue(vbar->maximum());
+        } else {
+            vbar->setValue(std::min(previousScroll, vbar->maximum()));
+        }
+    }
+}
+
+void SerialWorkspace::applyLogAppendResult(int index,
+                                           const testtools::SerialLogAppendResult& result)
+{
+    if (!result.updatedLastEntry && result.addedEntries == 0) {
+        return;
+    }
+    if (result.trimmedOldest) {
+        renderReceiveLog(index);
+        return;
+    }
+    auto& channel = channels_[index];
+    auto* edit = channel.receiveEdit;
+    auto* vbar = edit->verticalScrollBar();
+    const int previousScroll = vbar ? vbar->value() : 0;
+    const bool autoScroll = !channel.autoScrollCheck || channel.autoScrollCheck->isChecked();
+    const bool hex = channel.receiveHexCheck && channel.receiveHexCheck->isChecked();
+    const bool showTimestamp = channel.timestampCheck && channel.timestampCheck->isChecked();
+
+    const auto& entries = channel.logBuffer.entries();
+    QTextCursor cursor(edit->document());
+    if (result.updatedLastEntry && entries.size() > result.addedEntries) {
+        const std::size_t updatedIndex = entries.size() - 1 - result.addedEntries;
+        QString line = fromUtf8(
+            testtools::SerialLogBuffer::formatEntry(entries[updatedIndex], hex, showTimestamp));
+        cursor.movePosition(QTextCursor::End);
+        if (edit->document()->blockCount() > 1) {
+            if (line.endsWith(QLatin1Char('\n'))) {
+                line.chop(1);
+            }
+            cursor.movePosition(QTextCursor::PreviousBlock, QTextCursor::MoveAnchor);
+            cursor.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+            cursor.insertText(line);
+        } else {
+            cursor.insertText(line);
+        }
+    }
+    const std::size_t startAdded =
+        entries.size() >= result.addedEntries ? (entries.size() - result.addedEntries) : 0;
+    for (std::size_t i = startAdded; i < entries.size(); ++i) {
+        const QString line =
+            fromUtf8(testtools::SerialLogBuffer::formatEntry(entries[i], hex, showTimestamp));
+        cursor.movePosition(QTextCursor::End);
+        cursor.insertText(line);
+    }
+    if (vbar) {
+        if (autoScroll) {
+            vbar->setValue(vbar->maximum());
+        } else {
+            vbar->setValue(previousScroll);
+        }
+    }
 }
 
 void SerialWorkspace::updateCounter(int index)
 {
     auto& channel = channels_[index];
+    if (!channel.counterLabel) {
+        return;
+    }
     const auto snapshot = channel.session.snapshot();
-    channel.counterLabel->setText(
-        QStringLiteral("RX: %1 B  TX: %2 B").arg(snapshot.receivedBytes).arg(snapshot.sentBytes));
+    if (workspaceState_.mode() == WorkspaceMode::Single) {
+        channel.counterLabel->setText(
+            QStringLiteral("RX: %1 B  |  TX: %2 B").arg(snapshot.receivedBytes).arg(snapshot.sentBytes));
+    } else {
+        channel.counterLabel->setText(
+            QStringLiteral("RX %1 · TX %2 B").arg(snapshot.receivedBytes).arg(snapshot.sentBytes));
+    }
+}
+
+void SerialWorkspace::resetChannelCounters(int index)
+{
+    channels_[index].session.resetCounters();
+    updateCounter(index);
+    emit activityChanged(
+        QStringLiteral("%1 的 RX / TX 计数已清零").arg(channelDisplayName(index)));
+}
+
+void SerialWorkspace::saveChannelLog(int index)
+{
+    auto& channel = channels_[index];
+    const QString text = channel.receiveEdit->toPlainText();
+    if (text.trimmed().isEmpty()) {
+        QMessageBox::information(
+            this, QStringLiteral("暂无日志"), QStringLiteral("当前收发记录为空，无需导出。"));
+        return;
+    }
+    const QString defaultName =
+        QStringLiteral("serial-%1-%2.log")
+            .arg(index == 0 ? QStringLiteral("A") : QStringLiteral("B"),
+                 QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss")));
+    const QString filePath = QFileDialog::getSaveFileName(
+        this,
+        channelDisplayName(index) + QStringLiteral(" · 保存收发日志"),
+        defaultName,
+        QStringLiteral("日志文件 (*.log *.txt);;所有文件 (*.*)"));
+    if (filePath.isEmpty()) {
+        return;
+    }
+    QFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        QMessageBox::warning(
+            this, QStringLiteral("保存失败"), QStringLiteral("无法写入文件：%1").arg(filePath));
+        return;
+    }
+    const QByteArray utf8 = text.toUtf8();
+    if (file.write(utf8) != utf8.size()) {
+        QMessageBox::warning(
+            this, QStringLiteral("保存失败"), QStringLiteral("写入日志文件不完整：%1").arg(filePath));
+        return;
+    }
+    file.close();
+    emit activityChanged(QStringLiteral("已保存收发日志：%1").arg(filePath));
 }
 
 void SerialWorkspace::runBidirectionalTest()
@@ -1567,8 +2331,8 @@ void SerialWorkspace::startStressTest(int direction, std::uint64_t frameCount,
     stressResultLabel_->setText(QStringLiteral("可靠性压测 · 正在发送"));
     setVisualRole(stressResultLabel_, QStringLiteral("testStatusWorking"));
     for (int index = 0; index < 2; ++index) {
-        channels_[index].receiveEdit->appendPlainText(
-            QStringLiteral("— 可靠性压测数据流已折叠，仅更新字节计数与统计结果 —"));
+        appendNotice(index,
+                     QStringLiteral("— 可靠性压测数据流已折叠，仅更新字节计数与统计结果 —"));
     }
     emit activityChanged(QStringLiteral("串口可靠性压测已开始"));
     updateGlobalControls();

@@ -1,6 +1,7 @@
 #include "application/agent/linux_agent_deployment.h"
 
 #include "application/agent/agent_bundle.h"
+#include "application/agent/agent_target.h"
 
 #include "adapters/adb/adb_transport.h"
 
@@ -41,32 +42,6 @@ std::string commandDetail(const serialdemo::CommandResult& result)
     const std::string detail =
         trim(result.standardError.empty() ? result.standardOutput : result.standardError);
     return detail.empty() ? "exit code " + std::to_string(result.exitCode) : detail;
-}
-
-bool versionAtLeast(std::string value, int requiredMajor, int requiredMinor)
-{
-    const auto dot = value.find('.');
-    if (dot == std::string::npos) {
-        return false;
-    }
-    try {
-        const int major = std::stoi(value.substr(0, dot));
-        const int minor = std::stoi(value.substr(dot + 1));
-        return major > requiredMajor || (major == requiredMajor && minor >= requiredMinor);
-    } catch (...) {
-        return false;
-    }
-}
-
-std::optional<std::string> detectGlibcVersion(const std::string& text)
-{
-    static const std::regex pattern(R"((?:GLIBC|GNU libc)[^0-9]*([0-9]+\.[0-9]+))",
-                                    std::regex::icase);
-    std::smatch match;
-    if (!std::regex_search(text, match, pattern)) {
-        return std::nullopt;
-    }
-    return match[1].str();
 }
 
 LinuxAgentDeploymentResult createForward(serialdemo::AdbTransport& adb,
@@ -145,11 +120,17 @@ LinuxAgentDeployment::deployAndForward(const std::string& serial,
         result.error = "Linux 板端不是受支持的 aarch64: " + commandDetail(machine);
         return result;
     }
-    const auto glibc =
-        adb.runCommand(serial, {"shell", "ldd --version 2>&1 | head -1"}, std::chrono::seconds(4));
-    const auto glibcVersion = detectGlibcVersion(glibc.standardOutput + glibc.standardError);
+    const auto glibc = adb.runCommand(
+        serial,
+        {"shell",
+         "if command -v ldd >/dev/null 2>&1; then ldd --version 2>&1 | head -1; "
+         "elif [ -x /lib/libc.so.6 ]; then /lib/libc.so.6 2>&1 | head -1; "
+         "elif [ -x /lib64/libc.so.6 ]; then /lib64/libc.so.6 2>&1 | head -1; "
+         "else exit 127; fi"},
+        std::chrono::seconds(4));
+    const auto glibcVersion = parseGlibcVersion(glibc.standardOutput + glibc.standardError);
     if (glibc.exitCode != 0 || glibc.timedOut || !glibcVersion ||
-        !versionAtLeast(*glibcVersion, 2, 31)) {
+        !glibcVersionAtLeast(*glibcVersion, 2, 31)) {
         result.error = "Linux 板端 glibc 版本不足或无法识别: " +
                        trim(glibc.standardOutput + glibc.standardError);
         return result;

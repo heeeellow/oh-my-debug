@@ -1,6 +1,11 @@
 #pragma once
 
+#include "core/serial/serial_types.h"
+
 #include <array>
+#include <cstddef>
+#include <cstdint>
+#include <deque>
 #include <string>
 
 namespace testtools {
@@ -58,6 +63,63 @@ public:
 
 private:
     SerialWorkspaceMode mode_ = SerialWorkspaceMode::Single;
+};
+
+enum class SerialLogDirection {
+    Rx,
+    Tx,
+    Notice,
+};
+
+struct SerialLogEntry {
+    SerialLogDirection direction = SerialLogDirection::Rx;
+    std::int64_t timestampMs = 0;
+    std::string timestampText;
+    serialdemo::ByteBuffer bytes;
+    bool completeLine = true;
+};
+
+struct SerialLogAppendResult {
+    bool updatedLastEntry = false;
+    std::size_t addedEntries = 0;
+    bool trimmedOldest = false;
+};
+
+class SerialLogBuffer {
+public:
+    explicit SerialLogBuffer(std::size_t maxEntries = 2000,
+                             std::size_t maxBytes = 512 * 1024,
+                             std::int64_t coalesceWindowMs = 250);
+
+    SerialLogAppendResult appendTx(const serialdemo::ByteBuffer &data,
+                                   std::int64_t timestampMs,
+                                   std::string timestampText);
+    SerialLogAppendResult appendRx(const serialdemo::ByteBuffer &data,
+                                   std::int64_t timestampMs,
+                                   std::string timestampText);
+    SerialLogAppendResult appendNotice(const std::string &text,
+                                       std::int64_t timestampMs = 0,
+                                       std::string timestampText = {});
+    void clear();
+
+    bool empty() const noexcept;
+    std::size_t size() const noexcept;
+    std::size_t totalBytes() const noexcept;
+    const std::deque<SerialLogEntry> &entries() const noexcept;
+
+    static std::string formatEntry(const SerialLogEntry &entry,
+                                   bool hexDisplay,
+                                   bool showTimestamp);
+    std::string formatAll(bool hexDisplay, bool showTimestamp) const;
+
+private:
+    bool trimToLimits();
+
+    std::deque<SerialLogEntry> entries_;
+    std::size_t totalBytes_ = 0;
+    std::size_t maxEntries_ = 2000;
+    std::size_t maxBytes_ = 512 * 1024;
+    std::int64_t coalesceWindowMs_ = 250;
 };
 
 } // namespace testtools

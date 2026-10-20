@@ -39,16 +39,24 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="agent_main.cpp" />
+    <ClCompile Include="board_capability.cpp" />
+    <ClCompile Include="board_test_job.cpp" />
     <ClCompile Include="agent_service.cpp" />
+    <ClCompile Include="native_board_observations.cpp" />
     <ClCompile Include="serial_bridge.cpp" />
     <ClCompile Include="..\core\protocol\agent_protocol.cpp" />
+    <ClCompile Include="..\core\protocol\json_value.cpp" />
     <ClCompile Include="..\core\support\command_line.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="agent_service.h" />
+    <ClInclude Include="board_capability.h" />
+    <ClInclude Include="board_test_job.h" />
+    <ClInclude Include="native_board_observations.h" />
     <ClInclude Include="serial_bridge.h" />
     <ClInclude Include="..\core\protocol\agent_protocol.h" />
     <ClInclude Include="..\core\protocol\agent_version.h" />
+    <ClInclude Include="..\core\protocol\json_value.h" />
     <ClInclude Include="..\core\serial\serial_types.h" />
     <ClInclude Include="..\core\support\command_line.h" />
   </ItemGroup>

@@ -1,21 +1,35 @@
-#include "ui/main_window.h"
-#include "diagnostics/self_test.h"
 #include "core/support/command_line.h"
+#include "diagnostics/self_test.h"
+#include "ui/main_window.h"
+#include <QtCore/QFile>
+#include <QtCore/QJsonArray>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
 #include <QtCore/QStringList>
 #include <QtCore/QTimer>
 #include <QtGui/QPixmap>
 #include <QtWidgets/QApplication>
+#include <QtWidgets/QLabel>
+#include <QtWidgets/QPushButton>
+#include <QtWidgets/QTableWidget>
+#include <QtWidgets/QTreeWidget>
 
+#include <filesystem>
 #include <string>
 #include <string_view>
-#include <filesystem>
 
-int main(int argc, char *argv[])
+int main(int argc, char* argv[])
 {
+    // Establish the offline boundary before any early diagnostic command can run.
+    for (int index = 1; index < argc; ++index) {
+        if (std::string_view(argv[index]) == "--offline")
+            qputenv("TESTTOOLS_OFFLINE", "1");
+    }
     std::string snapshotPath;
     std::string initialPage;
     std::string initialSize;
     std::string initialSerialMode;
+    int snapshotDelay = 1500;
     std::string agentSmokeHost;
     std::uint16_t agentSmokePort = 0;
     std::string adbSerialSmokeSerial;
@@ -28,7 +42,17 @@ int main(int argc, char *argv[])
     std::string agentAtSmokeSerial;
     std::string agentAtSmokeEndpoint;
     for (int index = 1; index < argc; ++index) {
+        if (std::string_view(argv[index]) == "--offline")
+            qputenv("TESTTOOLS_OFFLINE", "1");
+        if (std::string_view(argv[index]) == "--snapshot-delay" && index + 1 < argc) {
+            bool ok = false;
+            snapshotDelay = QString::fromUtf8(argv[++index]).toInt(&ok);
+            if (!ok || snapshotDelay < 100 || snapshotDelay > 30000)
+                return 2;
+        }
         if (std::string_view(argv[index]) == "--self-test") {
+            if (qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE"))
+                return 2;
             return serialdemo::runSelfTest();
         }
         if (std::string_view(argv[index]) == "--ui-snapshot" && index + 1 < argc) {
@@ -71,6 +95,11 @@ int main(int argc, char *argv[])
             agentAtSmokeEndpoint = argv[++index];
         }
     }
+    if (qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE") &&
+        (!agentSmokeHost.empty() || !adbSerialSmokeSerial.empty() ||
+         !agentSerialSmokeSerial.empty() || !agentDeploySmokeSerial.empty() ||
+         !agentReconnectSmokeSerial.empty() || !agentAtSmokeSerial.empty()))
+        return 2;
     if (!agentSmokeHost.empty()) {
         return serialdemo::runAgentSmokeTest(agentSmokeHost, agentSmokePort);
     }
@@ -78,9 +107,8 @@ int main(int argc, char *argv[])
         return serialdemo::runAdbSerialSmokeTest(adbSerialSmokeSerial, adbSerialSmokeEndpoint);
     }
     if (!agentSerialSmokeSerial.empty()) {
-        return serialdemo::runAgentSerialSmokeTest(agentSerialSmokeSerial,
-                                                   agentSerialSmokePort,
-                                                   agentSerialSmokeEndpoint);
+        return serialdemo::runAgentSerialSmokeTest(
+            agentSerialSmokeSerial, agentSerialSmokePort, agentSerialSmokeEndpoint);
     }
     if (!agentDeploySmokeSerial.empty()) {
         const std::string applicationDirectory =
@@ -95,12 +123,13 @@ int main(int argc, char *argv[])
         return serialdemo::runAgentAtSmokeTest(agentAtSmokeSerial, agentAtSmokeEndpoint);
     }
     QApplication app(argc, argv);
+    QApplication::setStyle(QStringLiteral("Fusion"));
     MainWindow window;
     if (!initialPage.empty()) {
         window.navigateTo(QString::fromUtf8(initialPage));
     }
-    if (!initialSerialMode.empty()
-        && !window.setSerialModeForDiagnostics(QString::fromUtf8(initialSerialMode))) {
+    if (!initialSerialMode.empty() &&
+        !window.setSerialModeForDiagnostics(QString::fromUtf8(initialSerialMode))) {
         return 2;
     }
     if (!initialSize.empty()) {
@@ -115,9 +144,50 @@ int main(int argc, char *argv[])
     }
     window.show();
     if (!snapshotPath.empty()) {
-        QTimer::singleShot(1500, &app, [&app, &window, snapshotPath] {
+        QTimer::singleShot(snapshotDelay, &app, [&app, &window, snapshotPath] {
             const bool saved = window.grab().save(QString::fromUtf8(snapshotPath), "PNG");
-            app.exit(saved ? 0 : 2);
+            QJsonArray controls;
+            for (auto* widget : window.findChildren<QWidget*>()) {
+                const QString name = widget->property("diagnosticObjectName").toString();
+                const auto* label = qobject_cast<QLabel*>(widget);
+                if (name.isEmpty() && !label)
+                    continue;
+                QJsonObject entry{{"name", name},
+                                  {"visible", widget->isVisible()},
+                                  {"enabled", widget->isEnabled()}};
+                if (label)
+                    entry.insert("text", label->text());
+                if (auto* table = qobject_cast<QTableWidget*>(widget)) {
+                    QJsonArray rows;
+                    for (int row = 0; row < table->rowCount(); ++row) {
+                        QJsonArray fields;
+                        for (int column = 0; column < table->columnCount(); ++column)
+                            fields.append(table->item(row, column)
+                                              ? table->item(row, column)->text()
+                                              : QString{});
+                        rows.append(fields);
+                    }
+                    entry.insert("rows", rows);
+                    entry.insert("selectedRow", table->currentRow());
+                }
+                if (auto* tree = qobject_cast<QTreeWidget*>(widget)) {
+                    entry.insert("rowCount", tree->topLevelItemCount());
+                    QJsonArray rows;
+                    for (int row = 0; row < tree->topLevelItemCount(); ++row) {
+                        QJsonArray fields;
+                        for (int column = 0; column < tree->columnCount(); ++column)
+                            fields.append(tree->topLevelItem(row)->text(column));
+                        rows.append(fields);
+                    }
+                    entry.insert("rows", rows);
+                }
+                controls.append(entry);
+            }
+            QFile stateFile(QString::fromUtf8(snapshotPath) + QStringLiteral(".json"));
+            const auto state = QJsonDocument(controls).toJson();
+            const bool stateSaved =
+                stateFile.open(QIODevice::WriteOnly) && stateFile.write(state) == state.size();
+            app.exit(saved && stateSaved ? 0 : 2);
         });
     }
     return app.exec();

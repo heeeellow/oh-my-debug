@@ -4,7 +4,10 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
-#include <sstream>
+#include <initializer_list>
+#include <limits>
+#include <map>
+#include <utility>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -20,164 +23,106 @@ namespace testtools::agent {
 
 namespace {
 
-std::string jsonEscape(const std::string &value)
+const JsonValue* member(const JsonValue& object, const char* name)
 {
-    std::string result;
-    result.reserve(value.size() + 8);
-    for (const unsigned char ch : value) {
-        switch (ch) {
-        case '"': result += "\\\""; break;
-        case '\\': result += "\\\\"; break;
-        case '\b': result += "\\b"; break;
-        case '\f': result += "\\f"; break;
-        case '\n': result += "\\n"; break;
-        case '\r': result += "\\r"; break;
-        case '\t': result += "\\t"; break;
-        default:
-            if (ch >= 0x20) {
-                result.push_back(static_cast<char>(ch));
-            }
-            break;
-        }
-    }
-    return result;
+    return object.isObject() ? object.find(name) : nullptr;
 }
 
-std::string stringField(const std::string &json, const std::string &name)
+bool stringMember(const JsonValue& object, const char* name, std::string& value)
 {
-    const std::string key = "\"" + name + "\"";
-    std::size_t position = json.find(key);
-    if (position == std::string::npos) {
-        return {};
-    }
-    position = json.find(':', position + key.size());
-    if (position == std::string::npos) {
-        return {};
-    }
-    ++position;
-    while (position < json.size() && std::isspace(static_cast<unsigned char>(json[position]))) {
-        ++position;
-    }
-    if (position >= json.size() || json[position] != '"') {
-        return {};
-    }
-    std::string result;
-    bool escaped = false;
-    for (++position; position < json.size(); ++position) {
-        const char ch = json[position];
-        if (escaped) {
-            switch (ch) {
-            case 'n': result.push_back('\n'); break;
-            case 'r': result.push_back('\r'); break;
-            case 't': result.push_back('\t'); break;
-            case 'b': result.push_back('\b'); break;
-            case 'f': result.push_back('\f'); break;
-            case '"': result.push_back('"'); break;
-            case '\\': result.push_back('\\'); break;
-            case '/': result.push_back('/'); break;
-            default: return {};
-            }
-            escaped = false;
-        } else if (ch == '\\') {
-            escaped = true;
-        } else if (ch == '"') {
-            return result;
-        } else if (static_cast<unsigned char>(ch) >= 0x20) {
-            result.push_back(ch);
-        } else {
-            return {};
-        }
-    }
-    return {};
-}
-
-bool objectField(const std::string &json, const std::string &name)
-{
-    const std::string key = "\"" + name + "\"";
-    std::size_t position = json.find(key);
-    if (position == std::string::npos) {
+    const auto* field = member(object, name);
+    if (!field || !field->isString()) {
         return false;
     }
-    position = json.find(':', position + key.size());
-    if (position == std::string::npos) {
+    value = field->stringValue();
+    return true;
+}
+
+bool intMember(const JsonValue& object, const char* name, int& value)
+{
+    const auto* field = member(object, name);
+    if (!field || !field->isInt64() || field->int64Value() < std::numeric_limits<int>::min() ||
+        field->int64Value() > std::numeric_limits<int>::max()) {
         return false;
     }
-    ++position;
-    while (position < json.size() && std::isspace(static_cast<unsigned char>(json[position]))) {
-        ++position;
-    }
-    return position < json.size() && json[position] == '{';
+    value = static_cast<int>(field->int64Value());
+    return true;
 }
 
-enum class IntFieldStatus {
-    Missing,
-    Valid,
-    Invalid,
-};
-
-IntFieldStatus intField(const std::string &json, const std::string &name, int &value)
-{
-    const std::string key = "\"" + name + "\"";
-    std::size_t position = json.find(key);
-    if (position == std::string::npos) {
-        return IntFieldStatus::Missing;
-    }
-    position = json.find(':', position + key.size());
-    if (position == std::string::npos) {
-        return IntFieldStatus::Invalid;
-    }
-    ++position;
-    while (position < json.size() && std::isspace(static_cast<unsigned char>(json[position]))) {
-        ++position;
-    }
-    std::size_t end = position;
-    if (end < json.size() && json[end] == '-') {
-        ++end;
-    }
-    const std::size_t digitsBegin = end;
-    while (end < json.size() && std::isdigit(static_cast<unsigned char>(json[end]))) {
-        ++end;
-    }
-    if (end == digitsBegin) {
-        return IntFieldStatus::Invalid;
-    }
-    std::size_t delimiter = end;
-    while (delimiter < json.size()
-           && std::isspace(static_cast<unsigned char>(json[delimiter]))) {
-        ++delimiter;
-    }
-    if (delimiter < json.size() && json[delimiter] != ',' && json[delimiter] != '}'
-        && json[delimiter] != ']') {
-        return IntFieldStatus::Invalid;
-    }
-    try {
-        value = std::stoi(json.substr(position, end - position));
-        return IntFieldStatus::Valid;
-    } catch (...) {
-        return IntFieldStatus::Invalid;
-    }
-}
-
-bool optionalIntField(const std::string &json, const std::string &name,
-                      int fallback, int &value)
+bool optionalIntMember(const JsonValue& object, const char* name, int fallback, int& value)
 {
     value = fallback;
-    const auto status = intField(json, name, value);
-    return status != IntFieldStatus::Invalid;
+    if (!member(object, name)) {
+        return true;
+    }
+    return intMember(object, name, value);
 }
 
-std::string readLine(const std::string &path)
+bool hasOnlyMembers(const JsonValue& object, std::initializer_list<const char*> allowed)
+{
+    if (!object.isObject()) {
+        return false;
+    }
+    for (const auto& entry : object.objectItems()) {
+        const bool found = std::any_of(
+            allowed.begin(), allowed.end(), [&](const char* name) { return entry.first == name; });
+        if (!found) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool validIdentifier(const std::string& value, bool allowSlash = false)
+{
+    if (value.empty() || value.size() > 128 || value == "." || value == ".." ||
+        (allowSlash && (value.front() == '/' || value.back() == '/'))) {
+        return false;
+    }
+    return std::all_of(value.begin(), value.end(), [allowSlash](unsigned char character) {
+        return (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+               (character >= '0' && character <= '9') || character == '_' || character == '-' ||
+               character == '.' || character == ':' || (allowSlash && character == '/');
+    });
+}
+
+std::vector<BoardCapabilityDefinition>
+validatedCapabilities(const AgentService::CapabilityListFunction& capabilityList)
+{
+    if (!capabilityList)
+        return {};
+    const auto candidates = capabilityList();
+    std::map<std::string, std::size_t> idCounts;
+    for (const auto& candidate : candidates)
+        ++idCounts[candidate.id];
+
+    std::vector<BoardCapabilityDefinition> definitions;
+    for (const auto& candidate : candidates) {
+        const bool metadataValid =
+            validIdentifier(candidate.id) && candidate.version > 0 &&
+            validIdentifier(candidate.provider.kind) && validIdentifier(candidate.provider.id) &&
+            candidate.provider.version > 0 && validIdentifier(candidate.observationSchema, true) &&
+            !candidate.risks.empty() && !candidate.resources.empty() &&
+            candidate.defaultTimeoutMs > 0 && candidate.defaultTimeoutMs <= 60 * 60 * 1000;
+        if (metadataValid && idCounts[candidate.id] == 1)
+            definitions.push_back(candidate);
+    }
+    return definitions;
+}
+
+std::string readLine(const std::string& path)
 {
     std::ifstream input(path);
     std::string value;
     std::getline(input, value);
-    while (!value.empty() && (value.back() == '\0' || value.back() == '\r' || value.back() == '\n')) {
+    while (!value.empty() &&
+           (value.back() == '\0' || value.back() == '\r' || value.back() == '\n')) {
         value.pop_back();
     }
     return value;
 }
 
-std::string buildProperty(const std::string &key)
+std::string buildProperty(const std::string& key)
 {
 #ifdef __ANDROID__
     char value[PROP_VALUE_MAX] = {};
@@ -186,7 +131,7 @@ std::string buildProperty(const std::string &key)
         return std::string(value, static_cast<std::size_t>(length));
     }
 #endif
-    for (const char *path : {"/system/build.prop",
+    for (const char* path : {"/system/build.prop",
                              "/vendor/build.prop",
                              "/product/build.prop",
                              "/system_ext/build.prop",
@@ -203,7 +148,7 @@ std::string buildProperty(const std::string &key)
     return {};
 }
 
-std::string keyValue(const std::string &path, const std::string &key, char delimiter = '=')
+std::string keyValue(const std::string& path, const std::string& key, char delimiter = '=')
 {
     std::ifstream input(path);
     std::string line;
@@ -256,7 +201,7 @@ std::string platformName()
 #endif
 }
 
-std::string systemInfoJson()
+JsonValue systemInfoValue()
 {
     std::string host;
     std::string kernel;
@@ -303,190 +248,448 @@ std::string systemInfoJson()
     const std::string hardware = buildProperty("ro.hardware");
     const std::string sdk = buildProperty("ro.build.version.sdk");
     const std::string buildId = buildProperty("ro.build.id");
-    return "{\"platform\":\"" + jsonEscape(platformName())
-           + "\",\"hostname\":\"" + jsonEscape(host)
-           + "\",\"kernel\":\"" + jsonEscape(kernel)
-           + "\",\"architecture\":\"" + jsonEscape(architecture)
-           + "\",\"model\":\"" + jsonEscape(model)
-           + "\",\"os_release\":\"" + jsonEscape(release)
-           + "\",\"manufacturer\":\"" + jsonEscape(manufacturer)
-           + "\",\"brand\":\"" + jsonEscape(brand)
-           + "\",\"board\":\"" + jsonEscape(board)
-           + "\",\"device\":\"" + jsonEscape(device)
-           + "\",\"product\":\"" + jsonEscape(product)
-           + "\",\"hardware\":\"" + jsonEscape(hardware)
-           + "\",\"android_sdk\":\"" + jsonEscape(sdk)
-           + "\",\"build_id\":\"" + jsonEscape(buildId)
-           + "\",\"cpu_cores\":" + std::to_string(std::max(0L, processorCount))
-           + ",\"memory_total_kib\":" + std::to_string(memoryTotalKib())
-           + ",\"selinux\":\"" + jsonEscape(selinuxMode())
-           + "\",\"effective_uid\":" + std::to_string(uid) + "}";
+    return JsonValue::object({
+        {"android_sdk", JsonValue::string(sdk)},
+        {"architecture", JsonValue::string(architecture)},
+        {"board", JsonValue::string(board)},
+        {"brand", JsonValue::string(brand)},
+        {"build_id", JsonValue::string(buildId)},
+        {"cpu_cores", JsonValue::integer(std::max(0L, processorCount))},
+        {"device", JsonValue::string(device)},
+        {"effective_uid", JsonValue::integer(uid)},
+        {"hardware", JsonValue::string(hardware)},
+        {"hostname", JsonValue::string(host)},
+        {"kernel", JsonValue::string(kernel)},
+        {"manufacturer", JsonValue::string(manufacturer)},
+        {"memory_total_kib", JsonValue::integer(memoryTotalKib())},
+        {"model", JsonValue::string(model)},
+        {"os_release", JsonValue::string(release)},
+        {"platform", JsonValue::string(platformName())},
+        {"product", JsonValue::string(product)},
+        {"selinux", JsonValue::string(selinuxMode())},
+    });
 }
 
-std::string errorResponse(const std::string &requestId, const std::string &code,
-                          const std::string &message)
+std::string
+errorResponse(const std::string& requestId, const std::string& code, const std::string& message)
 {
-    return "{\"protocol\":1,\"request_id\":\"" + jsonEscape(requestId)
-           + "\",\"ok\":false,\"error\":{\"code\":\"" + jsonEscape(code)
-           + "\",\"message\":\"" + jsonEscape(message) + "\"}}";
+    return serializeJson(JsonValue::object({
+        {"error",
+         JsonValue::object(
+             {{"code", JsonValue::string(code)}, {"message", JsonValue::string(message)}})},
+        {"ok", JsonValue::boolean(false)},
+        {"protocol", JsonValue::integer(AgentProtocolVersion)},
+        {"request_id", JsonValue::string(requestId)},
+    }));
 }
 
-std::string resultResponse(const std::string &requestId, const std::string &result)
+std::string resultResponse(const std::string& requestId, JsonValue result)
 {
-    return "{\"protocol\":1,\"request_id\":\"" + jsonEscape(requestId)
-           + "\",\"ok\":true,\"result\":" + result + "}";
+    return serializeJson(JsonValue::object({
+        {"ok", JsonValue::boolean(true)},
+        {"protocol", JsonValue::integer(AgentProtocolVersion)},
+        {"request_id", JsonValue::string(requestId)},
+        {"result", std::move(result)},
+    }));
+}
+
+std::string jobIdText(std::uint64_t jobId)
+{
+    return "job-" + std::to_string(jobId);
+}
+
+bool parseJobId(const std::string& value, std::uint64_t& jobId)
+{
+    constexpr char Prefix[] = "job-";
+    if (value.size() <= sizeof(Prefix) - 1 || value.compare(0, sizeof(Prefix) - 1, Prefix) != 0) {
+        return false;
+    }
+    std::uint64_t parsed = 0;
+    for (std::size_t index = sizeof(Prefix) - 1; index < value.size(); ++index) {
+        const unsigned char character = static_cast<unsigned char>(value[index]);
+        if (character < '0' || character > '9') {
+            return false;
+        }
+        const auto digit = static_cast<std::uint64_t>(character - '0');
+        if (parsed > (std::numeric_limits<std::uint64_t>::max() - digit) / 10U) {
+            return false;
+        }
+        parsed = parsed * 10U + digit;
+    }
+    if (parsed == 0) {
+        return false;
+    }
+    jobId = parsed;
+    return true;
+}
+
+JsonValue boardTestSnapshotValue(const BoardTestJobSnapshot& snapshot)
+{
+    const bool terminal = snapshot.state == BoardTestJobState::succeeded ||
+                          snapshot.state == BoardTestJobState::failed ||
+                          snapshot.state == BoardTestJobState::cancelled ||
+                          snapshot.state == BoardTestJobState::timed_out;
+    JsonValue::Object result{
+        {"capability_id", JsonValue::string(snapshot.capabilityId)},
+        {"capability_version", JsonValue::integer(snapshot.capabilityVersion)},
+        {"job_id", JsonValue::string(jobIdText(snapshot.jobId))},
+        {"state", JsonValue::string(boardTestJobStateName(snapshot.state))},
+    };
+    if (terminal) {
+        const std::string completion = snapshot.state == BoardTestJobState::succeeded ? "completed"
+                                       : snapshot.state == BoardTestJobState::cancelled ? "cancelled"
+                                       : snapshot.state == BoardTestJobState::timed_out ? "timed_out"
+                                                                                       : "error";
+        JsonValue provider = JsonValue::null();
+        if (!snapshot.result.provider.kind.empty() && !snapshot.result.provider.id.empty() &&
+            snapshot.result.provider.version > 0) {
+            provider = JsonValue::object({
+                {"id", JsonValue::string(snapshot.result.provider.id)},
+                {"kind", JsonValue::string(snapshot.result.provider.kind)},
+                {"version", JsonValue::integer(snapshot.result.provider.version)},
+            });
+        }
+        JsonValue observations = JsonValue::null();
+        if (!snapshot.result.observationSchema.empty()) {
+            observations = JsonValue::object({
+                {"data", snapshot.result.observations},
+                {"schema", JsonValue::string(snapshot.result.observationSchema)},
+            });
+        }
+        result["result"] = JsonValue::object({
+            {"completion", JsonValue::string(completion)},
+            {"exit_code", JsonValue::integer(snapshot.result.exitCode)},
+            {"log", JsonValue::string(snapshot.result.log)},
+            {"observations", std::move(observations)},
+            {"provider", std::move(provider)},
+            {"provider_claim",
+             snapshot.result.providerClaim ? JsonValue::string(*snapshot.result.providerClaim)
+                                           : JsonValue::null()},
+            {"summary", JsonValue::string(snapshot.result.summary)},
+        });
+    } else {
+        result["result"] = JsonValue::null();
+    }
+    return JsonValue::object(std::move(result));
 }
 
 } // namespace
+
+AgentService::AgentService()
+    : AgentService(
+          [](const BoardTestRunRequest& request, const std::atomic_bool& cancelRequested) {
+              return runBoardCapability(request, cancelRequested);
+          },
+          [] { return availableBoardCapabilities(); })
+{
+}
+
+AgentService::AgentService(BoardTestJobManager::RunFunction boardTestRunner,
+                           CapabilityListFunction capabilityList)
+    : boardTestJobs_(std::move(boardTestRunner)), capabilityList_(std::move(capabilityList))
+{
+}
 
 AgentService::~AgentService()
 {
     stop();
 }
 
-std::string AgentService::handleRequest(const std::string &request)
+std::string AgentService::handleRequest(const std::string& request)
 {
-    const std::string requestId = stringField(request, "request_id");
-    const std::string method = stringField(request, "method");
-    if (requestId.empty() || method.empty() || !objectField(request, "params")) {
-        return errorResponse(requestId, "invalid_request",
-                             "request_id, method and params object are required");
+    JsonLimits limits;
+    limits.max_input_bytes = 1024U * 1024U;
+    limits.max_depth = 16;
+    limits.max_string_bytes = 64U * 1024U;
+    limits.max_array_items = 256;
+    limits.max_object_members = 256;
+    JsonValue root;
+    JsonError parseError;
+    if (!parseJson(request, root, parseError, limits) || !root.isObject()) {
+        return errorResponse({}, "invalid_request", "request must be valid bounded JSON object");
+    }
+    std::string requestId;
+    std::string method;
+    const JsonValue* params = member(root, "params");
+    if (!stringMember(root, "request_id", requestId) || requestId.empty() ||
+        requestId.size() > 128 || !stringMember(root, "method", method) || method.empty() ||
+        method.size() > 64 || !params || !params->isObject() ||
+        !hasOnlyMembers(root, {"protocol", "request_id", "method", "params"})) {
+        return errorResponse(
+            requestId, "invalid_request", "request_id, method and params object are required");
     }
     int protocol = 0;
-    const auto protocolStatus = intField(request, "protocol", protocol);
-    if (protocolStatus != IntFieldStatus::Valid) {
+    if (!intMember(root, "protocol", protocol)) {
         return errorResponse(requestId, "invalid_request", "protocol must be an integer");
     }
     if (protocol != AgentProtocolVersion) {
-        return errorResponse(requestId, "unsupported_protocol",
-                             "only protocol version 1 is supported");
+        return errorResponse(
+            requestId, "unsupported_protocol", "only protocol version 1 is supported");
     }
     if (method == "session.hello") {
+        if (!params->objectItems().empty()) {
+            return errorResponse(requestId, "invalid_params", "session.hello takes no parameters");
+        }
         return resultResponse(requestId,
-            std::string("{\"agent\":\"testtools-agent\",\"agent_version\":\"")
-            + AgentVersion + "\","
-            "\"protocol_min\":1,\"protocol_max\":1,\"platform\":\""
-            + platformName() + "\"}");
+                              JsonValue::object({
+                                  {"agent", JsonValue::string("testtools-agent")},
+                                  {"agent_version", JsonValue::string(AgentVersion)},
+                                  {"platform", JsonValue::string(platformName())},
+                                  {"protocol_max", JsonValue::integer(AgentProtocolVersion)},
+                                  {"protocol_min", JsonValue::integer(AgentProtocolVersion)},
+                              }));
     }
     if (method == "capability.list") {
-        return resultResponse(requestId,
-            "{\"capabilities\":["
-            "{\"id\":\"system.info\",\"name\":\"System information\",\"version\":1,"
-            "\"risk\":\"read_only\",\"supports_cancel\":false},"
-            "{\"id\":\"serial.stream\",\"name\":\"Managed serial stream\",\"version\":1,"
-            "\"risk\":\"device_io\",\"supports_cancel\":true}]}");
+        if (!params->objectItems().empty()) {
+            return errorResponse(
+                requestId, "invalid_params", "capability.list takes no parameters");
+        }
+        JsonValue::Array capabilities{
+            JsonValue::object({
+                {"id", JsonValue::string("system.info")},
+                {"name", JsonValue::string("System information")},
+                {"risks", JsonValue::array({JsonValue::string("read_only")})},
+                {"supports_cancel", JsonValue::boolean(false)},
+                {"version", JsonValue::integer(1)},
+            }),
+            JsonValue::object({
+                {"id", JsonValue::string("serial.stream")},
+                {"name", JsonValue::string("Managed serial stream")},
+                {"risks", JsonValue::array({JsonValue::string("device_io")})},
+                {"supports_cancel", JsonValue::boolean(true)},
+                {"version", JsonValue::integer(1)},
+            }),
+        };
+        {
+            for (const auto& definition : validatedCapabilities(capabilityList_)) {
+                JsonValue::Array risks;
+                JsonValue::Array resources;
+                for (const auto& risk : definition.risks)
+                    risks.emplace_back(risk);
+                for (const auto& resource : definition.resources)
+                    resources.emplace_back(resource);
+                capabilities.push_back(JsonValue::object({
+                    {"default_timeout_ms", JsonValue::integer(definition.defaultTimeoutMs)},
+                    {"id", JsonValue::string(definition.id)},
+                    {"name", JsonValue::string(definition.name)},
+                    {"observation_schema", JsonValue::string(definition.observationSchema)},
+                    {"provider",
+                     JsonValue::object({
+                         {"id", JsonValue::string(definition.provider.id)},
+                         {"kind", JsonValue::string(definition.provider.kind)},
+                         {"version", JsonValue::integer(definition.provider.version)},
+                     })},
+                    {"recovery", JsonValue::string(definition.recovery)},
+                    {"resources", JsonValue::array(std::move(resources))},
+                    {"risks", JsonValue::array(std::move(risks))},
+                    {"supports_cancel", JsonValue::boolean(definition.supportsCancel)},
+                    {"version", JsonValue::integer(definition.version)},
+                }));
+            }
+        }
+        return resultResponse(
+            requestId,
+            JsonValue::object({{"capabilities", JsonValue::array(std::move(capabilities))}}));
     }
     if (method == "system.info") {
-        return resultResponse(requestId, systemInfoJson());
+        if (!params->objectItems().empty()) {
+            return errorResponse(requestId, "invalid_params", "system.info takes no parameters");
+        }
+        return resultResponse(requestId, systemInfoValue());
+    }
+    if (method == "job.start") {
+        return boardTestStartResponse(requestId, *params);
+    }
+    if (method == "job.status") {
+        return boardTestStatusResponse(requestId, *params);
+    }
+    if (method == "job.cancel") {
+        return boardTestCancelResponse(requestId, *params);
     }
     if (method == "serial.list") {
+        if (!params->objectItems().empty()) {
+            return errorResponse(requestId, "invalid_params", "serial.list takes no parameters");
+        }
         return serialListResponse(requestId);
     }
     if (method == "serial.open") {
-        return serialOpenResponse(requestId, request);
+        return serialOpenResponse(requestId, *params);
     }
     if (method == "serial.close") {
-        return serialCloseResponse(requestId, request);
+        return serialCloseResponse(requestId, *params);
     }
     return errorResponse(requestId, "method_not_found", "method is not available");
 }
 
-std::string AgentService::serialListResponse(const std::string &requestId) const
+std::string AgentService::boardTestStartResponse(const std::string& requestId,
+                                                 const JsonValue& params)
 {
-    const auto endpoints = listSerialEndpoints();
-    std::ostringstream result;
-    result << "{\"endpoints\":[";
-    for (std::size_t index = 0; index < endpoints.size(); ++index) {
-        if (index > 0) {
-            result << ',';
-        }
-        const auto &endpoint = endpoints[index];
-        result << "{\"endpoint\":\"" << jsonEscape(endpoint.endpoint)
-               << "\",\"interface\":\"" << jsonEscape(endpoint.interfaceName)
-               << "\",\"occupied_by\":\"" << jsonEscape(endpoint.occupiedBy)
-               << "\",\"readable\":" << (endpoint.readable ? "true" : "false")
-               << ",\"writable\":" << (endpoint.writable ? "true" : "false") << '}';
+    std::string capabilityId;
+    if (!hasOnlyMembers(params, {"capability_id"}) ||
+        !stringMember(params, "capability_id", capabilityId) || !validIdentifier(capabilityId)) {
+        return errorResponse(requestId, "invalid_params", "capability_id is invalid");
     }
-    result << "]}";
-    return resultResponse(requestId, result.str());
+    std::optional<BoardCapabilityDefinition> selected;
+    {
+        for (const auto& definition : validatedCapabilities(capabilityList_)) {
+            if (definition.id == capabilityId) {
+                selected = definition;
+                break;
+            }
+        }
+    }
+    if (!selected) {
+        return errorResponse(
+            requestId, "capability_unavailable", "the requested capability is unavailable");
+    }
+    const auto snapshot = boardTestJobs_.start({capabilityId, selected->version});
+    if (!snapshot) {
+        return errorResponse(
+            requestId, "resource_busy", "another board test job is already active");
+    }
+    return resultResponse(requestId, boardTestSnapshotValue(*snapshot));
 }
 
-std::string AgentService::serialOpenResponse(const std::string &requestId,
-                                             const std::string &request)
+std::string AgentService::boardTestStatusResponse(const std::string& requestId,
+                                                  const JsonValue& params) const
+{
+    std::string jobIdTextValue;
+    std::uint64_t jobId = 0;
+    if (!hasOnlyMembers(params, {"job_id"}) || !stringMember(params, "job_id", jobIdTextValue) ||
+        !parseJobId(jobIdTextValue, jobId)) {
+        return errorResponse(requestId, "invalid_params", "job_id must use the job-N form");
+    }
+    const auto snapshot = boardTestJobs_.snapshot(jobId);
+    if (!snapshot) {
+        return errorResponse(requestId, "job_not_found", "board test job does not exist");
+    }
+    return resultResponse(requestId, boardTestSnapshotValue(*snapshot));
+}
+
+std::string AgentService::boardTestCancelResponse(const std::string& requestId,
+                                                  const JsonValue& params)
+{
+    std::string jobIdTextValue;
+    std::uint64_t jobId = 0;
+    if (!hasOnlyMembers(params, {"job_id"}) || !stringMember(params, "job_id", jobIdTextValue) ||
+        !parseJobId(jobIdTextValue, jobId)) {
+        return errorResponse(requestId, "invalid_params", "job_id must use the job-N form");
+    }
+    const auto snapshot = boardTestJobs_.cancel(jobId);
+    if (!snapshot) {
+        return errorResponse(requestId, "job_not_active", "board test job is not active");
+    }
+    return resultResponse(requestId, boardTestSnapshotValue(*snapshot));
+}
+
+std::string AgentService::serialListResponse(const std::string& requestId) const
+{
+    const auto endpoints = listSerialEndpoints();
+    JsonValue::Array values;
+    values.reserve(endpoints.size());
+    for (const auto& endpoint : endpoints) {
+        values.push_back(JsonValue::object({
+            {"endpoint", JsonValue::string(endpoint.endpoint)},
+            {"interface", JsonValue::string(endpoint.interfaceName)},
+            {"occupied_by", JsonValue::string(endpoint.occupiedBy)},
+            {"readable", JsonValue::boolean(endpoint.readable)},
+            {"writable", JsonValue::boolean(endpoint.writable)},
+        }));
+    }
+    return resultResponse(requestId,
+                          JsonValue::object({{"endpoints", JsonValue::array(std::move(values))}}));
+}
+
+std::string AgentService::serialOpenResponse(const std::string& requestId, const JsonValue& params)
 {
     serialdemo::SerialConfig config;
-    config.endpoint = stringField(request, "endpoint");
+    if (!hasOnlyMembers(
+            params,
+            {"endpoint", "baud_rate", "data_bits", "stop_bits", "parity", "flow_control"}) ||
+        !stringMember(params, "endpoint", config.endpoint)) {
+        return errorResponse(requestId, "invalid_params", "serial parameters are invalid");
+    }
     int stopBits = 1;
     if (config.endpoint.empty()) {
         return errorResponse(requestId, "invalid_params", "endpoint is required");
     }
-    if (!optionalIntField(request, "baud_rate", 115200, config.baudRate)
-        || !optionalIntField(request, "data_bits", 8, config.dataBits)
-        || !optionalIntField(request, "stop_bits", 1, stopBits)) {
-        return errorResponse(requestId, "invalid_params",
-                             "baud_rate, data_bits and stop_bits must be integers");
+    if (!optionalIntMember(params, "baud_rate", 115200, config.baudRate) ||
+        !optionalIntMember(params, "data_bits", 8, config.dataBits) ||
+        !optionalIntMember(params, "stop_bits", 1, stopBits)) {
+        return errorResponse(
+            requestId, "invalid_params", "baud_rate, data_bits and stop_bits must be integers");
     }
-    if (config.baudRate <= 0 || config.dataBits < 5 || config.dataBits > 8
-        || (stopBits != 1 && stopBits != 2)) {
-        return errorResponse(requestId, "invalid_params",
-                             "serial framing parameters are out of range");
+    if (config.baudRate <= 0 || config.dataBits < 5 || config.dataBits > 8 ||
+        (stopBits != 1 && stopBits != 2)) {
+        return errorResponse(
+            requestId, "invalid_params", "serial framing parameters are out of range");
     }
-    const std::string parity = stringField(request, "parity");
+    std::string parity;
+    if (member(params, "parity") && !stringMember(params, "parity", parity)) {
+        return errorResponse(requestId, "invalid_params", "parity must be a string");
+    }
     if (!parity.empty() && parity != "none" && parity != "odd" && parity != "even") {
         return errorResponse(requestId, "invalid_params", "unsupported parity value");
     }
-    config.parity = parity == "odd" ? serialdemo::Parity::Odd
-                    : parity == "even" ? serialdemo::Parity::Even : serialdemo::Parity::None;
-    config.stopBits = stopBits == 2
-                        ? serialdemo::StopBits::Two : serialdemo::StopBits::One;
-    const std::string flow = stringField(request, "flow_control");
+    config.parity = parity == "odd"    ? serialdemo::Parity::Odd
+                    : parity == "even" ? serialdemo::Parity::Even
+                                       : serialdemo::Parity::None;
+    config.stopBits = stopBits == 2 ? serialdemo::StopBits::Two : serialdemo::StopBits::One;
+    std::string flow;
+    if (member(params, "flow_control") && !stringMember(params, "flow_control", flow)) {
+        return errorResponse(requestId, "invalid_params", "flow_control must be a string");
+    }
     if (!flow.empty() && flow != "none" && flow != "hardware" && flow != "software") {
         return errorResponse(requestId, "invalid_params", "unsupported flow_control value");
     }
-    config.flowControl = flow == "hardware" ? serialdemo::FlowControl::Hardware
+    config.flowControl = flow == "hardware"   ? serialdemo::FlowControl::Hardware
                          : flow == "software" ? serialdemo::FlowControl::Software
-                                               : serialdemo::FlowControl::None;
+                                              : serialdemo::FlowControl::None;
 
     std::lock_guard<std::mutex> lock(serialMutex_);
     if (serialBridge_.isRunning()) {
-        return errorResponse(requestId, "resource_busy",
-                             "another serial session is already active");
+        return errorResponse(
+            requestId, "resource_busy", "another serial session is already active");
     }
     std::uint16_t port = 0;
     std::string sessionId;
     int effectiveBaudRate = 0;
     bool baudRateApplied = false;
     std::string error;
-    if (!serialBridge_.start(config, port, sessionId, effectiveBaudRate,
-                             baudRateApplied, error)) {
+    if (!serialBridge_.start(config, port, sessionId, effectiveBaudRate, baudRateApplied, error)) {
         return errorResponse(requestId, "serial_open_failed", error);
     }
     activeSerialSessionId_ = sessionId;
     return resultResponse(requestId,
-        "{\"session_id\":\"" + jsonEscape(sessionId)
-        + "\",\"stream_port\":" + std::to_string(port)
-        + ",\"endpoint\":\"" + jsonEscape(config.endpoint)
-        + "\",\"baud_rate_requested\":" + std::to_string(config.baudRate)
-        + ",\"baud_rate_effective\":" + std::to_string(effectiveBaudRate)
-        + ",\"baud_rate_applied\":" + (baudRateApplied ? "true" : "false") + "}");
+                          JsonValue::object({
+                              {"baud_rate_applied", JsonValue::boolean(baudRateApplied)},
+                              {"baud_rate_effective", JsonValue::integer(effectiveBaudRate)},
+                              {"baud_rate_requested", JsonValue::integer(config.baudRate)},
+                              {"endpoint", JsonValue::string(config.endpoint)},
+                              {"session_id", JsonValue::string(sessionId)},
+                              {"stream_port", JsonValue::integer(port)},
+                          }));
 }
 
-std::string AgentService::serialCloseResponse(const std::string &requestId,
-                                              const std::string &request)
+std::string AgentService::serialCloseResponse(const std::string& requestId, const JsonValue& params)
 {
     std::lock_guard<std::mutex> lock(serialMutex_);
-    const std::string sessionId = stringField(request, "session_id");
+    std::string sessionId;
+    if (!hasOnlyMembers(params, {"session_id"}) || !stringMember(params, "session_id", sessionId)) {
+        return errorResponse(requestId, "invalid_params", "session_id must be a string");
+    }
     if (activeSerialSessionId_.empty() || sessionId != activeSerialSessionId_) {
-        return errorResponse(requestId, "session_not_found",
-                             "serial session_id is missing or no longer active");
+        return errorResponse(
+            requestId, "session_not_found", "serial session_id is missing or no longer active");
     }
     serialBridge_.stop();
     activeSerialSessionId_.clear();
-    return resultResponse(requestId, "{\"closed\":true}");
+    return resultResponse(requestId, JsonValue::object({{"closed", JsonValue::boolean(true)}}));
 }
 
 void AgentService::stop()
 {
+    boardTestJobs_.stop();
     std::lock_guard<std::mutex> lock(serialMutex_);
     serialBridge_.stop();
     activeSerialSessionId_.clear();

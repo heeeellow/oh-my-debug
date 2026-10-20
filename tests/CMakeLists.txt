@@ -10,10 +10,14 @@ add_executable(testtools-core-tests
     core_application_tests.cpp
     ${TESTTOOLS_ROOT}/src/application/agent/agent_target.cpp
     ${TESTTOOLS_ROOT}/src/application/agent/agent_bundle.cpp
+    ${TESTTOOLS_ROOT}/src/application/agent/board_profile.cpp
+    ${TESTTOOLS_ROOT}/src/application/agent/board_test_job_client.cpp
     ${TESTTOOLS_ROOT}/src/application/serial/serial_session.cpp
+    ${TESTTOOLS_ROOT}/src/application/serial/at_command_library.cpp
     ${TESTTOOLS_ROOT}/src/application/serial/serial_workspace_state.cpp
     ${TESTTOOLS_ROOT}/src/application/support/background_task_group.cpp
     ${TESTTOOLS_ROOT}/src/core/protocol/agent_protocol.cpp
+    ${TESTTOOLS_ROOT}/src/core/protocol/json_value.cpp
     ${TESTTOOLS_ROOT}/src/core/serial/async_serial_sender.cpp
     ${TESTTOOLS_ROOT}/src/core/serial/codec.cpp
     ${TESTTOOLS_ROOT}/src/core/serial/serial_test_engine.cpp

@@ -257,6 +257,13 @@ SerialSessionSnapshot SerialSession::snapshot() const
     return result;
 }
 
+void SerialSession::resetCounters()
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    receivedBytes_ = 0;
+    sentBytes_ = 0;
+}
+
 std::uint64_t SerialSession::generation() const
 {
     std::lock_guard<std::mutex> lock(mutex_);

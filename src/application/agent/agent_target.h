@@ -16,6 +16,8 @@ struct AgentTarget {
 
 std::optional<AgentArchitecture> parseAndroidAgentAbi(std::string_view value);
 std::optional<AgentArchitecture> parseLinuxAgentMachine(std::string_view value);
+std::optional<std::string> parseGlibcVersion(std::string_view value);
+bool glibcVersionAtLeast(std::string_view value, int requiredMajor, int requiredMinor);
 std::string agentPlatformName(AgentPlatform platform);
 std::string agentArchitectureName(const AgentTarget& target);
 } // namespace testtools
