@@ -37,6 +37,7 @@
       <ClCompile Include="src\application\serial\at_command_library.cpp"><Filter>应用层\串口</Filter></ClCompile>
       <ClCompile Include="src\application\serial\serial_transport_service.cpp"><Filter>应用层\串口</Filter></ClCompile>
     <ClCompile Include="src\application\serial\serial_workspace_state.cpp"><Filter>应用层\串口</Filter></ClCompile>
+    <ClCompile Include="src\application\serial\serial_terminal.cpp"><Filter>应用层\串口</Filter></ClCompile>
     <ClCompile Include="src\application\support\background_task_group.cpp"><Filter>应用层\通用</Filter></ClCompile>
     <ClCompile Include="src\adapters\adb\adb_transport.cpp"><Filter>适配器\ADB</Filter></ClCompile>
     <ClCompile Include="src\adapters\adb\process_runner.cpp"><Filter>适配器\ADB</Filter></ClCompile>
@@ -78,6 +79,7 @@
       <ClInclude Include="src\application\serial\at_command_library.h"><Filter>应用层\串口</Filter></ClInclude>
       <ClInclude Include="src\application\serial\serial_transport_service.h"><Filter>应用层\串口</Filter></ClInclude>
     <ClInclude Include="src\application\serial\serial_workspace_state.h"><Filter>应用层\串口</Filter></ClInclude>
+    <ClInclude Include="src\application\serial\serial_terminal.h"><Filter>应用层\串口</Filter></ClInclude>
     <ClInclude Include="src\application\support\background_task_group.h"><Filter>应用层\通用</Filter></ClInclude>
     <ClInclude Include="src\adapters\adb\adb_transport.h"><Filter>适配器\ADB</Filter></ClInclude>
     <ClInclude Include="src\adapters\adb\process_runner.h"><Filter>适配器\ADB</Filter></ClInclude>

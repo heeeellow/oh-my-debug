@@ -44,7 +44,8 @@ itas109::FlowControl toLibraryFlowControl(FlowControl value)
 CSerialPortTransport::CSerialPortTransport()
 {
     serialPort_.connectReadEvent(this);
-    serialPort_.setReadIntervalTimeout(10);
+    // Deliver each RX event immediately; terminal echoes must not wait for an idle timeout.
+    serialPort_.setReadIntervalTimeout(0);
 }
 
 CSerialPortTransport::~CSerialPortTransport()
@@ -74,14 +75,16 @@ void CSerialPortTransport::open(const SerialConfig &config)
                      toLibraryStopBits(config.stopBits),
                      toLibraryFlowControl(config.flowControl),
                      65536);
-    serialPort_.setReadIntervalTimeout(10);
+    serialPort_.setReadIntervalTimeout(0);
     serialPort_.setMinByteReadNotify(1);
     serialPort_.setByteReadBufferFullNotify(49152);
 
     if (!serialPort_.open()) {
         open_.store(false);
-        publishStatus(TransportState::Error,
-                      "打开本地串口失败: " + std::string(serialPort_.getLastErrorMsg()));
+        const auto reason = serialPort_.getLastError() == itas109::ErrorAccessDenied
+            ? std::string("拒绝访问，端口可能被其他程序占用或权限不足。请先断开其他终端中的此串口后重试。")
+            : std::string(serialPort_.getLastErrorMsg());
+        publishStatus(TransportState::Error, "无法打开本地串口 " + config.endpoint + "：" + reason);
         return;
     }
 

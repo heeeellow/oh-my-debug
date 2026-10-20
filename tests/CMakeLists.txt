@@ -15,6 +15,7 @@ add_executable(testtools-core-tests
     ${TESTTOOLS_ROOT}/src/application/serial/serial_session.cpp
     ${TESTTOOLS_ROOT}/src/application/serial/at_command_library.cpp
     ${TESTTOOLS_ROOT}/src/application/serial/serial_workspace_state.cpp
+    ${TESTTOOLS_ROOT}/src/application/serial/serial_terminal.cpp
     ${TESTTOOLS_ROOT}/src/application/support/background_task_group.cpp
     ${TESTTOOLS_ROOT}/src/core/protocol/agent_protocol.cpp
     ${TESTTOOLS_ROOT}/src/core/protocol/json_value.cpp

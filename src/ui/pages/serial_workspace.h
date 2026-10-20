@@ -2,6 +2,7 @@
 
 #include "application/serial/at_command_library.h"
 #include "application/serial/serial_session.h"
+#include "application/serial/serial_terminal.h"
 #include "application/serial/serial_workspace_state.h"
 #include "application/support/background_task_group.h"
 #include "core/serial/serial_test_engine.h"
@@ -17,6 +18,7 @@
 #include <vector>
 
 class QCheckBox;
+class QAction;
 class QComboBox;
 class QEvent;
 class QFrame;
@@ -24,6 +26,7 @@ class QGroupBox;
 class QHBoxLayout;
 class QLabel;
 class QLineEdit;
+class QKeyEvent;
 class QPlainTextEdit;
 class QPushButton;
 class QSplitter;
@@ -105,9 +108,11 @@ class SerialWorkspace final : public QWidget {
         QPushButton* autoSendButton = nullptr;
         QLabel* statusLabel = nullptr;
         QLabel* counterLabel = nullptr;
+        QLabel* receiveTitle = nullptr;
         QLabel* sendShortcutHint = nullptr;
         QPushButton* toggleAtBarButton = nullptr;
         QWidget* manualSendArea = nullptr;
+        QWidget* composerFrame = nullptr;
         QWidget* atCommandArea = nullptr;
         QComboBox* atCommandCombo = nullptr;
         QPushButton* fillAtCommandButton = nullptr;
@@ -140,7 +145,7 @@ class SerialWorkspace final : public QWidget {
     bool canSwitchWorkspaceMode(WorkspaceMode mode);
     void applyWorkspaceMode();
     void refreshAgentPorts();
-    void applyPorts(int index);
+    void applyPorts(int index, bool preserveEditedEndpoint = true);
     void applyPreferencesToUi();
     void savePreferences();
     void connectChannel(int index);
@@ -184,6 +189,14 @@ class SerialWorkspace final : public QWidget {
     void updateCounter(int index);
     void resetChannelCounters(int index);
     void saveChannelLog(int index);
+    void buildTerminalOptions(QHBoxLayout* header);
+    bool handleTerminalKey(QKeyEvent* event);
+    void focusTerminal();
+    void resumeTerminalInput();
+    void updateTerminalCursor(bool follow);
+    void renderTerminal(bool fullRedraw = false);
+    void scheduleTerminalRender();
+    serialdemo::LineEnding terminalLineEnding() const;
     void runBidirectionalTest();
     void updateBidirectionalResult(bool timedOut = false);
     void showStressDialog();
@@ -208,7 +221,12 @@ class SerialWorkspace final : public QWidget {
     QSplitter* channelSplitter_ = nullptr;
     QTimer* scheduleTimer_ = nullptr;
 
-    std::array<QPushButton*, 2> modeButtons_{};
+    std::array<QPushButton*, 3> modeButtons_{};
+    QPushButton* terminalOptionsButton_ = nullptr;
+    std::array<QAction*, 3> terminalEndingActions_{};
+    std::array<QAction*, 2> terminalBackspaceActions_{};
+    QTimer* terminalRenderTimer_ = nullptr;
+    testtools::SerialTerminalBuffer terminalBuffer_;
     std::array<ChannelUi, 2> channels_;
     serialdemo::AdbDevice currentAdbDevice_;
     std::vector<serialdemo::PortInfo> localPorts_;

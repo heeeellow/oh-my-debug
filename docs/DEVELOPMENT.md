@@ -218,7 +218,7 @@ RK PCBA 的 `echo_*` 程序仍由对应 SDK/rootfs 所有，不复制进通用 A
   5 秒，验证数据通道不会立即 EOF；不发送任何字节。
 - `--adb-serial-smoke` 仅保留用于复现旧固件 ADB 设备节点转发问题，不是产品串口路径。
 - `--ui-snapshot <png>`：保存启动页快照；用 `--ui-page serial|device` 选择串口或设备信息页，
-  用 `--ui-size 1366x768` 指定逻辑窗口尺寸。串口页可加 `--ui-serial-mode single|dual`。
+  用 `--ui-size 1366x768` 指定逻辑窗口尺寸。串口页可加 `--ui-serial-mode single|dual|terminal`。
 - UI 快照：检查主要分辨率和 DPI 下的裁切、重叠、文字清晰度、状态层级和主动作。
 - 实机验证：串口连接、收发、双向验证和异常断开。
 - Agent 阶段：协议单元测试、真实板端部署、能力枚举、稳定保持，再进行已知安全指令的收发测试。
@@ -246,6 +246,9 @@ ctest --test-dir build/tests/host -C Release --output-on-failure
 - ADB 终端的验收范围见 [`features/ADB_TERMINAL.md`](features/ADB_TERMINAL.md)；
   启动冒烟使用独立假设备程序核对参数与回退，不以此代替真实交互式 Shell 验证。
 - UI、构建和主机检查不能代替真实串口收发、热插拔或压力验证；只在对应能力变化时安排相关验证。
+- 串口终端解析与输入契约见 [串口终端](features/SERIAL_TERMINAL.md)，主机检查覆盖跨批次 UTF-8/ANSI、
+  行覆盖与擦除、纯光标序列刷新、限额、键码和终端偏好往返。Qt 假串口验证焦点、视图和字节映射，
+  实机单独验证 U-Boot/Linux 的历史、补全和中断；这些交互状态由板端拥有。
 
 ## 6. 新增功能
 

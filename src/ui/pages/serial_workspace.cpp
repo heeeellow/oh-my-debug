@@ -13,6 +13,10 @@
 #include <QtCore/QStandardPaths>
 #include <QtCore/QTimer>
 #include <QtGui/QKeyEvent>
+#include <QtGui/QInputMethodEvent>
+#include <QtGui/QClipboard>
+#include <QtGui/QPainter>
+#include <QtGui/QActionGroup>
 #include <QtGui/QTextBlock>
 #include <QtGui/QTextCursor>
 #include <QtGui/QTextCharFormat>
@@ -53,6 +57,51 @@ using namespace serialdemo;
 
 namespace {
 
+class ReceiveConsole final : public QPlainTextEdit {
+public:
+    explicit ReceiveConsole(QWidget* parent) : QPlainTextEdit(parent), cursorBlink_(this)
+    {
+        cursorBlink_.setInterval(std::max(250, QApplication::cursorFlashTime() / 2));
+        connect(&cursorBlink_, &QTimer::timeout, this, [this] {
+            if (property("terminalInput").toBool()) { cursorOn_ = !cursorOn_; viewport()->update(); }
+        });
+    }
+    void setTerminalCursor(const QTextCursor& cursor) { terminalCursor_ = cursor; cursorOn_ = true; viewport()->update(); }
+    QRect terminalCursorRect() const { return terminalCursor_.isNull() ? cursorRect() : cursorRect(terminalCursor_); }
+    std::function<void(bool)> scrollFollowChanged;
+protected:
+    void paintEvent(QPaintEvent* event) override
+    {
+        QPlainTextEdit::paintEvent(event);
+        if (property("terminalInput").toBool() && hasFocus() && cursorOn_) {
+            QPainter painter(viewport());
+            auto caret = terminalCursorRect();
+            caret.setWidth(2);
+            painter.fillRect(caret, QColor(QStringLiteral("#706963")));
+        }
+    }
+    void focusInEvent(QFocusEvent* event) override
+    {
+        QPlainTextEdit::focusInEvent(event); cursorOn_ = true;
+        if (QApplication::cursorFlashTime() > 0) cursorBlink_.start();
+        viewport()->update();
+    }
+    void focusOutEvent(QFocusEvent* event) override
+    {
+        cursorBlink_.stop(); QPlainTextEdit::focusOutEvent(event); viewport()->update();
+    }
+    void wheelEvent(QWheelEvent* event) override
+    {
+        QPlainTextEdit::wheelEvent(event);
+        if (property("terminalInput").toBool() && scrollFollowChanged)
+            scrollFollowChanged(verticalScrollBar()->value() >= verticalScrollBar()->maximum());
+    }
+private:
+    QTextCursor terminalCursor_;
+    QTimer cursorBlink_;
+    bool cursorOn_ = true;
+};
+
 QString fromUtf8(const std::string &text)
 {
     return QString::fromUtf8(text.data(), static_cast<qsizetype>(text.size()));
@@ -67,6 +116,15 @@ std::string toUtf8(const QString &text)
 QString channelName(int index)
 {
     return index == 0 ? QStringLiteral("端点 A") : QStringLiteral("端点 B");
+}
+
+QString selectedEndpoint(const QComboBox* combo)
+{
+    // An edited endpoint must not inherit the previous item's hidden data.
+    const auto text = combo->currentText().trimmed();
+    const auto data = combo->currentData().toString();
+    return !data.isEmpty() && combo->currentText() == combo->itemText(combo->currentIndex())
+        ? data : text;
 }
 
 LineEnding lineEndingFromIndex(int index)
@@ -194,6 +252,8 @@ bool SerialWorkspace::setWorkspaceModeForDiagnostics(const QString &modeName)
     WorkspaceMode mode = WorkspaceMode::Single;
     if (normalized == QStringLiteral("dual")) {
         mode = WorkspaceMode::Dual;
+    } else if (normalized == QStringLiteral("terminal")) {
+        mode = WorkspaceMode::Terminal;
     } else if (normalized != QStringLiteral("single")) {
         return false;
     }
@@ -242,9 +302,10 @@ void SerialWorkspace::buildUi()
 
     auto *modeGroup = new QButtonGroup(this);
     modeGroup->setExclusive(true);
-    const std::array<QString, 2> modeNames{
+    const std::array<QString, 3> modeNames{
         QStringLiteral("单串口调试"),
         QStringLiteral("双端调试"),
+        QStringLiteral("串口终端"),
     };
     for (int index = 0; index < static_cast<int>(modeButtons_.size()); ++index) {
         auto *button = new QPushButton(modeNames[static_cast<std::size_t>(index)], segmentedBar);
@@ -388,6 +449,14 @@ void SerialWorkspace::buildUi()
         channel.searchEdit->setFocus();
         channel.searchEdit->selectAll();
     });
+    auto* terminalFindShortcut = new QShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+F")), this);
+    terminalFindShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(terminalFindShortcut, &QShortcut::activated, this, [this] {
+        if (workspaceState_.mode() != WorkspaceMode::Terminal) return;
+        channels_[1].searchButton->setChecked(true);
+        channels_[1].searchEdit->setFocus();
+        channels_[1].searchEdit->selectAll();
+    });
     for (int step : {-1, 1}) {
         auto *nextShortcut = new QShortcut(QKeySequence(step > 0 ? "F3" : "Shift+F3"), this);
         nextShortcut->setContext(Qt::WidgetWithChildrenShortcut);
@@ -438,7 +507,7 @@ bool SerialWorkspace::canSwitchWorkspaceMode(WorkspaceMode mode)
     if (decision.blockedBy == testtools::SerialModeSwitchBlock::HiddenChannelActive) {
         QMessageBox::information(
             this, QStringLiteral("端点 A 仍在使用"),
-            QStringLiteral("单串口模式不会隐藏活动连接。请先断开端点 A，再切换到单串口调试。"));
+            QStringLiteral("请先断开端点 A，再切换到单串口调试或串口终端。"));
         return false;
     }
     return true;
@@ -450,17 +519,21 @@ void SerialWorkspace::applyWorkspaceMode()
         return;
     }
 
-    const bool single = workspaceState_.mode() == WorkspaceMode::Single;
+    const bool terminal = workspaceState_.mode() == WorkspaceMode::Terminal;
+    const bool single = workspaceState_.mode() != WorkspaceMode::Dual;
     modeButtons_[static_cast<std::size_t>(workspaceState_.mode())]->setChecked(true);
 
     channels_[0].group->setVisible(!single);
     channels_[1].group->setVisible(true);
     channels_[0].manualSendArea->setVisible(true);
     channels_[1].manualSendArea->setVisible(true);
+    channels_[1].composerFrame->setVisible(!terminal);
+    terminalOptionsButton_->setVisible(terminal);
     channels_[0].atCommandArea->hide();
     channels_[0].toggleAtBarButton->hide();
-    channels_[1].toggleAtBarButton->setVisible(single);
-    channels_[1].atCommandArea->setVisible(single && channels_[1].toggleAtBarButton->isChecked());
+    channels_[1].toggleAtBarButton->setVisible(single && !terminal);
+    channels_[1].manualSendArea->setVisible(!terminal);
+    channels_[1].atCommandArea->setVisible(single && !terminal && channels_[1].toggleAtBarButton->isChecked());
     channels_[0].sendShortcutHint->setVisible(single);
     channels_[1].sendShortcutHint->setVisible(single);
     for (auto &channel : channels_) {
@@ -505,6 +578,29 @@ void SerialWorkspace::applyWorkspaceMode()
     bidirectionalTestButton_->setVisible(!single);
     stressResultLabel_->setVisible(!single);
     stressTestButton_->setVisible(!single);
+    channels_[1].receiveTitle->setText(terminal ? QStringLiteral("终端") : QStringLiteral("收发记录"));
+    channels_[1].clearReceiveButton->setText(terminal ? QStringLiteral("清屏") : QStringLiteral("清空"));
+    if (!terminal) {
+        const QSignalBlocker blocker(channels_[1].autoScrollCheck);
+        channels_[1].autoScrollCheck->setChecked(preferences_.channels[1].autoScroll);
+    }
+    channels_[1].receiveHexCheck->setVisible(!terminal);
+    channels_[1].timestampCheck->setVisible(!terminal);
+    channels_[1].autoScrollCheck->setVisible(!terminal);
+    channels_[1].counterLabel->setVisible(!terminal);
+    channels_[1].resetCounterButton->setVisible(!terminal);
+    channels_[1].filterCheck->setVisible(!terminal);
+    channels_[1].searchButton->setToolTip(terminal ? QStringLiteral("搜索终端历史（Ctrl+Shift+F）")
+                                                : QStringLiteral("搜索与过滤当前日志（Ctrl+F）"));
+    channels_[1].receiveEdit->setLineWrapMode(terminal ? QPlainTextEdit::NoWrap : QPlainTextEdit::WidgetWidth);
+    channels_[1].receiveEdit->setAttribute(Qt::WA_InputMethodEnabled, terminal);
+    channels_[1].receiveEdit->setProperty("terminalInput", terminal);
+    channels_[1].receiveEdit->setPlaceholderText(terminal
+        ? QStringLiteral("连接后直接输入 · Enter 执行 · ↑↓ 历史 · Tab 补全 · Ctrl+C 中断")
+        : QStringLiteral("等待数据；发送成功显示 TX，接收数据显示 RX"));
+    channels_[1].clearReceiveButton->setToolTip(terminal
+        ? QStringLiteral("清空终端视图，保留字节计数与普通收发记录，不发送数据")
+        : QStringLiteral("清空当前收发记录，保留 RX / TX 字节计数"));
 
     if (single) {
         channels_[1].headerLayout->removeWidget(channels_[1].actionsContainer);
@@ -514,7 +610,9 @@ void SerialWorkspace::applyWorkspaceMode()
         channels_[1].headerWidget->hide();
         channels_[1].refreshPortsButton->setText(QStringLiteral("刷新串口"));
         channels_[1].portCombo->setMaximumWidth(320);
-        modeDescriptionLabel_->setText(QStringLiteral("连接一个串口，查看 TX / RX 并发送数据"));
+        modeDescriptionLabel_->setText(terminal
+            ? QStringLiteral("直接输入 · ↑↓ 历史 · Tab 补全 · Ctrl+C 中断")
+            : QStringLiteral("连接一个串口，查看 TX / RX 并发送数据"));
     } else {
         channelSplitter_->setSizes({600, 600});
         for (int index = 0; index < 2; ++index) {
@@ -533,6 +631,8 @@ void SerialWorkspace::applyWorkspaceMode()
     }
     updateCounter(0);
     updateCounter(1);
+    renderReceiveLog(1);
+    if (terminal) { resumeTerminalInput(); focusTerminal(); }
 }
 
 QWidget *SerialWorkspace::buildChannelPanel(int index)
@@ -696,6 +796,7 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     receiveHeader->setSpacing(8);
 
     auto *receiveTitle = new QLabel(QStringLiteral("收发记录"), terminalHeader);
+    channel.receiveTitle = receiveTitle;
     receiveTitle->setObjectName(QStringLiteral("sectionLabel"));
 
     channel.receiveHexCheck = new QCheckBox(QStringLiteral("HEX 显示"), terminalHeader);
@@ -740,6 +841,7 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     receiveHeader->addWidget(channel.resetCounterButton);
     receiveHeader->addWidget(channel.saveLogButton);
     receiveHeader->addWidget(channel.clearReceiveButton);
+    if (index == 1) buildTerminalOptions(receiveHeader);
     channel.counterRow = new QWidget(terminalHeader);
     channel.counterRowLayout = new QHBoxLayout(channel.counterRow);
     channel.counterRowLayout->setContentsMargins(12, 0, 10, 4);
@@ -797,6 +899,7 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
             current.searchEdit->clear();
             current.filterCheck->setChecked(false);
             renderReceiveLog(index);
+            if (index == 1) focusTerminal();
         }
     });
     connect(closeSearch, &QPushButton::clicked, this, [this, index] {
@@ -817,7 +920,7 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     connect(channel.previousMatchButton, &QPushButton::clicked, this, [this, index] { findLogMatch(index, -1); });
     connect(channel.nextMatchButton, &QPushButton::clicked, this, [this, index] { findLogMatch(index, 1); });
 
-    channel.receiveEdit = new QPlainTextEdit(terminalFrame);
+    channel.receiveEdit = new ReceiveConsole(terminalFrame);
     channel.receiveEdit->setObjectName(QStringLiteral("receiveConsole"));
     channel.receiveEdit->setReadOnly(true);
     // SerialLogBuffer already bounds retention; do not silently trim the view a second time.
@@ -825,6 +928,37 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     channel.receiveEdit->installEventFilter(this);
     channel.receiveEdit->setPlaceholderText(
         QStringLiteral("等待数据；发送成功显示 TX，接收数据显示 RX"));
+    if (index == 1) {
+        static_cast<ReceiveConsole*>(channel.receiveEdit)->scrollFollowChanged = [this](bool follow) {
+            channels_[1].autoScrollCheck->setChecked(follow);
+        };
+        connect(channel.receiveEdit->verticalScrollBar(), &QScrollBar::sliderMoved, this, [this](int position) {
+            if (workspaceState_.mode() == WorkspaceMode::Terminal)
+                channels_[1].autoScrollCheck->setChecked(position >= channels_[1].receiveEdit->verticalScrollBar()->maximum());
+        });
+        channel.receiveEdit->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(channel.receiveEdit, &QPlainTextEdit::customContextMenuRequested, this, [this](const QPoint& point) {
+            auto* edit = channels_[1].receiveEdit;
+            if (workspaceState_.mode() != WorkspaceMode::Terminal) {
+                auto* menu = edit->createStandardContextMenu();
+                menu->exec(edit->mapToGlobal(point)); delete menu; return;
+            }
+            QMenu menu(this);
+            auto* copy = menu.addAction(QStringLiteral("复制\tCtrl+Shift+C"), edit, &QPlainTextEdit::copy);
+            copy->setEnabled(edit->textCursor().hasSelection());
+            auto* paste = menu.addAction(QStringLiteral("粘贴\tCtrl+Shift+V"), this, [this] {
+                const auto bytes = testtools::terminalPasteBytes(toUtf8(QApplication::clipboard()->text()), terminalLineEnding());
+                if (!bytes.empty()) { resumeTerminalInput(); sendBytes(1, bytes); }
+            });
+            paste->setEnabled(channels_[1].session.isOpen());
+            menu.addSeparator();
+            auto* interrupt = menu.addAction(QStringLiteral("中断当前命令\tCtrl+C"), this, [this] {
+                resumeTerminalInput(); sendBytes(1, {0x03});
+            });
+            interrupt->setEnabled(channels_[1].session.isOpen());
+            menu.exec(edit->mapToGlobal(point)); focusTerminal();
+        });
+    }
     terminalLayout->addWidget(channel.receiveEdit, 1);
     layout->addWidget(terminalFrame, 1);
 
@@ -864,6 +998,7 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     sendAreaLayout->addWidget(channel.atCommandArea);
 
     auto *composerFrame = new QFrame(channel.manualSendArea);
+    channel.composerFrame = composerFrame;
     composerFrame->setObjectName(QStringLiteral("composerFrame"));
     auto *composerLayout = new QVBoxLayout(composerFrame);
     composerLayout->setContentsMargins(0, 0, 0, 0);
@@ -934,7 +1069,7 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     layout->addWidget(channel.manualSendArea);
 
     connect(channel.sourceCombo, &QComboBox::currentIndexChanged, this, [this, index] {
-        applyPorts(index);
+        applyPorts(index, false);
         updateRouteSummary();
         updateGlobalControls();
         savePreferences();
@@ -998,6 +1133,11 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
         saveChannelLog(index);
     });
     connect(channel.clearReceiveButton, &QPushButton::clicked, this, [this, index] {
+        if (index == 1 && workspaceState_.mode() == WorkspaceMode::Terminal) {
+            terminalBuffer_.clear();
+            renderTerminal(true);
+            return;
+        }
         channels_[index].logBuffer.clear();
         channels_[index].receiveEdit->clear();
         channels_[index].truncatedLabel->hide();
@@ -1043,8 +1183,197 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     return channel.group;
 }
 
+void SerialWorkspace::buildTerminalOptions(QHBoxLayout* header)
+{
+    auto& channel = channels_[1];
+    terminalOptionsButton_ = new QPushButton(QStringLiteral("终端选项…"), this);
+    terminalOptionsButton_->setObjectName(QStringLiteral("clearButton"));
+    auto* menu = new QMenu(terminalOptionsButton_);
+    auto* endings = menu->addMenu(QStringLiteral("回车格式"));
+    auto* endingGroup = new QActionGroup(endings);
+    const std::array<QString, 3> names{QStringLiteral("CR"), QStringLiteral("LF"), QStringLiteral("CRLF")};
+    const std::array<int, 3> values{2, 1, 3};
+    for (std::size_t i = 0; i < names.size(); ++i) {
+        auto* action = endings->addAction(names[i]);
+        action->setCheckable(true); action->setData(values[i]);
+        action->setChecked(values[i] == preferences_.terminalLineEnding);
+        endingGroup->addAction(action); terminalEndingActions_[i] = action;
+        connect(action, &QAction::triggered, this, [this, value = values[i]] {
+            preferences_.terminalLineEnding = value; savePreferences();
+        });
+    }
+    auto* backspace = menu->addMenu(QStringLiteral("退格键"));
+    auto* backspaceGroup = new QActionGroup(backspace);
+    for (std::size_t i = 0; i < 2; ++i) {
+        const int value = i == 0 ? 127 : 8;
+        auto* action = backspace->addAction(i == 0 ? QStringLiteral("DEL (7F)") : QStringLiteral("BS (08)"));
+        action->setCheckable(true); action->setData(value);
+        action->setChecked(value == preferences_.terminalBackspace);
+        backspaceGroup->addAction(action); terminalBackspaceActions_[i] = action;
+        connect(action, &QAction::triggered, this, [this, value] {
+            preferences_.terminalBackspace = value; savePreferences();
+        });
+    }
+    menu->addSeparator();
+    for (auto* check : {channel.timestampCheck, channel.autoScrollCheck}) {
+        auto* action = menu->addAction(check->text());
+        action->setCheckable(true); action->setChecked(check->isChecked());
+        connect(action, &QAction::toggled, check, &QCheckBox::setChecked);
+        connect(check, &QCheckBox::toggled, action, &QAction::setChecked);
+        connect(menu, &QMenu::aboutToShow, this, [check, action] {
+            const QSignalBlocker blocker(action); action->setChecked(check->isChecked());
+        });
+    }
+    menu->addAction(QStringLiteral("计数清零"), this, [this] { resetChannelCounters(1); });
+    menu->addSeparator();
+    menu->addAction(QStringLiteral("键盘说明…"), this, [this] {
+        QMessageBox::information(this, QStringLiteral("串口终端键盘"),
+            QStringLiteral("直接输入，Enter 执行；↑/↓ 历史、Tab 补全由设备处理。\n"
+                           "Ctrl+C：中断设备前台命令，例如停止 ping。\n"
+                           "Ctrl+Shift+C / V：复制 / 粘贴。\n"
+                           "Ctrl+Shift+F：搜索；Shift+PageUp / PageDown：回看输出。\n"
+                           "终端只显示设备回显；仅有内核日志不代表设备已开放交互式 Shell。"));
+    });
+    connect(menu, &QMenu::aboutToHide, this, [this] { QTimer::singleShot(0, this, &SerialWorkspace::focusTerminal); });
+    terminalOptionsButton_->setMenu(menu);
+    header->addWidget(terminalOptionsButton_);
+    terminalRenderTimer_ = new QTimer(this);
+    terminalRenderTimer_->setSingleShot(true);
+    terminalRenderTimer_->setInterval(16);
+    connect(terminalRenderTimer_, &QTimer::timeout, this, [this] {
+        if (workspaceState_.mode() == WorkspaceMode::Terminal) renderTerminal();
+    });
+    terminalOptionsButton_->hide();
+}
+
+LineEnding SerialWorkspace::terminalLineEnding() const
+{
+    return lineEndingFromIndex(preferences_.terminalLineEnding);
+}
+
+void SerialWorkspace::focusTerminal()
+{
+    if (workspaceState_.mode() == WorkspaceMode::Terminal && channels_[1].receiveEdit)
+        channels_[1].receiveEdit->setFocus(Qt::OtherFocusReason);
+}
+
+void SerialWorkspace::updateTerminalCursor(bool follow)
+{
+    auto* edit = channels_[1].receiveEdit;
+    const auto row = terminalBuffer_.cursorRow();
+    const auto& line = terminalBuffer_.lines()[row];
+    const auto block = edit->document()->findBlockByNumber(static_cast<int>(row));
+    if (!block.isValid()) return;
+    int offset = channels_[1].timestampCheck->isChecked() && !line.timestamp.empty()
+        ? static_cast<int>(fromUtf8(line.timestamp).size()) + 3 : 0;
+    for (std::size_t i = 0; i < std::min(terminalBuffer_.cursorColumn(), line.cells.size()); ++i)
+        offset += line.cells[i].character > 0xffff ? 2 : 1;
+    QTextCursor caret(block);
+    caret.setPosition(std::min(block.position() + offset, edit->document()->characterCount() - 1));
+    static_cast<ReceiveConsole*>(edit)->setTerminalCursor(caret);
+    if (follow && !edit->textCursor().hasSelection()) {
+        edit->setTextCursor(caret); edit->ensureCursorVisible();
+    }
+}
+
+void SerialWorkspace::resumeTerminalInput()
+{
+    auto& channel = channels_[1];
+    channel.searchButton->setChecked(false);
+    channel.autoScrollCheck->setChecked(true);
+    auto cursor = channel.receiveEdit->textCursor(); cursor.clearSelection();
+    channel.receiveEdit->setTextCursor(cursor);
+    renderTerminal();
+    updateTerminalCursor(true);
+}
+
+bool SerialWorkspace::handleTerminalKey(QKeyEvent* event)
+{
+    const auto key = event->key();
+    const auto modifiers = event->modifiers();
+    const bool control = modifiers.testFlag(Qt::ControlModifier);
+    const bool shift = modifiers.testFlag(Qt::ShiftModifier);
+    auto* edit = channels_[1].receiveEdit;
+    if ((control && shift && key == Qt::Key_F) || key == Qt::Key_F3) return false;
+    if (control && shift && key == Qt::Key_C) { edit->copy(); return true; }
+    if (shift && (key == Qt::Key_PageUp || key == Qt::Key_PageDown)) {
+        channels_[1].autoScrollCheck->setChecked(false);
+        auto* scroll = edit->verticalScrollBar();
+        scroll->setValue(scroll->value() + (key == Qt::Key_PageUp ? -1 : 1) * scroll->pageStep());
+        return true;
+    }
+    if ((control && shift && key == Qt::Key_V) || (shift && key == Qt::Key_Insert)) {
+        const auto bytes = testtools::terminalPasteBytes(toUtf8(QApplication::clipboard()->text()), terminalLineEnding());
+        if (!bytes.empty()) { resumeTerminalInput(); sendBytes(1, bytes); }
+        return true;
+    }
+    if (control && key >= Qt::Key_A && key <= Qt::Key_Z) {
+        resumeTerminalInput();
+        sendBytes(1, {static_cast<std::uint8_t>(key - Qt::Key_A + 1)});
+        return true;
+    }
+    using Key = testtools::TerminalKey;
+    ByteBuffer bytes;
+    switch (key) {
+    case Qt::Key_Return: case Qt::Key_Enter: bytes = testtools::terminalKeyBytes(Key::Enter, terminalLineEnding()); break;
+    case Qt::Key_Tab: bytes = testtools::terminalKeyBytes(Key::Tab, terminalLineEnding()); break;
+    case Qt::Key_Backspace: bytes = {static_cast<std::uint8_t>(preferences_.terminalBackspace)}; break;
+    case Qt::Key_Up: bytes = testtools::terminalKeyBytes(Key::Up, terminalLineEnding()); break;
+    case Qt::Key_Down: bytes = testtools::terminalKeyBytes(Key::Down, terminalLineEnding()); break;
+    case Qt::Key_Right: bytes = testtools::terminalKeyBytes(Key::Right, terminalLineEnding()); break;
+    case Qt::Key_Left: bytes = testtools::terminalKeyBytes(Key::Left, terminalLineEnding()); break;
+    case Qt::Key_Home: bytes = testtools::terminalKeyBytes(Key::Home, terminalLineEnding()); break;
+    case Qt::Key_End: bytes = testtools::terminalKeyBytes(Key::End, terminalLineEnding()); break;
+    case Qt::Key_Delete: bytes = testtools::terminalKeyBytes(Key::Delete, terminalLineEnding()); break;
+    case Qt::Key_PageUp: bytes = testtools::terminalKeyBytes(Key::PageUp, terminalLineEnding()); break;
+    case Qt::Key_PageDown: bytes = testtools::terminalKeyBytes(Key::PageDown, terminalLineEnding()); break;
+    case Qt::Key_Escape: bytes = testtools::terminalKeyBytes(Key::Escape, terminalLineEnding()); break;
+    default: {
+        if (control || modifiers.testFlag(Qt::MetaModifier)) return false;
+        auto text = toUtf8(event->text());
+        if (modifiers.testFlag(Qt::AltModifier) && !text.empty()) text.insert(text.begin(), '\x1b');
+        bytes.assign(text.begin(), text.end());
+        break;
+    }
+    }
+    if (bytes.empty()) return false;
+    resumeTerminalInput(); sendBytes(1, bytes);
+    return true;
+}
+
 bool SerialWorkspace::eventFilter(QObject* watched, QEvent* event)
 {
+    if (workspaceState_.mode() == WorkspaceMode::Terminal &&
+        watched == channels_[1].receiveEdit) {
+        if (event->type() == QEvent::ShortcutOverride) {
+            auto* key = static_cast<QKeyEvent*>(event);
+            if (!(key->modifiers().testFlag(Qt::ControlModifier) && key->modifiers().testFlag(Qt::ShiftModifier)
+                  && key->key() == Qt::Key_F) && key->key() != Qt::Key_F3) {
+                key->accept();
+                return true;
+            }
+        }
+        if (event->type() == QEvent::InputMethod) {
+            const auto text = toUtf8(static_cast<QInputMethodEvent*>(event)->commitString());
+            if (!text.empty()) { resumeTerminalInput(); sendBytes(1, {text.begin(), text.end()}); }
+            return true;
+        }
+        if (event->type() == QEvent::InputMethodQuery) {
+            auto* query = static_cast<QInputMethodQueryEvent*>(event);
+            query->setValue(Qt::ImEnabled, true);
+            query->setValue(Qt::ImCursorRectangle, static_cast<ReceiveConsole*>(channels_[1].receiveEdit)->terminalCursorRect());
+            query->setValue(Qt::ImFont, channels_[1].receiveEdit->font());
+            query->setValue(Qt::ImSurroundingText, QString{});
+            query->setValue(Qt::ImCursorPosition, 0);
+            query->setValue(Qt::ImAnchorPosition, 0);
+            return true;
+        }
+        if (event->type() == QEvent::KeyPress) {
+            auto* key = static_cast<QKeyEvent*>(event);
+            if (!(key->key() == Qt::Key_Escape && channels_[1].searchButton->isChecked())
+                && handleTerminalKey(key)) return true;
+        }
+    }
     if (event->type() == QEvent::KeyPress) {
         auto* keyEvent = static_cast<QKeyEvent*>(event);
         if (keyEvent->key() == Qt::Key_Escape) {
@@ -1165,14 +1494,15 @@ bool SerialWorkspace::hasActiveConnections() const
     return channelActive(0) || channelActive(1);
 }
 
-void SerialWorkspace::applyPorts(int index)
+void SerialWorkspace::applyPorts(int index, bool preserveEditedEndpoint)
 {
     auto& channel = channels_[index];
     if (!channel.portCombo || channelActive(index)) {
         return;
     }
-    const QString previousData = channel.portCombo->currentData().toString();
+    const QString previousData = selectedEndpoint(channel.portCombo);
     const QString previousText = channel.portCombo->currentText();
+    const bool edited = previousText != channel.portCombo->itemText(channel.portCombo->currentIndex());
     const QString preferredEndpoint =
         fromUtf8(preferences_.channels[static_cast<std::size_t>(index)].endpoint);
     const QSignalBlocker blocker(channel.portCombo);
@@ -1211,6 +1541,8 @@ void SerialWorkspace::applyPorts(int index)
     }
     if (restoreIndex >= 0) {
         channel.portCombo->setCurrentIndex(restoreIndex);
+    } else if (preserveEditedEndpoint && edited && !previousText.trimmed().isEmpty()) {
+        channel.portCombo->setEditText(previousText);
     } else if (!preferredEndpoint.isEmpty() && channel.portCombo->count() == 0) {
         channel.portCombo->setEditText(preferredEndpoint);
     }
@@ -1280,9 +1612,7 @@ void SerialWorkspace::savePreferences()
         const auto& channel = channels_[static_cast<std::size_t>(index)];
         auto& pref = preferences_.channels[static_cast<std::size_t>(index)];
         pref.useAgent = channelUsesAgent(index);
-        const QString portData = channel.portCombo->currentData().toString();
-        const QString endpointText =
-            portData.isEmpty() ? channel.portCombo->currentText().trimmed() : portData;
+        const QString endpointText = selectedEndpoint(channel.portCombo);
         if (!endpointText.isEmpty()) {
             pref.endpoint = toUtf8(endpointText);
         }
@@ -1297,7 +1627,8 @@ void SerialWorkspace::savePreferences()
         pref.lineEnding = channel.lineEndingCombo->currentIndex();
         pref.receiveHex = channel.receiveHexCheck->isChecked();
         pref.timestamp = channel.timestampCheck->isChecked();
-        pref.autoScroll = channel.autoScrollCheck->isChecked();
+        if (workspaceState_.mode() != WorkspaceMode::Terminal || index != 1)
+            pref.autoScroll = channel.autoScrollCheck->isChecked();
         pref.sendHex = channel.sendHexCheck->isChecked();
     }
     if (channels_[1].toggleAtBarButton) {
@@ -1311,8 +1642,7 @@ SerialConfig SerialWorkspace::channelConfig(int index) const
 {
     const auto &channel = channels_[index];
     SerialConfig config;
-    const QString portData = channel.portCombo->currentData().toString();
-    config.endpoint = toUtf8(portData.isEmpty() ? channel.portCombo->currentText() : portData);
+    config.endpoint = toUtf8(selectedEndpoint(channel.portCombo));
     config.adbSerial = currentAdbDevice_.serial;
     config.allowAdbRoot = false;
     config.baudRate = channel.baudCombo->currentText().toInt();
@@ -1393,6 +1723,7 @@ void SerialWorkspace::connectChannel(int index)
     setChannelControlsEnabled(index, false);
     setChannelStatus(index, QStringLiteral("正在连接..."));
     updateGlobalControls();
+    if (index == 1) terminalBuffer_.resetStream();
     channel.session.open(std::move(transport), channelConfig(index));
     updateGlobalControls();
 }
@@ -1440,6 +1771,7 @@ void SerialWorkspace::attachSessionCallbacks(int index)
                         }
                     }
                     guard->updateGlobalControls();
+                    if (connected && index == 1) guard->focusTerminal();
                 },
                 Qt::QueuedConnection);
         });
@@ -1523,6 +1855,10 @@ void SerialWorkspace::disconnectChannel(int index, bool showClosedStatus)
             },
             Qt::QueuedConnection);
     });
+    if (index == 1) {
+        terminalBuffer_.resetStream();
+        if (workspaceState_.mode() == WorkspaceMode::Terminal) scheduleTerminalRender();
+    }
     updateGlobalControls();
 }
 
@@ -1694,8 +2030,7 @@ void SerialWorkspace::updateRouteSummary()
         const auto& channel = channels_[index];
         const QString type =
             channelUsesAgent(index) ? QStringLiteral("设备") : QStringLiteral("Windows");
-        const QString data = channel.portCombo->currentData().toString();
-        const QString port = data.isEmpty() ? channel.portCombo->currentText() : data;
+        const QString port = selectedEndpoint(channel.portCombo);
         return QStringLiteral("%1 · %2").arg(type,
                                              port.isEmpty() ? QStringLiteral("未选择") : port);
     };
@@ -1704,7 +2039,7 @@ void SerialWorkspace::updateRouteSummary()
 
 QString SerialWorkspace::channelDisplayName(int index) const
 {
-    if (workspaceState_.mode() == WorkspaceMode::Single && index == 1) {
+    if (workspaceState_.mode() != WorkspaceMode::Dual && index == 1) {
         return QStringLiteral("当前串口");
     }
     return channelName(index);
@@ -2278,6 +2613,9 @@ void SerialWorkspace::appendReceived(int index, const ByteBuffer& data)
         data,
         now.toMSecsSinceEpoch(),
         toUtf8(now.toString(QStringLiteral("HH:mm:ss.zzz"))));
+    if (index == 1) {
+        terminalBuffer_.push(data, toUtf8(now.toString(QStringLiteral("HH:mm:ss.zzz"))));
+    }
     applyLogAppendResult(index, result);
     updateCounter(index);
 }
@@ -2350,8 +2688,75 @@ void SerialWorkspace::findLogMatch(int index, int step)
     updateSearchMatches(index);
 }
 
+void SerialWorkspace::scheduleTerminalRender()
+{
+    if (!terminalRenderTimer_->isActive()) terminalRenderTimer_->start();
+}
+
+void SerialWorkspace::renderTerminal(bool fullRedraw)
+{
+    auto& channel = channels_[1];
+    auto* edit = channel.receiveEdit;
+    auto* scroll = edit->verticalScrollBar();
+    const int previousScroll = scroll->value();
+    const bool follow = channel.autoScrollCheck->isChecked() && !edit->textCursor().hasSelection();
+    const bool timestamps = channel.timestampCheck->isChecked();
+    const auto& lines = terminalBuffer_.lines();
+    channel.filteredRenderPending = false;
+    channel.truncatedLabel->setVisible(terminalBuffer_.truncated());
+    if (!fullRedraw && !terminalBuffer_.dirty()) return;
+
+    // Search highlights history without removing rows from the terminal screen.
+    std::size_t first = terminalBuffer_.firstChangedLine();
+    const bool rebuild = fullRedraw || terminalBuffer_.needsFullRedraw();
+    QTextCursor cursor(edit->document());
+    cursor.beginEditBlock();
+    const auto block = edit->document()->findBlockByNumber(static_cast<int>(first));
+    if (rebuild || !block.isValid()) {
+        cursor.select(QTextCursor::Document);
+        cursor.removeSelectedText();
+        first = 0;
+    } else {
+        cursor.setPosition(block.position());
+        cursor.movePosition(QTextCursor::End, QTextCursor::KeepAnchor);
+        cursor.removeSelectedText();
+    }
+    bool insertedLine = false;
+    for (std::size_t i = first; i < lines.size(); ++i) {
+        const auto& line = lines[i];
+        const auto prefix = timestamps && !line.timestamp.empty() ? "[" + line.timestamp + "] " : std::string{};
+        if (insertedLine) cursor.insertText(QStringLiteral("\n"), QTextCharFormat{});
+        insertedLine = true;
+        if (!prefix.empty()) cursor.insertText(fromUtf8(prefix), logEntryFormat(testtools::SerialLogDirection::Notice));
+        for (std::size_t cell = 0; cell < line.cells.size();) {
+            const auto& style = line.cells[cell].style;
+            std::u32string text;
+            do { text += line.cells[cell++].character; }
+            while (cell < line.cells.size() && line.cells[cell].style == style);
+            QTextCharFormat format;
+            auto foreground = style.foreground == testtools::TerminalStyle::DefaultColor ? 0x302f2du : style.foreground;
+            auto background = style.background == testtools::TerminalStyle::DefaultColor ? 0xfaf9f7u : style.background;
+            if (style.inverse) std::swap(foreground, background);
+            format.setForeground(QColor::fromRgb(foreground));
+            format.setBackground(QColor::fromRgb(background));
+            format.setFontWeight(style.bold ? QFont::Bold : QFont::Normal);
+            format.setFontUnderline(style.underline);
+            cursor.insertText(QString::fromUcs4(text.data(), static_cast<qsizetype>(text.size())), format);
+        }
+    }
+    cursor.endEditBlock();
+    terminalBuffer_.acknowledgeChanges();
+    updateTerminalCursor(follow);
+    updateSearchMatches(1);
+    scroll->setValue(follow ? scroll->maximum() : std::min(previousScroll, scroll->maximum()));
+}
+
 void SerialWorkspace::renderReceiveLog(int index)
 {
+    if (index == 1 && workspaceState_.mode() == WorkspaceMode::Terminal) {
+        renderTerminal(true);
+        return;
+    }
     auto& channel = channels_[index];
     auto* edit = channel.receiveEdit;
     if (!edit) {
@@ -2390,6 +2795,10 @@ void SerialWorkspace::renderReceiveLog(int index)
 void SerialWorkspace::applyLogAppendResult(int index,
                                            const testtools::SerialLogAppendResult& result)
 {
+    if (index == 1 && workspaceState_.mode() == WorkspaceMode::Terminal) {
+        scheduleTerminalRender();
+        return;
+    }
     auto &current = channels_[index];
     current.truncatedLabel->setVisible(current.logBuffer.truncated());
     scheduleSearchRefresh(index);
@@ -2437,7 +2846,7 @@ void SerialWorkspace::updateCounter(int index)
         return;
     }
     const auto snapshot = channel.session.snapshot();
-    if (workspaceState_.mode() == WorkspaceMode::Single) {
+    if (workspaceState_.mode() != WorkspaceMode::Dual) {
         channel.counterLabel->setText(
             QStringLiteral("RX: %1 B  |  TX: %2 B").arg(snapshot.receivedBytes).arg(snapshot.sentBytes));
     } else {

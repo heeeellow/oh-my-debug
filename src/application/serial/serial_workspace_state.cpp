@@ -85,7 +85,7 @@ std::string formatUtf8Text(const serialdemo::ByteBuffer &bytes,
                 } else {
                     out.push_back('\n');
                 }
-            } else if (b == '\t' || b >= 0x20) {
+            } else if (b == '\t' || (b >= 0x20 && b != 0x7f)) {
                 out.push_back(static_cast<char>(b));
             } else {
                 appendEscapedByte(out, b);
@@ -129,8 +129,8 @@ SerialModeSwitchDecision SerialWorkspaceState::evaluateModeSwitch(
         || activity.reliabilityTestRunning) {
         return {false, SerialModeSwitchBlock::TaskRunning};
     }
-    // Channel A is hidden in single-port mode. Never hide a live connection.
-    if (requested == SerialWorkspaceMode::Single && activity.channelActive[0]) {
+    // Single-port and terminal views both hide A. Never hide a live connection.
+    if (requested != SerialWorkspaceMode::Dual && activity.channelActive[0]) {
         return {false, SerialModeSwitchBlock::HiddenChannelActive};
     }
     return {};

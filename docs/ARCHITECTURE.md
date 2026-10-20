@@ -65,6 +65,7 @@ TestTools 从串口助手演进为设备中心的调试与测试工作台。架�
 | Host adapters | `src/adapters/{adb,agent,serial}/` | ADB、进程、Agent TCP 和 Windows COM 的具体实现；不保存产品用例状态 |
 | Board Agent | `src/agent/agent_service.*`、`serial_bridge.*`、`board_capability.*`、`board_test_job.*`、`native_board_observations.*` | 固定能力、参数校验和板端资源访问 |
 | 快捷指令与偏好 | `src/application/serial/at_command_library.*` | 无 Qt 的快捷指令（AT/HEX）与串口界面偏好值对象、边界校验和版本化本地 JSON；界面只负责编辑、选择与发送意图 |
+| 串口终端 | `src/application/serial/serial_terminal.*` | 无 Qt 的 UTF-8/ANSI 解析、有界显示单元、键码/粘贴编码；复用串口会话，不产生隐式终端应答，命令历史由板端拥有 |
 
 `DeviceSession`、`FeatureRegistry`、`JobCoordinator` 等名称只表示规划中的职责，
 不是已经存在的类。新增代码应优先按职责补齐，不为匹配文档一次性创建空类型。
@@ -101,6 +102,11 @@ Application 层负责跨接口用例和生命周期，目标职责包括：
 该层只能依赖 core 接口和值对象，不包含 Qt 或具体 ADB 命令。
 当前板级任务客户端只拥有请求构造、响应校验和快照值对象；轮询定时器与界面文案仍属于
 Presentation，不能为了复用一个页面提前增加通用任务控制器层级。
+
+串口终端与普通监视器共用通道 B；RX 在 GUI 线程核对代次后送入两个不同显示模型。终端按连续流解析，
+Qt 只把变化的行映射为样式并处理焦点、选区和输入法；按键输入通过 `SerialSession` 的异步队列。
+终端只显示板端回显，不增加第二个串口连接或在普通日志上按时间推断帧边界。行为见
+[串口终端契约](features/SERIAL_TERMINAL.md)。
 
 ### 4.3 Core
 

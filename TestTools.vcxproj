@@ -136,6 +136,7 @@
       <ClCompile Include="src\application\serial\at_command_library.cpp" />
       <ClCompile Include="src\application\serial\serial_transport_service.cpp" />
     <ClCompile Include="src\application\serial\serial_workspace_state.cpp" />
+    <ClCompile Include="src\application\serial\serial_terminal.cpp" />
     <ClCompile Include="src\application\support\background_task_group.cpp" />
     <ClCompile Include="src\adapters\adb\adb_transport.cpp" />
     <ClCompile Include="src\adapters\adb\process_runner.cpp" />
@@ -177,6 +178,7 @@
       <ClInclude Include="src\application\serial\at_command_library.h" />
       <ClInclude Include="src\application\serial\serial_transport_service.h" />
     <ClInclude Include="src\application\serial\serial_workspace_state.h" />
+    <ClInclude Include="src\application\serial\serial_terminal.h" />
     <ClInclude Include="src\application\support\background_task_group.h" />
     <ClInclude Include="src\adapters\adb\adb_transport.h" />
     <ClInclude Include="src\adapters\adb\process_runner.h" />

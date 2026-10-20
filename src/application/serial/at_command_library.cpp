@@ -444,8 +444,16 @@ bool SerialPreferencesStore::load(const std::filesystem::path& path,
     }
 
     SerialWorkspacePreferences candidate;
+    if (const auto* ending = root.find("terminal_line_ending"); ending && ending->isInt64()
+        && ending->int64Value() >= 1 && ending->int64Value() <= 3) {
+        candidate.terminalLineEnding = static_cast<int>(ending->int64Value());
+    }
     if (shortcutVisible) {
         candidate.shortcutBarVisible = shortcutVisible->boolValue();
+    }
+    if (const auto* key = root.find("terminal_backspace"); key && key->isInt64()
+        && (key->int64Value() == 8 || key->int64Value() == 127)) {
+        candidate.terminalBackspace = static_cast<int>(key->int64Value());
     }
     for (std::size_t i = 0; i < 2; ++i) {
         const auto& item = channelsValue->arrayItems()[i];
@@ -510,6 +518,8 @@ bool SerialPreferencesStore::save(const std::filesystem::path& path,
         {"channels", JsonValue::array(std::move(channelsArray))},
         {"schema_version", JsonValue::integer(1)},
         {"shortcut_bar_visible", JsonValue::boolean(preferences.shortcutBarVisible)},
+        {"terminal_line_ending", JsonValue::integer(preferences.terminalLineEnding)},
+        {"terminal_backspace", JsonValue::integer(preferences.terminalBackspace)},
     });
     JsonLimits limits;
     limits.max_output_bytes = MaximumFileBytes;

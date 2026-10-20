@@ -67,6 +67,8 @@ struct SerialChannelPreferences {
 struct SerialWorkspacePreferences {
     std::array<SerialChannelPreferences, 2> channels{};
     bool shortcutBarVisible = true;
+    int terminalLineEnding = 2;
+    int terminalBackspace = 127;
     SerialWorkspacePreferences();
 };
 

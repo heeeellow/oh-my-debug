@@ -3,6 +3,7 @@
 #include "application/agent/board_profile.h"
 #include "application/agent/board_test_job_client.h"
 #include "application/serial/serial_session.h"
+#include "application/serial/serial_terminal.h"
 #include "application/serial/at_command_library.h"
 #include "application/serial/serial_workspace_state.h"
 #include "application/support/background_task_group.h"
@@ -733,6 +734,81 @@ int main()
         return fail("workspace hidden channel guard");
     }
 
+    if (workspace.evaluateModeSwitch(testtools::SerialWorkspaceMode::Terminal, activity).allowed) {
+        return fail("terminal cannot hide active channel A");
+    }
+    activity.channelActive = {false, true};
+    if (!workspace.applyMode(testtools::SerialWorkspaceMode::Terminal, activity)
+        || !workspace.applyMode(testtools::SerialWorkspaceMode::Single, activity)) {
+        return fail("single/terminal share active channel B");
+    }
+    activity.scheduledSendRunning[1] = true;
+    if (workspace.evaluateModeSwitch(testtools::SerialWorkspaceMode::Terminal, activity).allowed) {
+        return fail("terminal switch preserves running scheduled send guard");
+    }
+
+    testtools::SerialTerminalBuffer terminal;
+    const auto pushTerminal = [&terminal](const std::string& text) {
+        terminal.push({text.begin(), text.end()}, "10:00:01.001");
+    };
+    pushTerminal("Boot \x1b[3");
+    pushTerminal("2mOK\x1b[0m\r\n\xE4\xB8");
+    pushTerminal("\xAD\r\nprogress 10%\rprogress 20%\x1b[K");
+    if (terminal.plainText() != "Boot OK\n中\nprogress 20%"
+        || terminal.lines()[0].cells[5].style.foreground == testtools::TerminalStyle::DefaultColor
+        || terminal.lines()[0].cells[4].style.foreground != testtools::TerminalStyle::DefaultColor
+        || terminal.plainText(true, "中") != "[10:00:01.001] 中") {
+        return fail("terminal streaming UTF-8, split ANSI, line overwrite and filtered timestamps");
+    }
+    terminal.clear();
+    pushTerminal("abc\b \bZ\x1b[2DXY\x1b]0;hidden title\a!\x1b[?2004h");
+    if (terminal.plainText() != "aXY!") return fail("terminal backspace, cursor and ignored OSC/private CSI");
+    terminal.clear();
+    pushTerminal("alpha\r\tZ");
+    if (terminal.plainText() != "alpha   Z") return fail("terminal tab advances without erasing existing text");
+    terminal.clear();
+    pushTerminal("\x1b[38;2;10;20;30mX\x1b[48;5;196mY\x1b[0mZ");
+    if (terminal.lines()[0].cells[0].style.foreground != 0x0a141e
+        || terminal.lines()[0].cells[1].style.background != 0xff0000
+        || !(terminal.lines()[0].cells[2].style == testtools::TerminalStyle{})) {
+        return fail("terminal RGB/indexed color and reset");
+    }
+    terminal.clear();
+    pushTerminal("\xE4\xB8"); terminal.resetStream(); pushTerminal("OK");
+    if (terminal.plainText() != "\xEF\xBF\xBD\nOK") return fail("terminal reconnect ends incomplete UTF-8 stream");
+    terminal.clear();
+    pushTerminal("abcdef\x1b[3G\x1b[KXY\nline2\x1b[1;1HZ");
+    if (terminal.plainText() != "ZbXY\nline2") return fail("terminal erase line and cursor addressing");
+    pushTerminal("\x1b[2J\x1b[Hroot# ");
+    if (terminal.plainText() != "root# " || terminal.lines().size() != 1) {
+        return fail("terminal clear screen leaves a visible prompt");
+    }
+    testtools::SerialTerminalBuffer bytewiseTerminal;
+    const std::string bytewiseStream = "\x1b[32mBoot 中\x1b[0m\r\nroot# ";
+    for (const unsigned char byte : bytewiseStream) bytewiseTerminal.push({byte});
+    if (bytewiseTerminal.plainText() != "Boot 中\nroot# ") return fail("terminal bytewise stream parsing");
+    testtools::SerialTerminalBuffer boundedTerminal(3);
+    const std::string longOutput = "one\ntwo\nthree\nfour";
+    boundedTerminal.push({longOutput.begin(), longOutput.end()});
+    if (!boundedTerminal.truncated() || boundedTerminal.plainText() != "two\nthree\nfour") {
+        return fail("terminal bounded scrollback");
+    }
+    boundedTerminal.clear();
+    if (boundedTerminal.truncated() || !boundedTerminal.plainText().empty()) return fail("terminal clear resets truncation");
+    using TerminalKey = testtools::TerminalKey;
+    if (testtools::terminalKeyBytes(TerminalKey::Enter, serialdemo::LineEnding::Cr) != serialdemo::ByteBuffer{13}
+        || testtools::terminalKeyBytes(TerminalKey::Up, serialdemo::LineEnding::Cr) != serialdemo::ByteBuffer{27,'[','A'}
+        || testtools::terminalPasteBytes("a\r\nb\nc\rd", serialdemo::LineEnding::CrLf)
+            != serialdemo::ByteBuffer{'a',13,10,'b',13,10,'c',13,10,'d'}) {
+        return fail("terminal keys and pasted line endings");
+    }
+    terminal.clear(); pushTerminal("root# echo"); terminal.acknowledgeChanges();
+    pushTerminal("\x1b[2D");
+    if (!terminal.dirty() || terminal.cursorColumn() != 8 || terminal.plainText() != "root# echo")
+        return fail("terminal cursor-only movement must trigger screen update");
+    terminal.acknowledgeChanges(); pushTerminal("\b");
+    if (!terminal.dirty() || terminal.cursorColumn() != 7) return fail("terminal backspace updates cursor without text");
+
     testtools::SerialEndpointSelection localA{
         true, testtools::SerialEndpointKind::Local, "COM3", {}};
     auto localB = localA;
@@ -804,6 +880,8 @@ int main()
     }
     limitedLog.clear();
     if (limitedLog.truncated()) return fail("log clear resets truncation indicator");
+    limitedLog.appendTx({0x7f}, 1, "");
+    if (limitedLog.formatAll(false, false) != "TX  \\x7F\n") return fail("monitor escapes terminal DEL bytes");
 
     testtools::AtCommandLibrary atCommands;
     std::string atCommandError;
@@ -870,6 +948,8 @@ int main()
     }
 
     testtools::SerialWorkspacePreferences prefs;
+    prefs.terminalLineEnding = 1;
+    prefs.terminalBackspace = 8;
     prefs.shortcutBarVisible = false;
     prefs.channels[1].useAgent = true;
     prefs.channels[1].endpoint = "/dev/ttyUSB2";
@@ -887,7 +967,8 @@ int main()
     testtools::SerialWorkspacePreferences loadedPrefs;
     if (!testtools::SerialPreferencesStore::save(prefPath, prefs, prefError) ||
         !testtools::SerialPreferencesStore::load(prefPath, loadedPrefs, prefError) ||
-        loadedPrefs.shortcutBarVisible != false || !loadedPrefs.channels[1].useAgent ||
+        loadedPrefs.shortcutBarVisible != false || loadedPrefs.terminalLineEnding != 1
+        || loadedPrefs.terminalBackspace != 8 || !loadedPrefs.channels[1].useAgent ||
         loadedPrefs.channels[1].endpoint != "/dev/ttyUSB2" ||
         loadedPrefs.channels[1].baudRate != 921600 || !loadedPrefs.channels[1].receiveHex ||
         !loadedPrefs.channels[1].timestamp || loadedPrefs.channels[1].autoScroll ||

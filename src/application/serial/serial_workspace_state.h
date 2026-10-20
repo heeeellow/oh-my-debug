@@ -13,6 +13,7 @@ namespace testtools {
 enum class SerialWorkspaceMode {
     Single,
     Dual,
+    Terminal,
 };
 
 enum class SerialModeSwitchBlock {
