@@ -9,6 +9,7 @@ TestTools 是面向 Rockchip 板卡与通用硬件研发、测试和现场排障
 - [产品设计](docs/PRODUCT.md)：使用者、核心任务边界与首版范围。
 - [界面设计](docs/UI_DESIGN.md)：页面结构、文案、视觉规范与适配要求。
 - [串口调试契约](docs/features/SERIAL.md)：连接、收发、快捷指令、计划发送与可靠性压测规则。
+- [ADB 终端契约](docs/features/ADB_TERMINAL.md)：内置 ADB、当前设备 Shell 与系统终端回退规则。
 - [迭代路线图（ADR-0004）](docs/decisions/0004-serial-terminal-and-adb-integration.md)：Debug 串口终端、内置 ADB 打包与串口补强方案。
 
 ## 开发与架构入口

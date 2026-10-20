@@ -131,6 +131,7 @@
     <ClCompile Include="src\application\agent\board_test_job_client.cpp" />
     <ClCompile Include="src\application\agent\linux_agent_deployment.cpp" />
     <ClCompile Include="src\application\device\device_discovery.cpp" />
+    <ClCompile Include="src\application\device\adb_terminal_service.cpp" />
       <ClCompile Include="src\application\serial\serial_session.cpp" />
       <ClCompile Include="src\application\serial\at_command_library.cpp" />
       <ClCompile Include="src\application\serial\serial_transport_service.cpp" />
@@ -171,6 +172,7 @@
     <ClInclude Include="src\application\agent\board_test_job_client.h" />
     <ClInclude Include="src\application\agent\linux_agent_deployment.h" />
     <ClInclude Include="src\application\device\device_discovery.h" />
+    <ClInclude Include="src\application\device\adb_terminal_service.h" />
       <ClInclude Include="src\application\serial\serial_session.h" />
       <ClInclude Include="src\application\serial\at_command_library.h" />
       <ClInclude Include="src\application\serial\serial_transport_service.h" />
@@ -195,6 +197,16 @@
     <ClInclude Include="src\ui\theme.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ItemGroup>
+    <TestToolsPlatformTools Include="$(ProjectDir)third_party\platform-tools\*" />
+  </ItemGroup>
+  <Target Name="CopyTestToolsPlatformTools" AfterTargets="Build">
+    <Error Condition="!Exists('$(ProjectDir)third_party\platform-tools\adb.exe') OR !Exists('$(ProjectDir)third_party\platform-tools\AdbWinApi.dll') OR !Exists('$(ProjectDir)third_party\platform-tools\AdbWinUsbApi.dll')"
+           Text="Bundled ADB is incomplete. Restore third_party/platform-tools from the pinned upstream archive in docs/THIRD_PARTY.md." />
+    <MakeDir Directories="$(OutDir)platform-tools" />
+    <Copy SourceFiles="@(TestToolsPlatformTools)"
+          DestinationFolder="$(OutDir)platform-tools" SkipUnchangedFiles="true" />
+  </Target>
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">
     <Import Project="$(QtMsBuild)\qt.targets" />
   </ImportGroup>

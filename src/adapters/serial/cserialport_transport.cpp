@@ -65,6 +65,7 @@ std::vector<PortInfo> CSerialPortTransport::availablePorts()
 void CSerialPortTransport::open(const SerialConfig &config)
 {
     close();
+    std::lock_guard<std::mutex> lock(controlMutex_);
 
     serialPort_.init(config.endpoint.c_str(),
                      config.baudRate,
@@ -84,12 +85,14 @@ void CSerialPortTransport::open(const SerialConfig &config)
         return;
     }
 
+    hardwareFlow_.store(config.flowControl == FlowControl::Hardware);
     open_.store(true);
     publishStatus(TransportState::Connected, "本地串口已连接: " + config.endpoint);
 }
 
 void CSerialPortTransport::close()
 {
+    std::lock_guard<std::mutex> lock(controlMutex_);
     const bool wasOpen = open_.exchange(false);
     if (serialPort_.isOpen()) {
         serialPort_.close();
@@ -114,6 +117,29 @@ bool CSerialPortTransport::write(const ByteBuffer &data)
 bool CSerialPortTransport::isOpen() const
 {
     return open_.load();
+}
+
+bool CSerialPortTransport::supportsControlLine(SerialControlLine line) const
+{
+    return open_.load() && (line == SerialControlLine::Dtr || !hardwareFlow_.load());
+}
+
+bool CSerialPortTransport::setControlLine(SerialControlLine line, bool enabled, std::string &error)
+{
+    // Keep native control requests and handle closure mutually exclusive.
+    std::lock_guard<std::mutex> lock(controlMutex_);
+    if (!supportsControlLine(line)) {
+        error = "串口未连接或 RTS 正由硬件流控管理";
+        return false;
+    }
+    unsigned long nativeError = 0;
+    if (!serialPort_.setControlLineChecked(line == SerialControlLine::Dtr, enabled, nativeError)) {
+        error = nativeError == 170 ? "控制线由驱动握手管理，不能手动修改"
+                                  : "控制线设置失败，Windows 错误 " + std::to_string(nativeError);
+        return false;
+    }
+    error.clear();
+    return true;
 }
 
 void CSerialPortTransport::onReadEvent(const char *, unsigned int readBufferLen)

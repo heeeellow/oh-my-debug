@@ -15,6 +15,8 @@ enum class TransportState {
     Closed
 };
 
+enum class SerialControlLine { Dtr, Rts };
+
 class ISerialTransport {
 public:
     using DataCallback = std::function<void(const ByteBuffer &)>;
@@ -26,6 +28,12 @@ public:
     virtual void close() = 0;
     virtual bool write(const ByteBuffer &data) = 0;
     virtual bool isOpen() const = 0;
+    virtual bool supportsControlLine(SerialControlLine) const { return false; }
+    virtual bool setControlLine(SerialControlLine, bool, std::string &error)
+    {
+        error = "当前串口不支持手动控制 DTR/RTS";
+        return false;
+    }
 
     void setDataCallback(DataCallback callback)
     {

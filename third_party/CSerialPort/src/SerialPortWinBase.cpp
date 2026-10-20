@@ -495,6 +495,35 @@ void CSerialPortWinBase::setRts(bool set /*= true*/)
     }
 }
 
+bool CSerialPortWinBase::setControlLineChecked(bool dtr, bool enabled, unsigned long &nativeError)
+{
+    itas109::IScopedLock lock(m_mutex);
+    nativeError = ERROR_SUCCESS;
+    if (!isOpen()) {
+        nativeError = ERROR_INVALID_HANDLE;
+        return false;
+    }
+    DCB settings{};
+    settings.DCBlength = sizeof(settings);
+    if (!GetCommState(m_handle, &settings)) {
+        nativeError = GetLastError();
+        return false;
+    }
+    // Never take a control line away from driver-managed handshaking.
+    if ((dtr && settings.fDtrControl == DTR_CONTROL_HANDSHAKE) ||
+        (!dtr && (settings.fRtsControl == RTS_CONTROL_HANDSHAKE ||
+                  settings.fRtsControl == RTS_CONTROL_TOGGLE))) {
+        nativeError = ERROR_BUSY;
+        return false;
+    }
+    const DWORD operation = dtr ? (enabled ? SETDTR : CLRDTR) : (enabled ? SETRTS : CLRRTS);
+    if (!EscapeCommFunction(m_handle, operation)) {
+        nativeError = GetLastError();
+        return false;
+    }
+    return true;
+}
+
 void CSerialPortWinBase::beforeStopReadThread()
 {
     // 唤醒等待的线程，避免join()阻塞

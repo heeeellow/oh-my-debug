@@ -25,6 +25,7 @@ public:
     CommandResult runCommand(const std::string &serial,
                              const std::vector<std::string> &arguments,
                              std::chrono::milliseconds timeout = std::chrono::seconds(5)) const;
+    bool openShellTerminal(const std::string &serial, std::string &host, std::string &error) const;
 
     void open(const SerialConfig &config) override;
     void close() override;

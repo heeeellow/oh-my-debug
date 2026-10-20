@@ -2,7 +2,7 @@
 
 [返回当前状态](../STATUS.md) · [查看串口功能契约](../features/SERIAL.md)
 
-- 状态：已确认待实施
+- 状态：已确认，按小版本实施；当前进展见 [STATUS](../STATUS.md)
 - 日期：2026-10-20
 
 ## 1. 背景与定位收敛
@@ -31,8 +31,9 @@ TestTools 当前聚焦于做好一款轻量、顺手的 **Rockchip 开发板与�
 2. **顶栏「ADB 终端」快捷按钮与兜底策略**
    - 在主窗口顶部设备栏新增 **「ADB 终端」** 按钮（仅在已选中在线 ADB 设备时可点击）。
    - **双层唤起策略**：
-     1. 优先尝试拉起 Windows 原生终端 `wt.exe`（传入当前内置 `adb.exe -s <serial> shell`）；
-     2. 若系统未安装 `wt.exe` 或启动失败，自动回退拉起 `cmd.exe /k "" "<adb_path>" -s <serial> shell"`，确保在任意 Windows 10/11 环境下 100% 可用。
+     1. 优先尝试拉起 `wt.exe`，使用统一解析的 ADB 路径与当前设备执行 `adb -s <serial> shell`；
+     2. 若系统未安装 `wt.exe`、无法创建进程或启动器立即报错，自动回退新建 `cmd.exe` 窗口；保留窗口便于查看 Shell 退出信息。
+   - 本模块的行为、打包和验收以 [ADB 终端契约](../features/ADB_TERMINAL.md) 为准。
 
 ### 模块二：串口调试三项高频补强
 

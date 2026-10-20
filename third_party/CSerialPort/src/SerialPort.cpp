@@ -513,6 +513,12 @@ void itas109::CSerialPort::setRts(bool set /*= true*/)
     }
 }
 
+bool itas109::CSerialPort::setControlLineChecked(bool dtr, bool enabled, unsigned long &nativeError)
+{
+    nativeError = 50;
+    return p_serialPortBase && p_serialPortBase->setControlLineChecked(dtr, enabled, nativeError);
+}
+
 const char *itas109::CSerialPort::getVersion()
 {
     static char version[256];

@@ -49,6 +49,8 @@ class MainWindow final : public QMainWindow {
     QPushButton* addNavigationButton(const QString& text, int pageIndex);
 
     void refreshDevices();
+    void openAdbTerminal();
+    void updateAdbTerminalControls();
     void startDeviceScan(bool automatic);
     void deploySelectedAgent();
     void connectSelectedAgent(bool allowDeploy);
@@ -70,6 +72,7 @@ class MainWindow final : public QMainWindow {
     QLabel* agentStatusLabel_ = nullptr;
     QPushButton* agentActionButton_ = nullptr;
     QPushButton* refreshButton_ = nullptr;
+    QPushButton* adbTerminalButton_ = nullptr;
     QTimer* deviceRefreshTimer_ = nullptr;
     QStackedWidget* pages_ = nullptr;
     SerialWorkspace* serialWorkspace_ = nullptr;
@@ -91,12 +94,14 @@ class MainWindow final : public QMainWindow {
     std::vector<QPushButton*> navigationButtons_;
     testtools::BackgroundTaskGroup scanTasks_;
     testtools::BackgroundTaskGroup agentTasks_;
+    testtools::BackgroundTaskGroup terminalTasks_;
     QString agentSummary_ = QStringLiteral("未连接");
     QString lastDeviceScanSignature_;
     std::string agentAdbSerial_;
     std::uint16_t agentForwardPort_ = 0;
     std::uint64_t agentGeneration_ = 0;
     bool scanning_ = false;
+    bool terminalLaunching_ = false;
     bool agentConnecting_ = false;
     bool serialBusy_ = false;
     bool shuttingDown_ = false;

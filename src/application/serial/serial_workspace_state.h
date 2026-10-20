@@ -76,11 +76,9 @@ struct SerialLogEntry {
     std::int64_t timestampMs = 0;
     std::string timestampText;
     serialdemo::ByteBuffer bytes;
-    bool completeLine = true;
 };
 
 struct SerialLogAppendResult {
-    bool updatedLastEntry = false;
     std::size_t addedEntries = 0;
     bool trimmedOldest = false;
 };
@@ -88,8 +86,7 @@ struct SerialLogAppendResult {
 class SerialLogBuffer {
 public:
     explicit SerialLogBuffer(std::size_t maxEntries = 2000,
-                             std::size_t maxBytes = 512 * 1024,
-                             std::int64_t coalesceWindowMs = 250);
+                             std::size_t maxBytes = 512 * 1024);
 
     SerialLogAppendResult appendTx(const serialdemo::ByteBuffer &data,
                                    std::int64_t timestampMs,
@@ -105,12 +102,14 @@ public:
     bool empty() const noexcept;
     std::size_t size() const noexcept;
     std::size_t totalBytes() const noexcept;
+    bool truncated() const noexcept;
     const std::deque<SerialLogEntry> &entries() const noexcept;
 
     static std::string formatEntry(const SerialLogEntry &entry,
                                    bool hexDisplay,
                                    bool showTimestamp);
-    std::string formatAll(bool hexDisplay, bool showTimestamp) const;
+    std::string formatAll(bool hexDisplay, bool showTimestamp,
+                          const std::string &filter = {}) const;
 
 private:
     bool trimToLimits();
@@ -119,7 +118,7 @@ private:
     std::size_t totalBytes_ = 0;
     std::size_t maxEntries_ = 2000;
     std::size_t maxBytes_ = 512 * 1024;
-    std::int64_t coalesceWindowMs_ = 250;
+    bool truncated_ = false;
 };
 
 } // namespace testtools

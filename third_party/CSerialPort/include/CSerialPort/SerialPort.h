@@ -399,6 +399,8 @@ public:
      */
     void setRts(bool set = true);
 
+    bool setControlLineChecked(bool dtr, bool enabled, unsigned long &nativeError);
+
     /**
      * @brief Get the Version object 获取版本信息
      *

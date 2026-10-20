@@ -109,14 +109,20 @@ std::string resolveAdbProgram(const std::string &requested)
     }
 
 #ifdef _WIN32
-    // Prefer explicit configuration and common SDK locations before PATH so
-    // the GUI and command-line diagnostics use the same ADB executable.
+    // Discovery, deployment and external terminals all resolve ADB here.
     std::vector<std::filesystem::path> candidates;
     const auto adbPath = environmentVariable(L"ADB_PATH");
     if (!adbPath.empty()) {
         const std::filesystem::path configured(adbPath);
         candidates.push_back(configured);
         candidates.push_back(configured / L"adb.exe");
+    }
+    wchar_t moduleBuffer[32768] = {};
+    const DWORD moduleLength = GetModuleFileNameW(nullptr, moduleBuffer,
+                                                  static_cast<DWORD>(std::size(moduleBuffer)));
+    if (moduleLength > 0 && moduleLength < std::size(moduleBuffer)) {
+        const auto executableDirectory = std::filesystem::path(moduleBuffer).parent_path();
+        candidates.emplace_back(executableDirectory / L"platform-tools" / L"adb.exe");
     }
     for (const wchar_t *sdkName : {L"ANDROID_SDK_ROOT", L"ANDROID_HOME"}) {
         const auto sdk = environmentVariable(sdkName);
@@ -129,26 +135,10 @@ std::string resolveAdbProgram(const std::string &requested)
         candidates.emplace_back(std::filesystem::path(localAppData) / L"Android" / L"Sdk" /
                                 L"platform-tools" / L"adb.exe");
     }
-    const auto userProfile = environmentVariable(L"USERPROFILE");
-    if (!userProfile.empty()) {
-        candidates.emplace_back(std::filesystem::path(userProfile) / L"Desktop" / L"Debug" /
-                                L"platform-tools" / L"adb.exe");
-    }
-
-    wchar_t moduleBuffer[32768] = {};
-    const DWORD moduleLength = GetModuleFileNameW(nullptr, moduleBuffer,
-                                                  static_cast<DWORD>(std::size(moduleBuffer)));
-    if (moduleLength > 0 && moduleLength < std::size(moduleBuffer)) {
-        const auto executableDirectory = std::filesystem::path(moduleBuffer).parent_path();
-        candidates.emplace_back(executableDirectory / L"platform-tools" / L"adb.exe");
-        candidates.emplace_back(executableDirectory.parent_path() / L"platform-tools" / L"adb.exe");
-    }
-    candidates.emplace_back(std::filesystem::current_path() / L"platform-tools" / L"adb.exe");
-
     for (const auto &candidate : candidates) {
         std::error_code error;
         if (std::filesystem::is_regular_file(candidate, error)) {
-            return pathToUtf8(candidate);
+            return pathToUtf8(std::filesystem::absolute(candidate));
         }
     }
 
@@ -173,6 +163,13 @@ AdbTransport::AdbTransport(std::string adbProgram)
 AdbTransport::~AdbTransport()
 {
     close();
+}
+
+bool AdbTransport::openShellTerminal(const std::string &serial,
+                                     std::string &host, std::string &error) const
+{
+    // Bind the device once; later UI selection changes must not retarget this shell.
+    return ProcessRunner::openTerminal(adbProgram_, {"-s", serial, "shell"}, host, error);
 }
 
 CommandResult AdbTransport::runAdb(const std::string &serial,

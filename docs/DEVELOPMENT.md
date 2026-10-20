@@ -57,6 +57,8 @@ build/             所有生成物，不提交 Git
 Debug/Release 构建。工程会通过 Qt VS Tools 的 `windeployqt` 自动把 Qt 运行时和必要插件复制到
 `build/windows/x64/<Configuration>/`，该目录可直接启动 `TestTools.exe`；同时会复制存在的
 `agent-bundle/`。
+固定的 `third_party/platform-tools/` 也会复制到程序旁，包含 ADB、配套 DLL、版本与许可声明；
+构建不下载依赖。ADB 来源和升级规则见 [`THIRD_PARTY.md`](THIRD_PARTY.md)。
 
 命令行构建建议在 Visual Studio Developer PowerShell 中运行，并确保 Qt 安装已注册。不要把个人
 账户目录写入共享脚本；当前机器可使用：
@@ -179,7 +181,8 @@ RK PCBA 的 `echo_*` 程序仍由对应 SDK/rootfs 所有，不复制进通用 A
 先按 [`ADR-0003`](decisions/0003-stable-board-capabilities-and-providers.md) 固定 entry、版本、ABI、
 摘要、参数硬上限和恢复规则，再进行单独审核。
 
-所有构建目录和二进制均不提交 Git。
+所有构建目录和自产二进制均不提交 Git；`third_party/platform-tools/` 是随包分发的固定上游依赖，
+其版本、摘要与许可声明必须一同保留。
 
 ## 5. 验证层级
 
@@ -214,10 +217,8 @@ RK PCBA 的 `echo_*` 程序仍由对应 SDK/rootfs 所有，不复制进通用 A
 - `--agent-serial-smoke <adb-serial> <control-port> <endpoint>`：经真实 Agent 打开指定串口并保持
   5 秒，验证数据通道不会立即 EOF；不发送任何字节。
 - `--adb-serial-smoke` 仅保留用于复现旧固件 ADB 设备节点转发问题，不是产品串口路径。
-- `--ui-snapshot <png>`：保存概览页快照；可加 `--ui-page serial`、`tests`、`history`
-  或 `settings` 选择待验收页面，并用 `--ui-size 1366x768` 指定逻辑窗口尺寸。串口页可再加
-  `--ui-serial-mode single|dual` 验收两种调试方式；可靠性压测位于双端调试中。测试中心快照应在
-  已连接真实 Agent 时同时检查能力发现、主动作启停和结果证据区。
+- `--ui-snapshot <png>`：保存启动页快照；用 `--ui-page serial|device` 选择串口或设备信息页，
+  用 `--ui-size 1366x768` 指定逻辑窗口尺寸。串口页可加 `--ui-serial-mode single|dual`。
 - UI 快照：检查主要分辨率和 DPI 下的裁切、重叠、文字清晰度、状态层级和主动作。
 - 实机验证：串口连接、收发、双向验证和异常断开。
 - Agent 阶段：协议单元测试、真实板端部署、能力枚举、稳定保持，再进行已知安全指令的收发测试。
@@ -228,25 +229,23 @@ RK PCBA 的 `echo_*` 程序仍由对应 SDK/rootfs 所有，不复制进通用 A
 ### 5.1 无设备运行与界面验收
 
 ```powershell
-.\build\windows\x64\Release\TestTools.exe --offline --ui-page tests --demo-scenario pass
-cmake -S tests -B build/host-tests-vs-local
-cmake --build build/host-tests-vs-local --config Release --parallel
-ctest --test-dir build/host-tests-vs-local -C Release --output-on-failure
+.\build\windows\x64\Release\TestTools.exe --offline --ui-page serial `
+  --ui-size 1366x768 --ui-snapshot build/ui-serial-1366.png
+cmake -S tests -B build/tests/host
+cmake --build build/tests/host --config Release --parallel
+ctest --test-dir build/tests/host -C Release --output-on-failure
 ```
 
-主机 CTest 包含 `core-application-contract`、`run-store-contract` 和 `run-service-contract`。
-Qt 演示与主机测试均不要求连接开发板。`--offline` 跳过 ADB 发现、连接和退出清理；场景只改变模拟执行器。
-离线标志与设备冒烟或需要 ADB 的 `--self-test` 同时出现时返回 2，不执行设备命令。
+主机 CTest 包含 `core-application-contract`；Agent 主机契约由 `src/agent/` 的独立 CMake 工程验证。
+主机测试和离线快照均不要求开发板。`--offline` 跳过 ADB 发现、连接和设备退出清理；
+与设备冒烟或 `--self-test` 同时使用时返回 2，不执行设备命令。
 
-- `--demo-scenario pass|fail|no-data|no-standard|error|timeout|disconnected` 选择模拟情况，隐含离线模式；
-  不加 `--demo-start` 时只准备方案，等待用户点击开始。
-- `--ui-snapshot <png> --snapshot-delay 3500` 保存真实 Qt 窗口，同时写入 `<png>.json` 记录控件状态与表格，
-  便于核对主动作启停、来源与结果。延迟允许 100–30000 ms。
-- 仅模拟诊断允许 `--demo-action stop|close|new-round|rerun-failed|export|retry-save`，通过同一按钮执行，
-  用 `--demo-action-delay <ms>` 指定时点。控件禁用或缺失返回 3；参数错误返回 2。
-- `TESTTOOLS_DATA_DIR` 可指定隔离的记录根目录；默认记录位于本地应用数据目录。离线时可用
-  `TESTTOOLS_REPORT_DIR` 指定报告父目录以验证导出按钮；日常操作使用目录选择框。
-- 主机模拟取消只能验证调度与记录；真实板端停止、执行截止时间、资源释放、设备恢复与突然断电均另行验收。
+- `--ui-snapshot <png> --snapshot-delay 3500` 保存实际 Qt 窗口，并写入 `<png>.json` 记录诊断控件状态；
+  延迟允许 100–30000 ms。ADB 终端按钮记录为 `adbTerminalButton`。
+- `TESTTOOLS_DATA_DIR` 可指定隔离的本地数据目录，避免快照修改日常串口偏好或快捷指令。
+- ADB 终端的验收范围见 [`features/ADB_TERMINAL.md`](features/ADB_TERMINAL.md)；
+  启动冒烟使用独立假设备程序核对参数与回退，不以此代替真实交互式 Shell 验证。
+- UI、构建和主机检查不能代替真实串口收发、热插拔或压力验证；只在对应能力变化时安排相关验证。
 
 ## 6. 新增功能
 

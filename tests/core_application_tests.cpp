@@ -63,6 +63,17 @@ class FakeSerialTransport final : public serialdemo::ISerialTransport {
         return open_.load();
     }
 
+    bool supportsControlLine(serialdemo::SerialControlLine) const override { return controlsSupported; }
+    bool setControlLine(serialdemo::SerialControlLine, bool enabled, std::string &error) override
+    {
+        if (failControls) { error = "fake control failure"; return false; }
+        controlValues.push_back(enabled);
+        return true;
+    }
+    bool controlsSupported = false;
+    bool failControls = false;
+    std::vector<bool> controlValues;
+
     void emitData(const serialdemo::ByteBuffer& data)
     {
         publishData(data);
@@ -578,6 +589,24 @@ int main()
         session.snapshot().state != testtools::SerialSessionState::Connected) {
         return fail("serial session open state");
     }
+    std::string controlError;
+    fakeTransportView->controlsSupported = true;
+    if (!session.supportsControlLine(serialdemo::SerialControlLine::Dtr) ||
+        !session.setControlLine(sessionGeneration, serialdemo::SerialControlLine::Dtr, true, controlError) ||
+        session.setControlLine(sessionGeneration - 1, serialdemo::SerialControlLine::Dtr, false, controlError) ||
+        fakeTransportView->controlValues != std::vector<bool>{true}) {
+        return fail("control line stale generation must not reach transport");
+    }
+    fakeTransportView->failControls = true;
+    if (session.setControlLine(sessionGeneration, serialdemo::SerialControlLine::Rts, false, controlError) ||
+        controlError != "fake control failure" || session.snapshot().sentBytes != 0) {
+        return fail("control line driver failure must not count as data TX");
+    }
+    fakeTransportView->failControls = false;
+    fakeTransportView->controlsSupported = false;
+    if (session.setControlLine(sessionGeneration, serialdemo::SerialControlLine::Dtr, false, controlError)) {
+        return fail("unsupported control line rejected");
+    }
     fakeTransportView->emitData({0x4F, 0x4B});
     if (!session.send({0x41, 0x54}, 1)) {
         return fail("serial session enqueue");
@@ -722,30 +751,59 @@ int main()
 
     testtools::SerialLogBuffer logBuffer;
     const auto txResult = logBuffer.appendTx({0x41, 0x54, 0x0D, 0x0A}, 1000, "10:00:00.001");
-    if (txResult.updatedLastEntry || txResult.addedEntries != 1 ||
+    if (txResult.addedEntries != 1 ||
         testtools::SerialLogBuffer::formatEntry(logBuffer.entries().front(), false, true) !=
             "[10:00:00.001] TX  AT\\r\\n\n" ||
         testtools::SerialLogBuffer::formatEntry(logBuffer.entries().front(), true, false) !=
             "TX  41 54 0D 0A\n") {
         return fail("serial log buffer TX formatting");
     }
-    // Split UTF-8 "中" (E4 B8 AD) + "OK\r\n" across two RX chunks within 250ms
+    // A receive boundary is retained even at the same timestamp, without an LF.
+    logBuffer.appendRx({0x41}, 1001, "10:00:00.001");
+    logBuffer.appendRx({0x42}, 1001, "10:00:00.001");
+    if (logBuffer.size() != 3 ||
+        logBuffer.formatAll(false, false) != "TX  AT\\r\\n\nRX  A\nRX  B\n") {
+        return fail("serial log separates back-to-back receive callbacks");
+    }
+    // Incomplete UTF-8 is visible as escaped bytes, never hidden or merged later.
     const auto rxPart1 = logBuffer.appendRx({0xE4, 0xB8}, 1010, "10:00:00.010");
     if (rxPart1.addedEntries != 1 ||
         testtools::SerialLogBuffer::formatEntry(logBuffer.entries().back(), false, false) !=
-            "RX  \n") {
-        return fail("serial log buffer incomplete trailing UTF-8 holdback");
+            "RX  \\xE4\\xB8\n") {
+        return fail("serial log buffer incomplete trailing UTF-8 escaping");
     }
     const auto rxPart2 =
         logBuffer.appendRx({0xAD, 0x4F, 0x4B, 0x0D, 0x0A}, 1050, "10:00:00.050");
-    if (!rxPart2.updatedLastEntry || rxPart2.addedEntries != 0 || logBuffer.entries().size() != 2 ||
+    if (rxPart2.addedEntries != 1 || logBuffer.entries().size() != 5 ||
         testtools::SerialLogBuffer::formatEntry(logBuffer.entries().back(), false, false) !=
-            "RX  \xE4\xB8\xAD"
-            "OK\n" ||
+            "RX  \\xADOK\n" ||
         testtools::SerialLogBuffer::formatEntry(logBuffer.entries().back(), true, true) !=
-            "[10:00:00.010] RX  E4 B8 AD 4F 4B 0D 0A\n") {
-        return fail("serial log buffer RX coalescing and split UTF-8 safety");
+            "[10:00:00.050] RX  AD 4F 4B 0D 0A\n" ||
+        logBuffer.entries()[3].bytes != serialdemo::ByteBuffer{0xE4, 0xB8}) {
+        return fail("serial log receive boundaries and original bytes");
     }
+
+    const auto lines = logBuffer.appendRx({0xE4, 0xB8, 0xAD, 'O', 'K', '\r', '\n', 'C'},
+                                          1051, "10:00:00.051");
+    if (lines.addedEntries != 2 || logBuffer.entries().back().bytes != serialdemo::ByteBuffer{'C'}) {
+        return fail("serial log splits embedded newlines within a receive callback");
+    }
+    const auto unfiltered = logBuffer.formatAll(false, false);
+    const auto retainedBytes = logBuffer.totalBytes();
+    if (logBuffer.formatAll(false, false, "中OK") != "RX  中OK\n" ||
+        logBuffer.formatAll(true, false, "E4 B8 AD").find("E4 B8 AD") == std::string::npos ||
+        !logBuffer.formatAll(false, false, "missing").empty() ||
+        logBuffer.totalBytes() != retainedBytes || logBuffer.formatAll(false, false) != unfiltered) {
+        return fail("log filter preserves UTF-8, HEX and retained data");
+    }
+    testtools::SerialLogBuffer limitedLog(1);
+    limitedLog.appendRx({0x41, 0x0A}, 1, "");
+    limitedLog.appendRx({0x42, 0x0A}, 2, "");
+    if (!limitedLog.truncated() || limitedLog.formatAll(false, false) != "RX  B\n") {
+        return fail("log retention exposes truncation");
+    }
+    limitedLog.clear();
+    if (limitedLog.truncated()) return fail("log clear resets truncation indicator");
 
     testtools::AtCommandLibrary atCommands;
     std::string atCommandError;
@@ -774,6 +832,24 @@ int main()
         std::error_code cleanupError;
         std::filesystem::remove(atCommandPath, cleanupError);
         return fail("AT command store roundtrip");
+    }
+    testtools::AtCommandLibrary importedCommands;
+    importedCommands.setLineEnding(testtools::AtCommandLineEnding::CrLf);
+    if (!testtools::AtCommandStore::importCommands(atCommandPath, importedCommands, atCommandError) ||
+        importedCommands.commands().size() != atCommands.commands().size() ||
+        !importedCommands.commands().back().hex ||
+        importedCommands.lineEnding() != testtools::AtCommandLineEnding::CrLf) {
+        return fail("command import keeps active line ending");
+    }
+    {
+        std::ofstream corrupt(atCommandPath, std::ios::binary | std::ios::trunc);
+        corrupt << R"({"schema_version":2,"line_ending":"lf","commands":[{"name":"bad","command":"ZZ","hex":true}]})";
+    }
+    if (testtools::AtCommandStore::importCommands(atCommandPath, importedCommands, atCommandError) ||
+        importedCommands.commands().size() != atCommands.commands().size() ||
+        importedCommands.lineEnding() != testtools::AtCommandLineEnding::CrLf ||
+        testtools::AtCommandStore::importCommands(atCommandPath.string() + ".missing", importedCommands, atCommandError)) {
+        return fail("failed import preserves live command library");
     }
     {
         std::ofstream legacy(atCommandPath, std::ios::binary | std::ios::trunc);

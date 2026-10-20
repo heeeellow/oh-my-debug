@@ -129,6 +129,8 @@ public:
      */
     void setRts(bool set = true) override final;
 
+    bool setControlLineChecked(bool dtr, bool enabled, unsigned long &nativeError) override final;
+
 private:
     /**
      * @brief before stop read thread 停止读取多线程之前的操作

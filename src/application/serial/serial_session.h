@@ -63,6 +63,9 @@ class SerialSession {
     void close();
 
     bool send(serialdemo::ByteBuffer data, std::uint64_t tag = 0);
+    bool supportsControlLine(serialdemo::SerialControlLine line) const;
+    bool setControlLine(std::uint64_t expectedGeneration, serialdemo::SerialControlLine line,
+                         bool enabled, std::string &error);
     bool startScheduledSend(serialdemo::ByteBuffer payload,
                             const serialdemo::PeriodicSendConfig& config,
                             std::uint64_t tag = 0,

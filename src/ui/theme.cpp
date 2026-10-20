@@ -32,11 +32,13 @@ QString ensureChevronIconPath()
     return path;
 }
 
-QString ensureCheckmarkIconPath()
+QString ensureCheckmarkIconPath(bool mixed = false)
 {
+    const QString fileName = mixed ? QStringLiteral("testtools-ui-mixed-v1.png")
+                                   : QStringLiteral("testtools-ui-check-v1.png");
     const QString path = QDir::fromNativeSeparators(
-        QDir::temp().filePath(QStringLiteral("testtools-ui-check-v1.png")));
-    if (!QDir::temp().exists(QStringLiteral("testtools-ui-check-v1.png"))) {
+        QDir::temp().filePath(fileName));
+    if (!QDir::temp().exists(fileName)) {
         QImage image(24, 24, QImage::Format_ARGB32_Premultiplied);
         image.fill(Qt::transparent);
         QPainter painter(&image);
@@ -44,9 +46,14 @@ QString ensureCheckmarkIconPath()
         QPen pen(QColor(0xff, 0xff, 0xff), 3.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
         painter.setPen(pen);
         QPainterPath check;
-        check.moveTo(5.0, 12.5);
-        check.lineTo(10.0, 17.5);
-        check.lineTo(19.0, 6.5);
+        if (mixed) {
+            check.moveTo(5.0, 12.0);
+            check.lineTo(19.0, 12.0);
+        } else {
+            check.moveTo(5.0, 12.5);
+            check.lineTo(10.0, 17.5);
+            check.lineTo(19.0, 6.5);
+        }
         painter.drawPath(check);
         painter.end();
         image.save(path, "PNG");
@@ -60,6 +67,7 @@ QString applicationStyleSheet()
 {
     const QString chevronPath = ensureChevronIconPath();
     const QString checkPath = ensureCheckmarkIconPath();
+    const QString mixedPath = ensureCheckmarkIconPath(true);
 
     return QStringLiteral(R"(
         QWidget {
@@ -249,7 +257,7 @@ QString applicationStyleSheet()
             padding: 0 4px;
             color: #625d59;
         }
-        QFrame#linkBar {
+        QFrame#linkBar, QFrame#serialResults {
             background: #ffffff;
             border: 1px solid #dfdbd6;
             border-radius: 10px;
@@ -315,6 +323,7 @@ QString applicationStyleSheet()
         QLabel#testStatusWarn { color: #87652f; font-weight: 600; }
         QLabel#testStatusGood { color: #5d715f; }
         QLabel#testStatusError { color: #a34a42; }
+        QFrame#serialResults QLabel { font-size: 13px; }
         QComboBox, QLineEdit, QSpinBox {
             min-height: 32px;
             padding: 0 10px;
@@ -461,6 +470,7 @@ QString applicationStyleSheet()
             font-size: 12px;
         }
         QPushButton#topGhostButton:hover { background: #ece9e4; color: #302f2d; border-color: #c7c1bb; }
+        QPushButton#topGhostButton:disabled { color: #918a84; background: #eeece9; border-color: #ddd8d3; }
         QCheckBox { color: #55504c; spacing: 6px; font-size: 13px; }
         QCheckBox:focus { color: #7b4634; }
         QCheckBox::indicator {
@@ -476,9 +486,15 @@ QString applicationStyleSheet()
             border-color: #ad694e;
             image: url(%2);
         }
+        QCheckBox::indicator:indeterminate {
+            background: #a69b91;
+            border-color: #a69b91;
+            image: url(%3);
+        }
+        QCheckBox:disabled { color: #918a84; }
         QSplitter::handle { background: transparent; width: 8px; }
         QToolTip { background: #302f2d; color: #ffffff; border: 0; padding: 6px; }
-    )").arg(chevronPath, checkPath);
+    )").arg(chevronPath, checkPath, mixedPath);
 }
 
 } // namespace testtools::ui

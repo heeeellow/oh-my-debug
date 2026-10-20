@@ -313,6 +313,24 @@ bool AtCommandStore::load(const std::filesystem::path& path,
     return true;
 }
 
+bool AtCommandStore::importCommands(const std::filesystem::path& path,
+                                    AtCommandLibrary& library, std::string& error)
+{
+    std::error_code fileError;
+    if (!std::filesystem::is_regular_file(path, fileError)) {
+        error = "指令文件不存在或无法读取";
+        return false;
+    }
+    AtCommandLibrary imported;
+    if (!load(path, imported, error)) {
+        return false;
+    }
+    // Sharing commands must not change the active serial channel's send semantics.
+    imported.setLineEnding(library.lineEnding());
+    library = std::move(imported);
+    return true;
+}
+
 bool AtCommandStore::save(const std::filesystem::path& path,
                           const AtCommandLibrary& library,
                           std::string& error)

@@ -174,6 +174,13 @@ public:
      */
     virtual void setRts(bool set = true) = 0;
 
+    // TestTools: checked operation; existing void setters stay source-compatible.
+    virtual bool setControlLineChecked(bool, bool, unsigned long &nativeError)
+    {
+        nativeError = 50; // ERROR_NOT_SUPPORTED on Windows.
+        return false;
+    }
+
 public:
     /**
      * @brief read all data 读取所有数据

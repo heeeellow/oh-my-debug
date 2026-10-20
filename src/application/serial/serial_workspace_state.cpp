@@ -9,8 +9,6 @@ namespace testtools {
 
 namespace {
 
-constexpr std::size_t MaximumCoalescedEntryBytes = 4096;
-
 void appendEscapedByte(std::string &out, std::uint8_t byte)
 {
     static constexpr char hex[] = "0123456789ABCDEF";
@@ -67,8 +65,7 @@ bool validUtf8Prefix(const std::uint8_t *bytes, std::size_t available, std::size
 
 std::string formatUtf8Text(const serialdemo::ByteBuffer &bytes,
                            std::size_t length,
-                           bool escapeLineBreaks,
-                           bool holdIncompleteTrailingUtf8)
+                           bool escapeLineBreaks)
 {
     std::string out;
     out.reserve(length);
@@ -104,10 +101,6 @@ std::string formatUtf8Text(const serialdemo::ByteBuffer &bytes,
                 out.append(reinterpret_cast<const char *>(&bytes[index]), expected);
                 index += expected;
                 continue;
-            }
-            if (holdIncompleteTrailingUtf8 && remaining < expected &&
-                validUtf8Prefix(&bytes[index], remaining, expected)) {
-                break;
             }
         }
         appendEscapedByte(out, b);
@@ -172,11 +165,9 @@ SerialEndpointConflict SerialWorkspaceState::endpointConflict(
 }
 
 SerialLogBuffer::SerialLogBuffer(std::size_t maxEntries,
-                                 std::size_t maxBytes,
-                                 std::int64_t coalesceWindowMs)
+                                 std::size_t maxBytes)
     : maxEntries_(std::max<std::size_t>(1, maxEntries)),
-      maxBytes_(std::max<std::size_t>(256, maxBytes)),
-      coalesceWindowMs_(std::max<std::int64_t>(0, coalesceWindowMs))
+      maxBytes_(std::max<std::size_t>(256, maxBytes))
 {
 }
 
@@ -188,17 +179,11 @@ SerialLogAppendResult SerialLogBuffer::appendTx(const serialdemo::ByteBuffer &da
         return {};
     }
     SerialLogAppendResult result;
-    if (!entries_.empty() && entries_.back().direction == SerialLogDirection::Rx &&
-        !entries_.back().completeLine) {
-        entries_.back().completeLine = true;
-        result.updatedLastEntry = true;
-    }
     SerialLogEntry entry;
     entry.direction = SerialLogDirection::Tx;
     entry.timestampMs = timestampMs;
     entry.timestampText = std::move(timestampText);
     entry.bytes = data;
-    entry.completeLine = true;
     totalBytes_ += entry.bytes.size();
     entries_.push_back(std::move(entry));
     result.addedEntries = 1;
@@ -224,46 +209,16 @@ SerialLogAppendResult SerialLogBuffer::appendRx(const serialdemo::ByteBuffer &da
         if (endsWithLf) {
             ++lineEnd;
         }
-        const std::size_t segmentSize = lineEnd - offset;
-        const bool canCoalesce =
-            !entries_.empty() &&
-            entries_.back().direction == SerialLogDirection::Rx &&
-            !entries_.back().completeLine &&
-            timestampMs >= entries_.back().timestampMs &&
-            (timestampMs - entries_.back().timestampMs) <= coalesceWindowMs_ &&
-            (entries_.back().bytes.size() + segmentSize) <= MaximumCoalescedEntryBytes;
-
-        if (canCoalesce) {
-            auto &last = entries_.back();
-            last.bytes.insert(last.bytes.end(),
-                              data.begin() + static_cast<std::ptrdiff_t>(offset),
-                              data.begin() + static_cast<std::ptrdiff_t>(lineEnd));
-            totalBytes_ += segmentSize;
-            if (endsWithLf) {
-                last.completeLine = true;
-            }
-            if (result.addedEntries == 0) {
-                result.updatedLastEntry = true;
-            }
-        } else {
-            if (!entries_.empty() && entries_.back().direction == SerialLogDirection::Rx &&
-                !entries_.back().completeLine) {
-                entries_.back().completeLine = true;
-                if (result.addedEntries == 0) {
-                    result.updatedLastEntry = true;
-                }
-            }
-            SerialLogEntry entry;
-            entry.direction = SerialLogDirection::Rx;
-            entry.timestampMs = timestampMs;
-            entry.timestampText = timestampText;
-            entry.bytes.assign(data.begin() + static_cast<std::ptrdiff_t>(offset),
-                               data.begin() + static_cast<std::ptrdiff_t>(lineEnd));
-            entry.completeLine = endsWithLf;
-            totalBytes_ += entry.bytes.size();
-            entries_.push_back(std::move(entry));
-            ++result.addedEntries;
-        }
+        // Keep receive callbacks separate. Timing does not define a protocol frame.
+        SerialLogEntry entry;
+        entry.direction = SerialLogDirection::Rx;
+        entry.timestampMs = timestampMs;
+        entry.timestampText = timestampText;
+        entry.bytes.assign(data.begin() + static_cast<std::ptrdiff_t>(offset),
+                           data.begin() + static_cast<std::ptrdiff_t>(lineEnd));
+        totalBytes_ += entry.bytes.size();
+        entries_.push_back(std::move(entry));
+        ++result.addedEntries;
         offset = lineEnd;
     }
     result.trimmedOldest = trimToLimits();
@@ -278,17 +233,11 @@ SerialLogAppendResult SerialLogBuffer::appendNotice(const std::string &text,
         return {};
     }
     SerialLogAppendResult result;
-    if (!entries_.empty() && entries_.back().direction == SerialLogDirection::Rx &&
-        !entries_.back().completeLine) {
-        entries_.back().completeLine = true;
-        result.updatedLastEntry = true;
-    }
     SerialLogEntry entry;
     entry.direction = SerialLogDirection::Notice;
     entry.timestampMs = timestampMs;
     entry.timestampText = std::move(timestampText);
     entry.bytes.assign(text.begin(), text.end());
-    entry.completeLine = true;
     totalBytes_ += entry.bytes.size();
     entries_.push_back(std::move(entry));
     result.addedEntries = 1;
@@ -300,6 +249,7 @@ void SerialLogBuffer::clear()
 {
     entries_.clear();
     totalBytes_ = 0;
+    truncated_ = false;
 }
 
 bool SerialLogBuffer::empty() const noexcept
@@ -346,7 +296,7 @@ std::string SerialLogBuffer::formatEntry(const SerialLogEntry &entry,
     if (hexDisplay) {
         line += serialdemo::toHex(entry.bytes);
     } else if (entry.direction == SerialLogDirection::Tx) {
-        line += formatUtf8Text(entry.bytes, entry.bytes.size(), true, false);
+        line += formatUtf8Text(entry.bytes, entry.bytes.size(), true);
     } else {
         std::size_t contentLength = entry.bytes.size();
         if (contentLength > 0 && entry.bytes[contentLength - 1] == '\n') {
@@ -354,21 +304,32 @@ std::string SerialLogBuffer::formatEntry(const SerialLogEntry &entry,
             if (contentLength > 0 && entry.bytes[contentLength - 1] == '\r') {
                 --contentLength;
             }
-        } else if (entry.completeLine && contentLength > 0 &&
+        } else if (contentLength > 0 &&
                    entry.bytes[contentLength - 1] == '\r') {
             --contentLength;
         }
-        line += formatUtf8Text(entry.bytes, contentLength, false, !entry.completeLine);
+        // Escape incomplete UTF-8 immediately; no hidden bytes waiting for another batch.
+        line += formatUtf8Text(entry.bytes, contentLength, false);
     }
     line.push_back('\n');
     return line;
 }
 
-std::string SerialLogBuffer::formatAll(bool hexDisplay, bool showTimestamp) const
+bool SerialLogBuffer::truncated() const noexcept
+{
+    return truncated_;
+}
+
+std::string SerialLogBuffer::formatAll(bool hexDisplay, bool showTimestamp,
+                                      const std::string &filter) const
 {
     std::string output;
     for (const auto &entry : entries_) {
-        output += formatEntry(entry, hexDisplay, showTimestamp);
+        const auto text = formatEntry(entry, hexDisplay, showTimestamp);
+        // Filtering selects rendered records; retained bytes are never rewritten.
+        if (filter.empty() || text.find(filter) != std::string::npos) {
+            output += text;
+        }
     }
     return output;
 }
@@ -382,6 +343,7 @@ bool SerialLogBuffer::trimToLimits()
         entries_.pop_front();
         trimmed = true;
     }
+    truncated_ = truncated_ || trimmed;
     return trimmed;
 }
 

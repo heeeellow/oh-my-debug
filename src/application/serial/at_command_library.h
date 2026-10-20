@@ -45,6 +45,8 @@ class AtCommandStore final {
     static bool save(const std::filesystem::path& path,
                      const AtCommandLibrary& library,
                      std::string& error);
+    static bool importCommands(const std::filesystem::path& path,
+                                AtCommandLibrary& library, std::string& error);
 };
 
 struct SerialChannelPreferences {

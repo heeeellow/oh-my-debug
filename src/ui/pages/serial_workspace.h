@@ -23,6 +23,7 @@ class QFrame;
 class QGroupBox;
 class QHBoxLayout;
 class QLabel;
+class QLineEdit;
 class QPlainTextEdit;
 class QPushButton;
 class QSplitter;
@@ -55,6 +56,9 @@ class SerialWorkspace final : public QWidget {
         QGroupBox* group = nullptr;
         QWidget* headerWidget = nullptr;
         QHBoxLayout* headerLayout = nullptr;
+        QHBoxLayout* receiveHeaderLayout = nullptr;
+        QHBoxLayout* counterRowLayout = nullptr;
+        QWidget* counterRow = nullptr;
         QHBoxLayout* settingsRowLayout = nullptr;
         QWidget* actionsContainer = nullptr;
         QLabel* badgeLabel = nullptr;
@@ -66,6 +70,8 @@ class SerialWorkspace final : public QWidget {
         QComboBox* parityCombo = nullptr;
         QComboBox* stopBitsCombo = nullptr;
         QComboBox* flowControlCombo = nullptr;
+        QCheckBox* dtrCheck = nullptr;
+        QCheckBox* rtsCheck = nullptr;
         QPushButton* refreshPortsButton = nullptr;
         QPushButton* advancedSettingsButton = nullptr;
         QWidget* advancedSettingsArea = nullptr;
@@ -80,6 +86,20 @@ class SerialWorkspace final : public QWidget {
         QPushButton* saveLogButton = nullptr;
         QPushButton* clearReceiveButton = nullptr;
         QPushButton* clearSendButton = nullptr;
+        QPushButton* searchButton = nullptr;
+        QWidget* searchArea = nullptr;
+        QLineEdit* searchEdit = nullptr;
+        QCheckBox* filterCheck = nullptr;
+        QLabel* matchCountLabel = nullptr;
+        QLabel* truncatedLabel = nullptr;
+        QPushButton* previousMatchButton = nullptr;
+        QPushButton* nextMatchButton = nullptr;
+        QTimer* searchTimer = nullptr;
+        std::vector<int> searchMatches;
+        int currentMatch = -1;
+        bool filteredRenderPending = false;
+        bool controlPending = false;
+        std::array<Qt::CheckState, 2> lineStates{Qt::PartiallyChecked, Qt::PartiallyChecked};
         QComboBox* lineEndingCombo = nullptr;
         QPushButton* sendButton = nullptr;
         QPushButton* autoSendButton = nullptr;
@@ -147,6 +167,9 @@ class SerialWorkspace final : public QWidget {
     void showAtCommandManager();
     void refreshAtCommandChoices();
     bool saveAtCommands();
+    void importAtCommands();
+    void exportAtCommands();
+    void setControlLine(int index, serialdemo::SerialControlLine line, bool enabled);
     void toggleAutoSend(int index);
     void stopAutoSend(int index, bool announce = false);
     void processScheduledSends();
@@ -154,6 +177,9 @@ class SerialWorkspace final : public QWidget {
     void appendReceived(int index, const serialdemo::ByteBuffer& data);
     void appendNotice(int index, const QString& message);
     void renderReceiveLog(int index);
+    void updateSearchMatches(int index);
+    void findLogMatch(int index, int step);
+    void scheduleSearchRefresh(int index);
     void applyLogAppendResult(int index, const testtools::SerialLogAppendResult& result);
     void updateCounter(int index);
     void resetChannelCounters(int index);
@@ -178,6 +204,7 @@ class SerialWorkspace final : public QWidget {
     QLabel* routeLabel_ = nullptr;
     QLabel* modeDescriptionLabel_ = nullptr;
     QFrame* linkBar_ = nullptr;
+    QFrame* resultsPanel_ = nullptr;
     QSplitter* channelSplitter_ = nullptr;
     QTimer* scheduleTimer_ = nullptr;
 
@@ -189,6 +216,7 @@ class SerialWorkspace final : public QWidget {
     std::string agentAdbSerial_;
     std::uint16_t agentControlPort_ = 0;
     testtools::BackgroundTaskGroup scanTasks_;
+    testtools::BackgroundTaskGroup controlTasks_;
     bool scanning_ = false;
     bool aToBPassed_ = false;
     bool bToAPassed_ = false;

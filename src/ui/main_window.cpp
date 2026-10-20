@@ -2,6 +2,7 @@
 
 #include "application/agent/adb_agent_deployment.h"
 #include "application/agent/agent_connection_service.h"
+#include "application/device/adb_terminal_service.h"
 #include "theme.h"
 #include "ui/pages/serial_workspace.h"
 
@@ -130,6 +131,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         connect(deviceRefreshTimer_, &QTimer::timeout, this, [this] { startDeviceScan(true); });
         deviceRefreshTimer_->start();
     }
+    updateAdbTerminalControls();
 }
 
 MainWindow::~MainWindow()
@@ -148,10 +150,12 @@ void MainWindow::prepareForShutdown()
         return;
     }
     shuttingDown_ = true;
+    updateAdbTerminalControls();
     const std::string selectedSerial = selectedDevice().serial;
     if (serialWorkspace_) {
         serialWorkspace_->prepareForShutdown();
     }
+    terminalTasks_.wait();
     if (qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE")) return;
     ++agentGeneration_;
     agentConnecting_ = false;
@@ -267,7 +271,8 @@ QWidget* MainWindow::buildTopBar()
     caption->setObjectName(QStringLiteral("topCaption"));
     deviceCombo_ = new QComboBox(bar);
     deviceCombo_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    deviceCombo_->setMinimumContentsLength(28);
+    deviceCombo_->setMinimumContentsLength(18);
+    deviceCombo_->setMaximumWidth(300);
     adbStatusLabel_ = new QLabel(QStringLiteral("设备 · 检测中"), bar);
     adbStatusLabel_->setObjectName(QStringLiteral("topStatusNeutral"));
     agentStatusLabel_ = new QLabel(QStringLiteral("功能 · 未就绪"), bar);
@@ -276,16 +281,22 @@ QWidget* MainWindow::buildTopBar()
     agentActionButton_->setObjectName(QStringLiteral("topGhostButton"));
     refreshButton_ = new QPushButton(QStringLiteral("刷新设备"), bar);
     refreshButton_->setObjectName(QStringLiteral("topGhostButton"));
+    adbTerminalButton_ = new QPushButton(QStringLiteral("ADB 终端"), bar);
+    adbTerminalButton_->setObjectName(QStringLiteral("topGhostButton"));
+    adbTerminalButton_->setProperty("diagnosticObjectName", QStringLiteral("adbTerminalButton"));
+    adbTerminalButton_->setEnabled(false);
 
     layout->addWidget(caption);
     layout->addWidget(deviceCombo_);
     layout->addWidget(adbStatusLabel_);
     layout->addWidget(agentStatusLabel_);
     layout->addStretch(1);
+    layout->addWidget(adbTerminalButton_);
     layout->addWidget(agentActionButton_);
     layout->addWidget(refreshButton_);
 
     connect(refreshButton_, &QPushButton::clicked, this, &MainWindow::refreshDevices);
+    connect(adbTerminalButton_, &QPushButton::clicked, this, &MainWindow::openAdbTerminal);
     connect(agentActionButton_, &QPushButton::clicked, this, [this] { showPage(DeviceInfoPage); });
     connect(deviceCombo_, &QComboBox::currentIndexChanged, this, &MainWindow::applySelectedDevice);
     return bar;
@@ -804,6 +815,7 @@ void MainWindow::setAgentStatus(const QString& text, StatusTone tone, const QStr
 
 void MainWindow::updateAgentControls()
 {
+    updateAdbTerminalControls();
     if (!deployAgentButton_) {
         return;
     }
@@ -827,6 +839,50 @@ void MainWindow::updateAgentControls()
 void MainWindow::refreshDevices()
 {
     startDeviceScan(false);
+}
+
+void MainWindow::openAdbTerminal()
+{
+    const auto device = selectedDevice();
+    if (shuttingDown_ || terminalLaunching_ || qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE") ||
+        device.serial.empty() || device.state != "device") {
+        return;
+    }
+    terminalLaunching_ = true;
+    updateAdbTerminalControls();
+    setActivity(QStringLiteral("正在为 %1 打开 ADB 终端…").arg(fromUtf8(device.serial)));
+    QPointer<MainWindow> guard(this);
+    // Capture the selection on click; the independent shell keeps this device for its lifetime.
+    terminalTasks_.start([guard, device] {
+        const auto result = testtools::AdbTerminalService().open(device);
+        QMetaObject::invokeMethod(guard, [guard, device, result] {
+            if (!guard || guard->shuttingDown_) {
+                return;
+            }
+            guard->terminalLaunching_ = false;
+            guard->updateAdbTerminalControls();
+            guard->setActivity(result.started
+                ? QStringLiteral("已为 %1 打开 ADB 终端（%2）")
+                      .arg(fromUtf8(device.serial), fromUtf8(result.host))
+                : QStringLiteral("ADB 终端打开失败：%1").arg(fromUtf8(result.error)));
+        }, Qt::QueuedConnection);
+    });
+}
+
+void MainWindow::updateAdbTerminalControls()
+{
+    if (!adbTerminalButton_) {
+        return;
+    }
+    const auto device = selectedDevice();
+    const bool online = !device.serial.empty() && device.state == "device";
+    adbTerminalButton_->setEnabled(online && !terminalLaunching_ && !shuttingDown_ &&
+                                   !qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE"));
+    adbTerminalButton_->setText(terminalLaunching_ ? QStringLiteral("正在打开…")
+                                                   : QStringLiteral("ADB 终端"));
+    adbTerminalButton_->setToolTip(online
+        ? QStringLiteral("在系统终端打开 %1 的 Shell，无需连接 Agent").arg(fromUtf8(device.serial))
+        : QStringLiteral("请先选择在线且已授权的 ADB 设备"));
 }
 
 void MainWindow::startDeviceScan(bool automatic)
@@ -1035,6 +1091,7 @@ void MainWindow::setActivity(const QString& message)
 
 void MainWindow::updateDeviceControls()
 {
+    updateAdbTerminalControls();
     const bool enabled = !qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE") && !scanning_ &&
                          !serialBusy_ && !agentConnecting_;
     refreshButton_->setEnabled(enabled);

@@ -2,7 +2,10 @@
 
 #include "process.hpp"
 
+#include <algorithm>
+#include <cwchar>
 #include <future>
+#include <iterator>
 #include <mutex>
 
 #ifdef _WIN32
@@ -13,13 +16,13 @@ namespace serialdemo {
 
 namespace {
 
-std::string quoteArgument(const std::string &argument)
+std::string quoteArgument(const std::string &argument, bool forceQuotes = false)
 {
     if (argument.empty()) {
         return "\"\"";
     }
 
-    const bool needsQuotes = argument.find_first_of(" \t\n\v\"") != std::string::npos;
+    const bool needsQuotes = forceQuotes || argument.find_first_of(" \t\n\v\"") != std::string::npos;
     if (!needsQuotes) {
         return argument;
     }
@@ -61,6 +64,43 @@ std::wstring toNativeString(const std::string &text)
 std::string toNativeString(const std::string &text)
 {
     return text;
+}
+#endif
+
+#ifdef _WIN32
+std::wstring searchProgram(const std::wstring &name)
+{
+    wchar_t path[32768] = {};
+    const DWORD size = SearchPathW(nullptr, name.c_str(), L".exe",
+                                  static_cast<DWORD>(std::size(path)), path, nullptr);
+    return size > 0 && size < std::size(path) ? std::wstring(path, size) : std::wstring{};
+}
+
+bool createTerminalProcess(const std::wstring &program, std::wstring command,
+                           DWORD flags, void *environment, bool checkLauncher,
+                           DWORD &error)
+{
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    PROCESS_INFORMATION process{};
+    if (!CreateProcessW(program.c_str(), command.data(), nullptr, nullptr, FALSE,
+                        flags, environment, nullptr, &startup, &process)) {
+        error = GetLastError();
+        return false;
+    }
+    CloseHandle(process.hThread);
+    bool started = true;
+    // wt may exit after handing off a window. Only an immediate nonzero exit is a launch failure.
+    if (checkLauncher && WaitForSingleObject(process.hProcess, 500) == WAIT_OBJECT_0) {
+        DWORD exitCode = 0;
+        if (GetExitCodeProcess(process.hProcess, &exitCode) && exitCode != 0) {
+            error = exitCode;
+            started = false;
+        }
+    }
+    // External windows belong to the user, not to ProcessRunner's blocking command lifetime.
+    CloseHandle(process.hProcess);
+    return started;
 }
 #endif
 
@@ -113,6 +153,95 @@ CommandResult ProcessRunner::run(const std::string &program,
         result.exitCode = waiter.get();
     }
     return result;
+}
+
+bool ProcessRunner::openTerminal(const std::string &program,
+                                  const std::vector<std::string> &arguments,
+                                  std::string &host, std::string &error)
+{
+    host.clear();
+    error.clear();
+#if defined(_WIN32) && defined(UNICODE)
+    const auto unsafe = [](const std::string &value) {
+        return value.find_first_of("\"\r\n") != std::string::npos ||
+               value.find('\0') != std::string::npos;
+    };
+    if (unsafe(program) || std::any_of(arguments.begin(), arguments.end(), unsafe)) {
+        error = "终端路径或参数包含不支持的引号或控制字符";
+        return false;
+    }
+    const auto executable = searchProgram(toNativeString(program));
+    if (executable.empty()) {
+        error = "找不到 ADB 程序，请检查随包 platform-tools 或 ADB_PATH";
+        return false;
+    }
+    const auto wt = searchProgram(L"wt.exe");
+    DWORD launchError = 0;
+    // A semicolon is a wt command separator; let cmd handle such literal arguments instead.
+    const bool wtSafe = executable.find(L';') == std::wstring::npos &&
+        std::none_of(arguments.begin(), arguments.end(), [](const auto &value) {
+            return value.find(';') != std::string::npos;
+        });
+    if (!wt.empty() && wtSafe) {
+        std::wstring command = L"\"" + wt + L"\" -w new new-tab \"" + executable + L"\"";
+        for (const auto &argument : arguments) {
+            command += L" " + toNativeString(quoteArgument(argument, true));
+        }
+        if (createTerminalProcess(wt, std::move(command), 0, nullptr, true, launchError)) {
+            host = "Windows Terminal";
+            return true;
+        }
+    }
+
+    wchar_t systemDirectory[MAX_PATH] = {};
+    const UINT systemLength = GetSystemDirectoryW(systemDirectory, MAX_PATH);
+    if (systemLength == 0 || systemLength >= MAX_PATH) {
+        error = "无法定位 Windows 命令提示符";
+        return false;
+    }
+    const std::wstring cmd = std::wstring(systemDirectory) + L"\\cmd.exe";
+    std::wstring shellCommand = L"\"" + executable + L"\"";
+    for (const auto &argument : arguments) {
+        shellCommand += L" " + toNativeString(quoteArgument(argument, true));
+    }
+    // Expand the command once from a private child environment. Percent signs in paths stay
+    // literal, and /v:off keeps exclamation marks literal without changing the parent environment.
+    const std::wstring variable = L"TESTTOOLS_TERMINAL_COMMAND=";
+    std::vector<std::wstring> variables;
+    wchar_t *inherited = GetEnvironmentStringsW();
+    if (!inherited) {
+        error = "无法读取终端启动环境";
+        return false;
+    }
+    for (const wchar_t *entry = inherited; *entry; entry += std::wcslen(entry) + 1) {
+        if (_wcsnicmp(entry, variable.c_str(), variable.size()) != 0) {
+            variables.emplace_back(entry);
+        }
+    }
+    FreeEnvironmentStringsW(inherited);
+    variables.push_back(variable + shellCommand);
+    std::sort(variables.begin(), variables.end(), [](const auto &first, const auto &second) {
+        return _wcsicmp(first.c_str(), second.c_str()) < 0;
+    });
+    std::vector<wchar_t> environment;
+    for (const auto &value : variables) {
+        environment.insert(environment.end(), value.begin(), value.end());
+        environment.push_back(L'\0');
+    }
+    environment.push_back(L'\0');
+    std::wstring command = L"\"" + cmd + L"\" /d /v:off /s /k \"%TESTTOOLS_TERMINAL_COMMAND%\"";
+    if (createTerminalProcess(cmd, std::move(command),
+                              CREATE_NEW_CONSOLE | CREATE_UNICODE_ENVIRONMENT,
+                              environment.data(), false, launchError)) {
+        host = "命令提示符";
+        return true;
+    }
+    error = "无法打开 ADB 终端（Windows 错误 " + std::to_string(launchError) + "）";
+    return false;
+#else
+    error = "ADB 系统终端目前仅支持 Windows";
+    return false;
+#endif
 }
 
 } // namespace serialdemo

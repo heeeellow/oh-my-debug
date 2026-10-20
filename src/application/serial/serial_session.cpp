@@ -172,6 +172,40 @@ bool SerialSession::send(serialdemo::ByteBuffer data, std::uint64_t tag)
     return sender_.enqueue(std::move(data), tag);
 }
 
+bool SerialSession::supportsControlLine(serialdemo::SerialControlLine line) const
+{
+    std::shared_ptr<serialdemo::ISerialTransport> transport;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (state_ != SerialSessionState::Connected || closing_) return false;
+        transport = transport_;
+    }
+    return transport && transport->supportsControlLine(line);
+}
+
+bool SerialSession::setControlLine(std::uint64_t expectedGeneration,
+                                   serialdemo::SerialControlLine line, bool enabled,
+                                   std::string &error)
+{
+    std::shared_ptr<serialdemo::ISerialTransport> transport;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // A queued click must never apply to a replacement connection.
+        if (generation_ != expectedGeneration || state_ != SerialSessionState::Connected ||
+            closing_ || scheduledSendPlan_.isRunning()) {
+            error = "连接已变化或正在计划发送，未修改控制线";
+            return false;
+        }
+        transport = transport_;
+    }
+    if (!transport || !transport->supportsControlLine(line)) {
+        error = "当前串口或流控设置不支持此控制线";
+        return false;
+    }
+    error.clear();
+    return transport->setControlLine(line, enabled, error);
+}
+
 bool SerialSession::startScheduledSend(serialdemo::ByteBuffer payload,
                                        const serialdemo::PeriodicSendConfig& config,
                                        std::uint64_t tag,
