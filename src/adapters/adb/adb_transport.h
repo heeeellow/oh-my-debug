@@ -26,6 +26,7 @@ public:
                              const std::vector<std::string> &arguments,
                              std::chrono::milliseconds timeout = std::chrono::seconds(5)) const;
     bool openShellTerminal(const std::string &serial, std::string &host, std::string &error) const;
+    const std::string& program() const noexcept { return adbProgram_; }
 
     void open(const SerialConfig &config) override;
     void close() override;

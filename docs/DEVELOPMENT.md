@@ -59,6 +59,8 @@ Debug/Release 构建。工程会通过 Qt VS Tools 的 `windeployqt` 自动把 Q
 `agent-bundle/`。
 固定的 `third_party/platform-tools/` 也会复制到程序旁，包含 ADB、配套 DLL、版本与许可声明；
 构建不下载依赖。ADB 来源和升级规则见 [`THIRD_PARTY.md`](THIRD_PARTY.md)。
+固定 `third_party/scrcpy/` 同样随构建复制到输出目录；包含客户端、匹配 server、运行时 DLL 和许可证，
+不包含第二份 ADB。投屏调用已解析的项目 ADB；`SCRCPY_PATH` 可显式指定客户端文件或完整工具目录。
 
 命令行构建建议在 Visual Studio Developer PowerShell 中运行，并确保 Qt 安装已注册。不要把个人
 账户目录写入共享脚本；当前机器可使用：
@@ -217,7 +219,7 @@ RK PCBA 的 `echo_*` 程序仍由对应 SDK/rootfs 所有，不复制进通用 A
 - `--agent-serial-smoke <adb-serial> <control-port> <endpoint>`：经真实 Agent 打开指定串口并保持
   5 秒，验证数据通道不会立即 EOF；不发送任何字节。
 - `--adb-serial-smoke` 仅保留用于复现旧固件 ADB 设备节点转发问题，不是产品串口路径。
-- `--ui-snapshot <png>`：保存启动页快照；用 `--ui-page serial|device` 选择串口或设备信息页，
+- `--ui-snapshot <png>`：保存启动页快照；用 `--ui-page serial|device|files|mirror` 选择串口、设备信息、文件传输或投屏控制页，
   用 `--ui-size 1366x768` 指定逻辑窗口尺寸。串口页可加 `--ui-serial-mode single|dual|terminal`。
 - UI 快照：检查主要分辨率和 DPI 下的裁切、重叠、文字清晰度、状态层级和主动作。
 - 实机验证：串口连接、收发、双向验证和异常断开。
@@ -236,7 +238,7 @@ cmake --build build/tests/host --config Release --parallel
 ctest --test-dir build/tests/host -C Release --output-on-failure
 ```
 
-主机 CTest 包含 `core-application-contract`；Agent 主机契约由 `src/agent/` 的独立 CMake 工程验证。
+主机 CTest 包含 `core-application-contract` 和 `file-transfer-contract`；Agent 主机契约由 `src/agent/` 的独立 CMake 工程验证。
 主机测试和离线快照均不要求开发板。`--offline` 跳过 ADB 发现、连接和设备退出清理；
 与设备冒烟或 `--self-test` 同时使用时返回 2，不执行设备命令。
 
@@ -246,6 +248,9 @@ ctest --test-dir build/tests/host -C Release --output-on-failure
 - ADB 终端的验收范围见 [`features/ADB_TERMINAL.md`](features/ADB_TERMINAL.md)；
   启动冒烟使用独立假设备程序核对参数与回退，不以此代替真实交互式 Shell 验证。
 - UI、构建和主机检查不能代替真实串口收发、热插拔或压力验证；只在对应能力变化时安排相关验证。
+- 文件传输先用无 Qt 假后端验证固定设备/目录、单批互斥、逐项失败和取消，再用隔离的原生假 ADB 验证参数引用、
+  二进制字节、目录、暂存替换、超时与输出限额。Qt 检查路径/选择门禁、设备切换旧回调、失败重试和传输/投屏同时退出。
+  假 ADB 在主机 Shell 通过不证明 Android/Linux 工具兼容、SELinux、物理拔线或实际文件权限通过，需另列实机结果。
 - 串口终端解析与输入契约见 [串口终端](features/SERIAL_TERMINAL.md)，主机检查覆盖跨批次 UTF-8/ANSI、
   行覆盖与擦除、纯光标序列刷新、限额、键码和终端偏好往返。Qt 假串口验证焦点、视图和字节映射，
   实机单独验证 U-Boot/Linux 的历史、补全和中断；这些交互状态由板端拥有。
@@ -308,3 +313,28 @@ ctest --test-dir build/tests/host -C Release --output-on-failure
 比较总消耗。不用 API 单价推算订阅额度，也不承诺固定节省比例。多代理会增加独立上下文和工具工作，
 更高推理通常也增加用量；这些边界见 [官方子代理说明](https://developers.openai.com/codex/subagents)。
 先在本项目试行，不据单次结果安装全局规则或额外工具。
+
+## 原生 UI 与文件传输回归
+
+先构建 Release，再使用同版本 Qt 的 CMake 前缀配置 `tests/ui`（需要 Qt Test）：
+
+```powershell
+cmake -S tests/ui -B build/tests/ui -DCMAKE_PREFIX_PATH=<Qt安装目录>
+cmake --build build/tests/ui --config Release --parallel 4
+ctest --test-dir build/tests/ui -C Release --output-on-failure
+```
+
+这些测试链接当前产品的 Release 对象，覆盖真实 Widgets 交互、串口精确字节、Windows 原生图标、真实回环协议连接/失联与主机 ADB 异常夹具，默认不访问真实设备。
+修改产品代码后必须先重建产品和此测试目标，不能以旧对象结果验收。测试产物与快照写入 `build/iteration-0.8.0/`。
+`directory-perf` 为独立本地目录元数据性能样本，不纳入默认 CTest。
+
+`device-smoke <adb.exe绝对路径> <设备序列号>` 会在明确选择的设备 `/data/local/tmp/testtools-file-qa-<数字>` 下创建、修改并清理自有夹具，
+测试文件收发、目录链接与权限错误；需要明确的实机验收授权，不能把它当只读检查。
+`mirror-host-probe <scrcpy.exe绝对路径> <adb.exe绝对路径> <设备序列号>` 仅作真实外部窗口接入试验，退出收敛自己创建的进程；
+挂接成功不代表输入法、回嵌和 APK 拖放验收通过。这两个可执行文件均不由 CTest 自动运行。
+
+截图诊断支持 `--offline --ui-page files|mirror|serial --ui-serial-mode single|dual|terminal --ui-size 1366x768 --ui-snapshot <PNG>`。
+`QT_SCALE_FACTOR` 设置 1/1.25/1.5，JSON 附带实际逻辑尺寸与 DPR，PNG 为设备像素；逻辑窗口尺寸与物理屏幕分辨率必须分别记录。
+
+`ui-smoke --live-files <设备序列号> <adb.exe绝对路径>` 为显式只读文件页实机检查：跳过 Agent 准备和设备自动发现，
+验证进入自动打开根目录、浏览 `/sdcard`、返回文件页刷新与关闭；只读取设备目录，不执行 push/pull、安装或串口发送。

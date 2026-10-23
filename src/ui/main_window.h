@@ -1,5 +1,6 @@
 #pragma once
 
+#include "application/agent/agent_service_status.h"
 #include "application/device/device_discovery.h"
 #include "application/support/background_task_group.h"
 
@@ -15,7 +16,10 @@ class QPushButton;
 class QStackedWidget;
 class QTimer;
 class QWidget;
+class QToolButton;
 class SerialWorkspace;
+class FileTransferWorkspace;
+class ScreenMirrorPanel;
 namespace testtools {
 class IAgentConnection;
 }
@@ -35,18 +39,24 @@ class MainWindow final : public QMainWindow {
   private:
     enum class StatusTone { Neutral, Good, Warning, Error };
 
-    enum PageIndex { SerialPage = 0, DeviceInfoPage };
+    enum PageIndex { SerialPage = 0, DeviceInfoPage, FileTransferPage, MirrorPage };
 
     void buildUi();
     QWidget* buildTopBar();
     QWidget* buildNavigation();
     QWidget* buildSerialPage();
     QWidget* buildDeviceInfoPage();
+    QWidget* buildFileTransferPage();
+    QWidget* buildMirrorPage();
+    QWidget* wrapAdbPage(const QString& title, QWidget* content);
+    void setAdbExpanded(bool expanded);
+    void setSerialExpanded(bool expanded);
+    void updateNavigation();
     QWidget* wrapPage(const QString& title,
                       const QString& subtitle,
                       QWidget* content,
                       bool scrollable = true);
-    QPushButton* addNavigationButton(const QString& text, int pageIndex);
+    QPushButton* addNavigationButton(const QString& text, int pageIndex, const QString& serialMode = {});
 
     void refreshDevices();
     void openAdbTerminal();
@@ -58,6 +68,8 @@ class MainWindow final : public QMainWindow {
     void disconnectAgent(const QString& reason = {});
     void setAgentStatus(const QString& text, StatusTone tone, const QString& detail = {});
     void updateAgentControls();
+    void checkServiceHealth();
+    void updateServicePresentation();
     void prepareForShutdown();
     void applyDeviceScan(testtools::DeviceScanResult result, bool automatic);
     void applySelectedDevice();
@@ -70,9 +82,25 @@ class MainWindow final : public QMainWindow {
     QComboBox* deviceCombo_ = nullptr;
     QLabel* adbStatusLabel_ = nullptr;
     QLabel* agentStatusLabel_ = nullptr;
-    QPushButton* agentActionButton_ = nullptr;
+    QPushButton* topServiceButton_ = nullptr;
+    QPushButton *serialGroupButton_ = nullptr, *adbGroupButton_ = nullptr;
+    QTimer* serviceHealthTimer_ = nullptr;
+    bool serviceProbeActive_ = false, agentCleanupPending_ = false;
+    testtools::AgentServiceState serviceState_ = testtools::AgentServiceState::Disconnected;
+    QString serviceDetail_;
     QPushButton* refreshButton_ = nullptr;
     QPushButton* adbTerminalButton_ = nullptr;
+    std::vector<QPushButton*> terminalButtons_;
+    QWidget* serialChildren_ = nullptr;
+    QToolButton* serialExpandButton_ = nullptr;
+    QWidget* adbChildren_ = nullptr;
+    QToolButton* adbExpandButton_ = nullptr;
+    int lastAdbPage_ = FileTransferPage;
+    bool closeRequested_ = false;
+    bool fileShutdownComplete_ = false;
+    FileTransferWorkspace* fileWorkspace_ = nullptr;
+    ScreenMirrorPanel* screenMirrorPanel_ = nullptr;
+    bool mirrorShutdownComplete_ = false;
     QTimer* deviceRefreshTimer_ = nullptr;
     QStackedWidget* pages_ = nullptr;
     SerialWorkspace* serialWorkspace_ = nullptr;

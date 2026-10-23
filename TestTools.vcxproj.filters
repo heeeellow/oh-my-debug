@@ -21,10 +21,13 @@
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="src\ui\main_window.h"><Filter>界面</Filter></QtMoc>
+    <QtMoc Include="src\ui\screen_mirror_panel.h"><Filter>界面</Filter></QtMoc>
+    <QtMoc Include="src\ui\pages\file_transfer_workspace.h"><Filter>界面</Filter></QtMoc>
     <QtMoc Include="src\ui\pages\serial_workspace.h"><Filter>界面</Filter></QtMoc>
     <ClCompile Include="src\main.cpp"><Filter>应用入口</Filter></ClCompile>
     <ClCompile Include="src\application\agent\adb_agent_deployment.cpp"><Filter>应用层\Agent</Filter></ClCompile>
     <ClCompile Include="src\application\agent\android_agent_deployment.cpp"><Filter>应用层\Agent</Filter></ClCompile>
+    <ClCompile Include="src\application\agent\agent_service_status.cpp"><Filter>应用层\Agent</Filter></ClCompile>
     <ClCompile Include="src\application\agent\agent_connection_service.cpp"><Filter>应用层\Agent</Filter></ClCompile>
     <ClCompile Include="src\application\agent\agent_target.cpp"><Filter>应用层\Agent</Filter></ClCompile>
     <ClCompile Include="src\application\agent\agent_bundle.cpp"><Filter>应用层\Agent</Filter></ClCompile>
@@ -33,6 +36,12 @@
     <ClCompile Include="src\application\agent\linux_agent_deployment.cpp"><Filter>应用层\Agent</Filter></ClCompile>
     <ClCompile Include="src\application\device\device_discovery.cpp"><Filter>应用层\设备</Filter></ClCompile>
     <ClCompile Include="src\application\device\adb_terminal_service.cpp"><Filter>应用层\设备</Filter></ClCompile>
+    <ClCompile Include="src\application\device\screen_mirror_service.cpp"><Filter>应用层\设备</Filter></ClCompile>
+    <ClCompile Include="src\application\device\file_transfer_service.cpp"><Filter>应用层\设备</Filter></ClCompile>
+    <ClCompile Include="src\adapters\device\adb_file_transfer_backend.cpp"><Filter>适配器\ADB</Filter></ClCompile>
+    <ClCompile Include="src\ui\pages\file_transfer_workspace.cpp"><Filter>界面</Filter></ClCompile>
+    <ClCompile Include="src\adapters\device\scrcpy_backend.cpp"><Filter>适配器</Filter></ClCompile>
+    <ClCompile Include="src\ui\screen_mirror_panel.cpp"><Filter>界面</Filter></ClCompile>
       <ClCompile Include="src\application\serial\serial_session.cpp"><Filter>应用层\串口</Filter></ClCompile>
       <ClCompile Include="src\application\serial\at_command_library.cpp"><Filter>应用层\串口</Filter></ClCompile>
       <ClCompile Include="src\application\serial\serial_transport_service.cpp"><Filter>应用层\串口</Filter></ClCompile>
@@ -53,6 +62,9 @@
     <ClCompile Include="src\diagnostics\self_test.cpp"><Filter>诊断</Filter></ClCompile>
     <ClCompile Include="src\ui\main_window.cpp"><Filter>界面</Filter></ClCompile>
     <ClCompile Include="src\ui\pages\serial_workspace.cpp"><Filter>界面</Filter></ClCompile>
+    <ClCompile Include="src\ui\widgets\file_icon_provider.cpp"><Filter>界面</Filter></ClCompile>
+    <ClCompile Include="src\ui\widgets\file_pane.cpp"><Filter>界面</Filter></ClCompile>
+    <ClCompile Include="src\ui\widgets\serial_connection_bar.cpp"><Filter>界面</Filter></ClCompile>
     <ClCompile Include="src\ui\theme.cpp"><Filter>界面</Filter></ClCompile>
     <ClCompile Include="third_party\CSerialPort\src\SerialPort.cpp"><Filter>第三方依赖</Filter></ClCompile>
     <ClCompile Include="third_party\CSerialPort\src\SerialPortAsyncBase.cpp"><Filter>第三方依赖</Filter></ClCompile>
@@ -67,6 +79,7 @@
   <ItemGroup>
     <ClInclude Include="src\application\agent\android_agent_deployment.h"><Filter>应用层\Agent</Filter></ClInclude>
     <ClInclude Include="src\application\agent\adb_agent_deployment.h"><Filter>应用层\Agent</Filter></ClInclude>
+    <ClInclude Include="src\application\agent\agent_service_status.h"><Filter>应用层\Agent</Filter></ClInclude>
     <ClInclude Include="src\application\agent\agent_connection_service.h"><Filter>应用层\Agent</Filter></ClInclude>
     <ClInclude Include="src\application\agent\agent_target.h"><Filter>应用层\Agent</Filter></ClInclude>
     <ClInclude Include="src\application\agent\agent_bundle.h"><Filter>应用层\Agent</Filter></ClInclude>
@@ -75,6 +88,11 @@
     <ClInclude Include="src\application\agent\linux_agent_deployment.h"><Filter>应用层\Agent</Filter></ClInclude>
     <ClInclude Include="src\application\device\device_discovery.h"><Filter>应用层\设备</Filter></ClInclude>
     <ClInclude Include="src\application\device\adb_terminal_service.h"><Filter>应用层\设备</Filter></ClInclude>
+    <ClInclude Include="src\application\device\screen_mirror_service.h"><Filter>应用层\设备</Filter></ClInclude>
+    <ClInclude Include="src\application\device\file_transfer_service.h"><Filter>应用层\设备</Filter></ClInclude>
+    <ClInclude Include="src\core\device\file_transfer.h"><Filter>核心层</Filter></ClInclude>
+    <ClInclude Include="src\adapters\device\scrcpy_backend.h"><Filter>适配器</Filter></ClInclude>
+    <ClInclude Include="src\core\device\screen_mirror.h"><Filter>核心层</Filter></ClInclude>
       <ClInclude Include="src\application\serial\serial_session.h"><Filter>应用层\串口</Filter></ClInclude>
       <ClInclude Include="src\application\serial\at_command_library.h"><Filter>应用层\串口</Filter></ClInclude>
       <ClInclude Include="src\application\serial\serial_transport_service.h"><Filter>应用层\串口</Filter></ClInclude>
@@ -97,6 +115,10 @@
     <ClInclude Include="src\core\serial\serial_types.h"><Filter>核心层\串口</Filter></ClInclude>
     <ClInclude Include="src\core\support\command_line.h"><Filter>核心层\通用</Filter></ClInclude>
     <ClInclude Include="src\diagnostics\self_test.h"><Filter>诊断</Filter></ClInclude>
+    <ClInclude Include="src\ui\widgets\file_icon_provider.h"><Filter>界面</Filter></ClInclude>
+    <ClInclude Include="src\ui\widgets\file_pane.h"><Filter>界面</Filter></ClInclude>
+    <ClInclude Include="src\ui\widgets\serial_connection_bar.h"><Filter>界面</Filter></ClInclude>
+    <ClInclude Include="src\ui\widgets\serial_receive_view.h"><Filter>界面</Filter></ClInclude>
     <ClInclude Include="src\ui\theme.h"><Filter>界面</Filter></ClInclude>
   </ItemGroup>
 </Project>

@@ -1,4 +1,6 @@
 #include "application/agent/agent_bundle.h"
+#include "application/agent/agent_service_status.h"
+#include "application/device/screen_mirror_service.h"
 #include "application/agent/agent_target.h"
 #include "application/agent/board_profile.h"
 #include "application/agent/board_test_job_client.h"
@@ -28,6 +30,22 @@
 #include <vector>
 
 namespace {
+
+class FakeMirrorBackend final : public testtools::IScreenMirrorBackend {
+public:
+    bool start(const std::string& device, std::string&) override { serial = device; ++starts; status.running = true; return true; }
+    void stop() override { status.running = false; }
+    void requestStop() noexcept override { cancelled = true; }
+    testtools::MirrorProcessStatus poll() override { return status; }
+    bool control(testtools::MirrorControl value, std::string&) override { lastControl = value; return true; }
+    bool screenshot(const std::filesystem::path& value, std::string&) override { path = value; return true; }
+    testtools::MirrorProcessStatus status;
+    testtools::MirrorControl lastControl = testtools::MirrorControl::Back;
+    std::filesystem::path path;
+    std::string serial;
+    int starts = 0;
+    bool cancelled = false;
+};
 
 class FakeSerialTransport final : public serialdemo::ISerialTransport {
   public:
@@ -384,6 +402,30 @@ int testBoardProfiles()
 
 int main()
 {
+    {
+        auto backend = std::make_unique<FakeMirrorBackend>();
+        auto* fixture = backend.get();
+        testtools::ScreenMirrorService mirror(std::move(backend));
+        if (mirror.start({"A", "unauthorized", {}}).success || fixture->starts != 0)
+            return fail("mirror refuses unauthorized device without starting backend");
+        if (!mirror.start({"A", "device", {}}).success || mirror.snapshot().serial != "A")
+            return fail("mirror captures selected device");
+        if (mirror.start({"B", "device", {}}).success || fixture->starts != 1 || fixture->serial != "A")
+            return fail("mirror does not migrate running session on selection change");
+        if (!mirror.control(testtools::MirrorControl::Home).success
+            || fixture->lastControl != testtools::MirrorControl::Home
+            || !mirror.screenshot("capture.png").success || fixture->serial != "A")
+            return fail("mirror controls and screenshot belong to current mirror target");
+        fixture->status = {false, 2, "device disconnected"};
+        if (mirror.poll().running || mirror.snapshot().detail != "device disconnected")
+            return fail("mirror process failure reaches state");
+        if (!mirror.start({"B", "device", {}}).success || fixture->serial != "B")
+            return fail("mirror can restart on newly selected device after exit");
+        mirror.requestShutdown(); mirror.stop();
+        if (!fixture->cancelled || mirror.snapshot().running || mirror.control(testtools::MirrorControl::Back).success
+            || mirror.start({"B", "device", {}}).success)
+            return fail("mirror shutdown rejects new device operations");
+    }
     if (testJsonValueContracts() != 0 || testBoardProfiles() != 0) {
         return 1;
     }
@@ -989,6 +1031,17 @@ int main()
     tasks.wait();
     if (completedTasks != 2 || tasks.retainedTaskCount() != 0) {
         return fail("background task ownership");
+    }
+
+    {
+        const std::string hello = R"({"ok":true,"result":{"agent_version":"0.3.7"}})";
+        const std::string capabilities = R"({"ok":true,"result":{"capabilities":[{"id":"serial.stream"}]}})";
+        std::string error;
+        if (!testtools::validateAgentService(hello, capabilities, "0.3.7", error) ||
+            testtools::validateAgentService(hello, capabilities, "0.3.8", error) ||
+            testtools::validateAgentService(hello, R"({"ok":true,"result":{"capabilities":[]}})", "0.3.7", error) ||
+            testtools::validateAgentService(hello, R"({"ok":false,"result":{"capabilities":[{"id":"serial.stream"}]}})", "0.3.7", error) ||
+            testtools::validateAgentService("broken", capabilities, "0.3.7", error)) return fail("service readiness requires handshake, version and serial capability");
     }
 
     std::cout << "PASS core and application contracts without Qt or devices\n";

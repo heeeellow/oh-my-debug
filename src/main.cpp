@@ -13,6 +13,7 @@
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QTableWidget>
 #include <QtWidgets/QTreeWidget>
+#include <QtWidgets/QTreeView>
 
 #include <filesystem>
 #include <string>
@@ -124,6 +125,7 @@ int main(int argc, char* argv[])
     }
     QApplication app(argc, argv);
     QApplication::setStyle(QStringLiteral("Fusion"));
+    QApplication::setFont(QFont(QStringLiteral("Microsoft YaHei UI"), 10));
     MainWindow window;
     if (!initialPage.empty()) {
         window.navigateTo(QString::fromUtf8(initialPage));
@@ -142,13 +144,24 @@ int main(int argc, char* argv[])
             window.resize(width, height);
         }
     }
+    const QSize requestedSize = window.size();
     window.show();
+    if (!initialSize.empty() && !snapshotPath.empty()) {
+        // The window manager may constrain the initial show to the current screen.
+        // Restore the requested logical size for reproducible off-screen captures.
+        QTimer::singleShot(0, &window, [&window, requestedSize] { window.resize(requestedSize); });
+    }
     if (!snapshotPath.empty()) {
         QTimer::singleShot(snapshotDelay, &app, [&app, &window, snapshotPath] {
             const bool saved = window.grab().save(QString::fromUtf8(snapshotPath), "PNG");
             QJsonArray controls;
+            controls.append(QJsonObject{{"name", "window"},
+                                        {"logicalWidth", window.width()},
+                                        {"logicalHeight", window.height()},
+                                        {"dpr", window.devicePixelRatioF()}});
             for (auto* widget : window.findChildren<QWidget*>()) {
-                const QString name = widget->property("diagnosticObjectName").toString();
+                QString name = widget->property("diagnosticObjectName").toString();
+                if (name.isEmpty()) name = widget->objectName();
                 const auto* label = qobject_cast<QLabel*>(widget);
                 if (name.isEmpty() && !label)
                     continue;
@@ -157,6 +170,13 @@ int main(int argc, char* argv[])
                                   {"enabled", widget->isEnabled()}};
                 if (label)
                     entry.insert("text", label->text());
+                if (auto* button = qobject_cast<QPushButton*>(widget)) {
+                    entry.insert("text", button->text());
+                    entry.insert("checked", button->isChecked());
+                }
+                if (auto* view = qobject_cast<QTreeView*>(widget); view && view->model()) {
+                    entry.insert("rowCount", view->model()->rowCount());
+                }
                 if (auto* table = qobject_cast<QTableWidget*>(widget)) {
                     QJsonArray rows;
                     for (int row = 0; row < table->rowCount(); ++row) {

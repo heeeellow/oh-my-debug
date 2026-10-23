@@ -1,4 +1,6 @@
 #include "serial_workspace.h"
+#include "ui/widgets/serial_receive_view.h"
+#include "ui/widgets/serial_connection_bar.h"
 
 #include "application/serial/serial_transport_service.h"
 #include "core/serial/codec.h"
@@ -57,50 +59,6 @@ using namespace serialdemo;
 
 namespace {
 
-class ReceiveConsole final : public QPlainTextEdit {
-public:
-    explicit ReceiveConsole(QWidget* parent) : QPlainTextEdit(parent), cursorBlink_(this)
-    {
-        cursorBlink_.setInterval(std::max(250, QApplication::cursorFlashTime() / 2));
-        connect(&cursorBlink_, &QTimer::timeout, this, [this] {
-            if (property("terminalInput").toBool()) { cursorOn_ = !cursorOn_; viewport()->update(); }
-        });
-    }
-    void setTerminalCursor(const QTextCursor& cursor) { terminalCursor_ = cursor; cursorOn_ = true; viewport()->update(); }
-    QRect terminalCursorRect() const { return terminalCursor_.isNull() ? cursorRect() : cursorRect(terminalCursor_); }
-    std::function<void(bool)> scrollFollowChanged;
-protected:
-    void paintEvent(QPaintEvent* event) override
-    {
-        QPlainTextEdit::paintEvent(event);
-        if (property("terminalInput").toBool() && hasFocus() && cursorOn_) {
-            QPainter painter(viewport());
-            auto caret = terminalCursorRect();
-            caret.setWidth(2);
-            painter.fillRect(caret, QColor(QStringLiteral("#706963")));
-        }
-    }
-    void focusInEvent(QFocusEvent* event) override
-    {
-        QPlainTextEdit::focusInEvent(event); cursorOn_ = true;
-        if (QApplication::cursorFlashTime() > 0) cursorBlink_.start();
-        viewport()->update();
-    }
-    void focusOutEvent(QFocusEvent* event) override
-    {
-        cursorBlink_.stop(); QPlainTextEdit::focusOutEvent(event); viewport()->update();
-    }
-    void wheelEvent(QWheelEvent* event) override
-    {
-        QPlainTextEdit::wheelEvent(event);
-        if (property("terminalInput").toBool() && scrollFollowChanged)
-            scrollFollowChanged(verticalScrollBar()->value() >= verticalScrollBar()->maximum());
-    }
-private:
-    QTextCursor terminalCursor_;
-    QTimer cursorBlink_;
-    bool cursorOn_ = true;
-};
 
 QString fromUtf8(const std::string &text)
 {
@@ -246,7 +204,13 @@ SerialWorkspace::~SerialWorkspace()
     prepareForShutdown();
 }
 
-bool SerialWorkspace::setWorkspaceModeForDiagnostics(const QString &modeName)
+QString SerialWorkspace::currentWorkspaceMode() const
+{
+    return workspaceState_.mode() == WorkspaceMode::Dual ? QStringLiteral("dual") : workspaceState_.mode() == WorkspaceMode::Terminal ? QStringLiteral("terminal") : QStringLiteral("single");
+}
+bool SerialWorkspace::setWorkspaceModeForDiagnostics(const QString& modeName) { return selectWorkspaceMode(modeName); }
+
+bool SerialWorkspace::selectWorkspaceMode(const QString &modeName)
 {
     const QString normalized = modeName.trimmed().toLower();
     WorkspaceMode mode = WorkspaceMode::Single;
@@ -290,42 +254,32 @@ void SerialWorkspace::buildUi()
     auto *modeLayout = new QHBoxLayout(modeBar);
     modeLayout->setContentsMargins(2, 0, 2, 2);
     modeLayout->setSpacing(12);
-    auto *pageTitle = new QLabel(QStringLiteral("串口调试"), modeBar);
-    pageTitle->setObjectName(QStringLiteral("pageTitle"));
-    modeLayout->addWidget(pageTitle);
-
-    auto *segmentedBar = new QFrame(modeBar);
-    segmentedBar->setObjectName(QStringLiteral("segmentedBar"));
-    auto *segmentedLayout = new QHBoxLayout(segmentedBar);
-    segmentedLayout->setContentsMargins(3, 3, 3, 3);
-    segmentedLayout->setSpacing(2);
-
-    auto *modeGroup = new QButtonGroup(this);
-    modeGroup->setExclusive(true);
-    const std::array<QString, 3> modeNames{
-        QStringLiteral("单串口调试"),
-        QStringLiteral("双端调试"),
-        QStringLiteral("串口终端"),
-    };
-    for (int index = 0; index < static_cast<int>(modeButtons_.size()); ++index) {
-        auto *button = new QPushButton(modeNames[static_cast<std::size_t>(index)], segmentedBar);
-        button->setObjectName(QStringLiteral("modeButton"));
-        button->setCheckable(true);
-        button->setChecked(index == 0);
-        modeGroup->addButton(button, index);
-        modeButtons_[static_cast<std::size_t>(index)] = button;
-        segmentedLayout->addWidget(button);
-        connect(button, &QPushButton::clicked, this, [this, index] {
-            setWorkspaceMode(static_cast<WorkspaceMode>(index));
-        });
-    }
-    modeLayout->addWidget(segmentedBar);
+    pageTitle_ = new QLabel(QStringLiteral("单串口调试"), modeBar);
+    pageTitle_->setObjectName(QStringLiteral("pageTitle"));
+    modeLayout->addWidget(pageTitle_);
     modeDescriptionLabel_ = new QLabel(modeBar);
     modeDescriptionLabel_->setObjectName(QStringLiteral("modeDescription"));
     modeDescriptionLabel_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     modeLayout->addStretch();
     modeLayout->addWidget(modeDescriptionLabel_);
     rootLayout->addWidget(modeBar);
+    serviceHint_ = new QFrame(this);
+    serviceHint_->setObjectName(QStringLiteral("serialServiceHint"));
+    auto* serviceLayout = new QHBoxLayout(serviceHint_);
+    serviceLayout->setContentsMargins(12, 8, 12, 8);
+    serviceHintLabel_ = new QLabel(serviceHint_);
+    serviceHintLabel_->setWordWrap(true);
+    serviceHintLabel_->setObjectName(QStringLiteral("serialServiceMessage"));
+    serviceConnectButton_ = new QPushButton(QStringLiteral("连接调试服务"), serviceHint_);
+    serviceConnectButton_->setObjectName(QStringLiteral("serialServiceConnect"));
+    serviceLayout->addWidget(serviceHintLabel_, 1);
+    serviceLayout->addWidget(serviceConnectButton_);
+    rootLayout->addWidget(serviceHint_);
+    serviceHint_->hide();
+    connect(serviceConnectButton_,
+            &QPushButton::clicked,
+            this,
+            &SerialWorkspace::prepareServiceRequested);
 
     linkBar_ = new QFrame(this);
     linkBar_->setObjectName(QStringLiteral("linkBar"));
@@ -477,7 +431,6 @@ void SerialWorkspace::setWorkspaceMode(WorkspaceMode mode)
         return;
     }
     if (!canSwitchWorkspaceMode(mode)) {
-        modeButtons_[static_cast<std::size_t>(workspaceState_.mode())]->setChecked(true);
         return;
     }
     testtools::SerialWorkspaceActivity activity;
@@ -521,7 +474,8 @@ void SerialWorkspace::applyWorkspaceMode()
 
     const bool terminal = workspaceState_.mode() == WorkspaceMode::Terminal;
     const bool single = workspaceState_.mode() != WorkspaceMode::Dual;
-    modeButtons_[static_cast<std::size_t>(workspaceState_.mode())]->setChecked(true);
+    pageTitle_->setText(terminal ? QStringLiteral("串口终端") : single ? QStringLiteral("单串口调试") : QStringLiteral("双端调试"));
+    emit workspaceModeChanged(currentWorkspaceMode());
 
     channels_[0].group->setVisible(!single);
     channels_[1].group->setVisible(true);
@@ -677,6 +631,7 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     channel.statusLabel->setAlignment(Qt::AlignCenter);
     channel.connectButton = new QPushButton(QStringLiteral("连接"), channel.actionsContainer);
     channel.connectButton->setMinimumWidth(78);
+    channel.refreshPortsButton->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
     actionsLayout->addWidget(channel.refreshPortsButton);
     actionsLayout->addWidget(channel.advancedSettingsButton);
     actionsLayout->addWidget(channel.statusLabel);
@@ -685,85 +640,19 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     channel.headerLayout->addWidget(channel.actionsContainer);
     layout->addWidget(channel.headerWidget);
 
-    auto *connectionRow = new QFrame(channel.group);
-    connectionRow->setObjectName(QStringLiteral("connectionRow"));
-    channel.settingsRowLayout = new QHBoxLayout(connectionRow);
-    channel.settingsRowLayout->setContentsMargins(0, 0, 0, 8);
-    channel.settingsRowLayout->setSpacing(6);
-    channel.sourceCombo = new QComboBox(connectionRow);
-    channel.sourceCombo->addItem(QStringLiteral("Windows 本地串口"), false);
-    channel.sourceCombo->addItem(QStringLiteral("设备串口"), true);
-    channel.sourceCombo->setMinimumWidth(148);
-    channel.sourceCombo->setMaximumWidth(176);
-
-    channel.portCombo = new QComboBox(connectionRow);
-    channel.portCombo->setEditable(true);
-    channel.portCombo->setMinimumContentsLength(12);
-    channel.portCombo->setMaximumWidth(320);
-
-    channel.baudCombo = new QComboBox(connectionRow);
-    channel.baudCombo->setEditable(true);
-    channel.baudCombo->addItems({QStringLiteral("9600"), QStringLiteral("19200"),
-                                 QStringLiteral("38400"), QStringLiteral("57600"),
-                                 QStringLiteral("115200"), QStringLiteral("230400"),
-                                 QStringLiteral("460800"), QStringLiteral("921600"),
-                                 QStringLiteral("1500000")});
-    channel.baudCombo->setMinimumWidth(106);
-    channel.baudCombo->setMaximumWidth(128);
-    channel.baudCombo->setCurrentText(QStringLiteral("115200"));
-    channel.baudCombo->setToolTip(
-        QStringLiteral("物理 UART 使用该波特率；ttyUSB/ttyACM 是 USB 虚拟串口，驱动可能忽略该数值，"
-                       "它不代表 USB 链路速率。"));
-    channel.baudCombo->lineEdit()->setCursorPosition(0);
-
-    const auto fieldLabel = [&channel](const QString &text) {
-        auto *label = new QLabel(text, channel.group);
-        label->setObjectName(QStringLiteral("fieldLabel"));
-        return label;
-    };
-    channel.settingsRowLayout->addWidget(fieldLabel(QStringLiteral("位置")));
-    channel.settingsRowLayout->addWidget(channel.sourceCombo);
-    channel.settingsRowLayout->addWidget(fieldLabel(QStringLiteral("串口")));
-    channel.settingsRowLayout->addWidget(channel.portCombo, 1);
-    channel.settingsRowLayout->addWidget(fieldLabel(QStringLiteral("波特率")));
-    channel.settingsRowLayout->addWidget(channel.baudCombo);
-    channel.settingsRowLayout->addStretch();
-    layout->addWidget(connectionRow);
-
-    channel.dataBitsCombo = new QComboBox(channel.group);
-    channel.dataBitsCombo->addItems({QStringLiteral("5"), QStringLiteral("6"), QStringLiteral("7"), QStringLiteral("8")});
-    channel.dataBitsCombo->setCurrentText(QStringLiteral("8"));
-    channel.parityCombo = new QComboBox(channel.group);
-    channel.parityCombo->addItems({QStringLiteral("无校验"), QStringLiteral("奇校验"), QStringLiteral("偶校验")});
-    channel.stopBitsCombo = new QComboBox(channel.group);
-    channel.stopBitsCombo->addItems({QStringLiteral("1 停止位"), QStringLiteral("2 停止位")});
-    channel.flowControlCombo = new QComboBox(channel.group);
-    channel.flowControlCombo->addItems({QStringLiteral("无流控"), QStringLiteral("硬件流控"), QStringLiteral("软件流控")});
-
-    channel.advancedSettingsArea = new QWidget(channel.group);
-    auto *advancedSettings = new QGridLayout(channel.advancedSettingsArea);
-    advancedSettings->setContentsMargins(0, 0, 0, 2);
-    advancedSettings->setSpacing(6);
-    channel.dataBitsCombo->setMinimumWidth(68);
-    channel.parityCombo->setMinimumWidth(92);
-    channel.stopBitsCombo->setMinimumWidth(92);
-    channel.flowControlCombo->setMinimumWidth(92);
-    advancedSettings->addWidget(fieldLabel(QStringLiteral("数据位")), 0, 0);
-    advancedSettings->addWidget(channel.dataBitsCombo, 0, 1);
-    advancedSettings->addWidget(fieldLabel(QStringLiteral("校验")), 0, 2);
-    advancedSettings->addWidget(channel.parityCombo, 0, 3);
-    advancedSettings->addWidget(fieldLabel(QStringLiteral("停止位")), 1, 0);
-    advancedSettings->addWidget(channel.stopBitsCombo, 1, 1);
-    advancedSettings->addWidget(fieldLabel(QStringLiteral("流控")), 1, 2);
-    advancedSettings->addWidget(channel.flowControlCombo, 1, 3);
-    channel.dtrCheck = new QCheckBox(QStringLiteral("DTR"), channel.advancedSettingsArea);
-    channel.rtsCheck = new QCheckBox(QStringLiteral("RTS"), channel.advancedSettingsArea);
-    for (auto *control : {channel.dtrCheck, channel.rtsCheck}) {
-        control->setCheckState(Qt::PartiallyChecked);
-        control->setEnabled(false);
-        control->setToolTip(QStringLiteral("连接本地串口后可手动设置；半选表示本次连接尚未设置，不自动记忆电平"));
-
-    }
+    auto* connection = new SerialConnectionBar(channel.group);
+    channel.sourceCombo = connection->sourceCombo;
+    channel.portCombo = connection->portCombo;
+    channel.baudCombo = connection->baudCombo;
+    channel.dataBitsCombo = connection->dataBitsCombo;
+    channel.parityCombo = connection->parityCombo;
+    channel.stopBitsCombo = connection->stopBitsCombo;
+    channel.flowControlCombo = connection->flowControlCombo;
+    channel.dtrCheck = connection->dtrCheck;
+    channel.rtsCheck = connection->rtsCheck;
+    channel.settingsRowLayout = connection->settingsRowLayout;
+    channel.advancedSettingsArea = connection->advancedSettingsArea;
+    layout->addWidget(connection);
     channel.dtrCheck->setProperty("diagnosticObjectName", QStringLiteral("dtr%1").arg(index));
     channel.rtsCheck->setProperty("diagnosticObjectName", QStringLiteral("rts%1").arg(index));
     connect(channel.dtrCheck, &QCheckBox::clicked, this, [this, index](bool checked) {
@@ -772,11 +661,6 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     connect(channel.rtsCheck, &QCheckBox::clicked, this, [this, index](bool checked) {
         setControlLine(index, SerialControlLine::Rts, checked);
     });
-    advancedSettings->addWidget(channel.dtrCheck, 0, 4);
-    advancedSettings->addWidget(channel.rtsCheck, 1, 4);
-    advancedSettings->setColumnStretch(5, 1);
-    channel.advancedSettingsArea->hide();
-    layout->addWidget(channel.advancedSettingsArea);
 
     auto *terminalFrame = new QFrame(channel.group);
     terminalFrame->setObjectName(QStringLiteral("terminalFrame"));
@@ -807,7 +691,7 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
         QStringLiteral("收到新数据时自动滚动到底部；取消勾选后可固定视图查看或复制历史日志"));
 
     channel.counterLabel = new QLabel(QStringLiteral("RX: 0 B  |  TX: 0 B"), terminalHeader);
-    channel.counterLabel->setObjectName(QStringLiteral("mutedLabel"));
+    channel.counterLabel->setObjectName(QStringLiteral("counterLabel"));
     channel.counterLabel->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
 
     channel.resetCounterButton = new QPushButton(QStringLiteral("计数清零"), terminalHeader);
@@ -835,6 +719,8 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     receiveHeader->addWidget(channel.counterLabel);
     channel.searchButton = new QPushButton(QStringLiteral("搜索"), terminalHeader);
     channel.searchButton->setObjectName(QStringLiteral("clearButton"));
+    channel.saveLogButton->setIcon(style()->standardIcon(QStyle::SP_DialogSaveButton));
+    channel.clearReceiveButton->setIcon(style()->standardIcon(QStyle::SP_DialogDiscardButton));
     channel.searchButton->setCheckable(true);
     channel.searchButton->setToolTip(QStringLiteral("搜索与过滤当前日志（Ctrl+F）"));
     receiveHeader->addWidget(channel.searchButton);
@@ -1477,11 +1363,26 @@ void SerialWorkspace::setAdbDevice(const AdbDevice& device)
     updateRouteSummary();
 }
 
+void SerialWorkspace::setServiceStatus(testtools::AgentServiceState state,
+                                       const QString& detail,
+                                       bool cleanupPending)
+{
+    if (serviceState_ == state && serviceDetail_ == detail &&
+        serviceCleanupPending_ == cleanupPending)
+        return;
+    serviceCleanupPending_ = cleanupPending;
+    serviceState_ = state;
+    serviceDetail_ = detail;
+    updateGlobalControls();
+}
+
 void SerialWorkspace::setAgentConnection(const std::string& adbSerial,
                                          std::uint16_t localControlPort)
 {
-    if (hasActiveConnections()) {
-        return;
+    if (agentAdbSerial_ != adbSerial || agentControlPort_ != localControlPort) {
+        for (int i = 0; i < 2; ++i)
+            if (channelUsesAgent(i) && channelActive(i))
+                disconnectChannel(i);
     }
     agentAdbSerial_ = adbSerial;
     agentControlPort_ = localControlPort;
@@ -1906,6 +1807,30 @@ void SerialWorkspace::setChannelControlsEnabled(int index, bool enabled)
 
 void SerialWorkspace::updateGlobalControls()
 {
+    if (serviceHint_) {
+        const bool boardSelected =
+            (workspaceState_.mode() == WorkspaceMode::Dual && channelUsesAgent(0)) ||
+            channelUsesAgent(1);
+        const bool available = selectedAgentIsOnline();
+        serviceHint_->setVisible(boardSelected && !available);
+        const bool connecting = serviceState_ == testtools::AgentServiceState::Connecting;
+        serviceHintLabel_->setText(
+            currentAdbDevice_.state != "device"
+                ? QStringLiteral("请先选择在线且已授权的 ADB 设备，再连接设备串口。")
+            : connecting ? QStringLiteral("正在连接调试服务，完成后即可选择设备串口。")
+            : serviceState_ == testtools::AgentServiceState::Failed
+                ? QStringLiteral(
+                      "调试服务连接失败，设备串口暂不可用。请重试或在设备信息中查看原因。")
+                : QStringLiteral(
+                      "调试服务未连接，连接后即可使用设备串口；文件传输与远程调试仍可使用。"));
+        serviceHintLabel_->setToolTip(serviceDetail_);
+        serviceConnectButton_->setText(serviceState_ == testtools::AgentServiceState::Failed
+                                           ? QStringLiteral("重试连接")
+                                           : QStringLiteral("连接调试服务"));
+        serviceConnectButton_->setEnabled(currentAdbDevice_.state == "device" && !connecting &&
+                                          !serviceCleanupPending_ && !hasActiveConnections());
+    }
+
     const auto firstSnapshot = channels_[0].session.snapshot();
     const auto secondSnapshot = channels_[1].session.snapshot();
     const bool firstActive = channelActive(0);

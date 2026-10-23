@@ -1,4 +1,5 @@
 #include "application/agent/agent_connection_service.h"
+#include "application/agent/agent_service_status.h"
 
 #include "adapters/agent/agent_client.h"
 #include "core/protocol/json_value.h"
@@ -37,9 +38,9 @@ bool connectAndDiscover(AgentConnectionResult& result)
     result.client = AgentConnectionService::createClient();
     if (!result.client->connect("127.0.0.1", result.deployment.localPort, result.error) ||
         !result.client->request("{\"protocol\":1,\"request_id\":\"ui-hello\","
-                               "\"method\":\"session.hello\",\"params\":{}}",
-                               result.hello,
-                               result.error)) {
+                                "\"method\":\"session.hello\",\"params\":{}}",
+                                result.hello,
+                                result.error)) {
         return false;
     }
 
@@ -54,6 +55,10 @@ bool connectAndDiscover(AgentConnectionResult& result)
                                   "\"method\":\"capability.list\",\"params\":{}}",
                                   result.capabilities,
                                   result.error) &&
+           validateAgentService(result.hello,
+                                result.capabilities,
+                                AdbAgentDeployment::RequiredAgentVersion,
+                                result.error) &&
            result.client->request("{\"protocol\":1,\"request_id\":\"ui-system-info\","
                                   "\"method\":\"system.info\",\"params\":{}}",
                                   result.systemInfo,
@@ -80,11 +85,19 @@ std::shared_ptr<IAgentConnection> AgentConnectionService::createClient()
     return std::make_shared<AgentClient>();
 }
 
-AgentConnectionResult
-AgentConnectionService::connectDevice(const std::string& serial,
-                                      const std::string& applicationDirectory,
-                                      bool allowDeploy,
-                                      const ProgressCallback& progress)
+bool AgentConnectionService::checkConnection(std::uint16_t localPort, std::string& error)
+{
+    auto client = std::make_shared<AgentClient>(std::chrono::milliseconds(1500));
+    const bool ready = client->connect("127.0.0.1", localPort, error) &&
+                       probeAgentService(*client, AdbAgentDeployment::RequiredAgentVersion, error);
+    client->close();
+    return ready;
+}
+
+AgentConnectionResult AgentConnectionService::connectDevice(const std::string& serial,
+                                                            const std::string& applicationDirectory,
+                                                            bool allowDeploy,
+                                                            const ProgressCallback& progress)
 {
     AdbAgentDeployment deployment;
     AgentConnectionResult result;

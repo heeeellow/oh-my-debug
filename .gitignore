@@ -28,3 +28,4 @@
 
 # Pinned upstream ADB is a shipped dependency, not a generated executable.
 !/third_party/platform-tools/adb.exe
+!/third_party/scrcpy/scrcpy.exe

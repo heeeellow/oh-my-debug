@@ -25,6 +25,7 @@ class AgentConnectionService {
     using ProgressCallback = std::function<void(const std::string&)>;
 
     static std::shared_ptr<IAgentConnection> createClient();
+    static bool checkConnection(std::uint16_t localPort, std::string& error);
     static AgentConnectionResult connectDevice(const std::string& serial,
                                                 const std::string& applicationDirectory,
                                                 bool allowDeploy,

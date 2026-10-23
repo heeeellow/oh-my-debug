@@ -1,6 +1,6 @@
 # TestTools
 
-TestTools 是面向 Rockchip 板卡与通用硬件研发、测试和现场排障的轻量级 Windows 调试工作台。产品核心围绕**串口调试**（单串口收发、双端链路验证、Debug 串口终端）与**设备连接诊断**组织工作流，保持界面克制、开箱即用。
+TestTools 是面向 Rockchip 板卡与通用硬件研发、测试和现场排障的轻量级 Windows 调试工作台。产品围绕**串口调试**（单串口收发、双端链路验证、Debug 串口终端）、**ADB 文件传输与远程调试（终端、Android 投屏）**和**设备连接诊断**组织工作流，保持界面克制、开箱即用。
 
 当前版本见根目录 [`VERSION.txt`](VERSION.txt)，已实现范围、验证状态和开放风险统一见 [`docs/STATUS.md`](docs/STATUS.md)。
 
@@ -11,7 +11,10 @@ TestTools 是面向 Rockchip 板卡与通用硬件研发、测试和现场排障
 - [串口调试契约](docs/features/SERIAL.md)：连接、收发、快捷指令、计划发送与可靠性压测规则。
 - [串口终端契约](docs/features/SERIAL_TERMINAL.md)：Debug 控制台、键盘、连续输出与 ANSI 解析。
 - [ADB 终端契约](docs/features/ADB_TERMINAL.md)：内置 ADB、当前设备 Shell 与系统终端回退规则。
-- [迭代路线图（ADR-0004）](docs/decisions/0004-serial-terminal-and-adb-integration.md)：Debug 串口终端、内置 ADB 打包与串口补强方案。
+- [文件传输契约](docs/features/FILE_TRANSFER.md)：设备目录浏览、文件/文件夹手动收发、同名处理与取消规则。
+- [Android 投屏契约](docs/features/SCREEN_MIRROR.md)：独立投屏窗口、设备控制、截图与进程生命周期。
+- [整体迭代与新会话接手（ADR-0005）](docs/decisions/0005-adb-workspace-terminal-and-files.md)：ADB 工作区、导航与顶栏、独立文件传输页、后续终端候选及投屏音频边界；区分已接受方向和待定项。
+- [上一轮路线图（ADR-0004）](docs/decisions/0004-serial-terminal-and-adb-integration.md)：Debug 串口终端、内置 ADB 打包与串口补强方案。
 
 ## 开发与架构入口
 

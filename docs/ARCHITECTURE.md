@@ -7,7 +7,7 @@
 TestTools 从串口助手演进为设备中心的调试与测试工作台。架构需要同时保证：
 
 - Qt 限于 Windows 表现层和 GUI 线程桥接，核心逻辑可在没有 Qt 的环境复用和测试。
-- ADB 是可替换的发现、部署和隧道通道，不承载设备能力的业务语义。
+- ADB 是可替换的发现、部署和隧道通道；用户手动文件传输与投屏由固定主机适配器提供，不承载串口或板级测试业务语义。
 - 用户主动打开的外部 ADB 终端只交给系统终端交互，不进入 Agent RPC、串口数据通道或自动测试执行路径。
 - 板端操作由无 Qt Agent 统一提供，不以 Windows 端拼接任意 shell 命令实现测试项。
 - 简单测试可以使用通用运行页，串口、音频、图像等复杂能力可以绑定专用界面。
@@ -61,11 +61,15 @@ TestTools 从串口助手演进为设备中心的调试与测试工作台。架�
 | --- | --- | --- |
 | Presentation | `src/ui/main_window.*`、`src/ui/pages/serial_workspace.*`、`src/ui/theme.*` | Qt 控件、文案和 GUI 线程映射 |
 | Application | `src/application/{agent,device,serial,support}/` | 设备连接、串口会话、日志缓冲与偏好持久化；Qt 只读取快照 |
-| Core | `src/core/{protocol,serial,support}/` | 协议、值对象、接口、编解码、发送与测试逻辑；标准 C++，不得依赖 Qt |
-| Host adapters | `src/adapters/{adb,agent,serial}/` | ADB、进程、Agent TCP 和 Windows COM 的具体实现；不保存产品用例状态 |
+| Core | `src/core/{device,protocol,serial,support}/` | 协议、值对象、接口、编解码、发送与测试逻辑；标准 C++，不得依赖 Qt |
+| Host adapters | `src/adapters/{adb,agent,device,serial}/` | ADB、进程、Agent TCP 和 Windows COM 的具体实现；不保存产品用例状态 |
 | Board Agent | `src/agent/agent_service.*`、`serial_bridge.*`、`board_capability.*`、`board_test_job.*`、`native_board_observations.*` | 固定能力、参数校验和板端资源访问 |
 | 快捷指令与偏好 | `src/application/serial/at_command_library.*` | 无 Qt 的快捷指令（AT/HEX）与串口界面偏好值对象、边界校验和版本化本地 JSON；界面只负责编辑、选择与发送意图 |
 | 串口终端 | `src/application/serial/serial_terminal.*` | 无 Qt 的 UTF-8/ANSI 解析、有界显示单元、键码/粘贴编码；复用串口会话，不产生隐式终端应答，命令历史由板端拥有 |
+| Android 投屏 | `src/core/device/screen_mirror.h`、`src/application/device/screen_mirror_service.*` | 固定控制接口、会话设备与生命周期；后台操作通过快照返回，不依赖 Qt |
+| 投屏适配与表现 | `src/adapters/device/scrcpy_backend.*`、`src/ui/screen_mirror_panel.*` | 适配器拥有 scrcpy 进程和固定 ADB 命令；Qt 只处理面板、调度和状态反馈 |
+| 文件传输 | `src/core/device/file_transfer.h`、`src/application/device/file_transfer_service.*` | 文件值对象与接口、固定批次设备和路径、取消及逐项结果；无 Qt |
+| 文件适配与表现 | `src/adapters/device/adb_file_transfer_backend.cpp`、`src/ui/pages/file_transfer_workspace.*` | 适配器拥有固定目录/传输/替换命令和临时目录；Qt 负责列表、选择、同名确认与后台调度 |
 
 `DeviceSession`、`FeatureRegistry`、`JobCoordinator` 等名称只表示规划中的职责，
 不是已经存在的类。新增代码应优先按职责补齐，不为匹配文档一次性创建空类型。
@@ -100,6 +104,13 @@ Application 层负责跨接口用例和生命周期，目标职责包括：
 进程适配器启动独立系统终端。Qt 只负责后台调度与反馈，不等待交互式 Shell 的生命周期。
 
 该层只能依赖 core 接口和值对象，不包含 Qt 或具体 ADB 命令。
+投屏服务通过 `IScreenMirrorBackend` 注入适配器；默认构造入口 `createScreenMirrorService` 在桌面适配器中组合，
+UI 不直接创建具体后端。子进程通过私有环境复用 ADB，关闭只针对其拥有的投屏进程。
+文件服务通过 `IFileTransferBackend` 注入适配器，由适配器的 `createFileTransferService` 组合默认实现。
+`prepare` 固定目标并重置取消标志，不执行 I/O；后台 `executePrepared` 顺序传输并逐项汇总。
+目录读取有独立取消和界面代次，传输保持自己的设备快照；切换设备时旧目录回调不能覆盖新界面。
+文件适配器只执行固定的 ADB `push/pull` 与目录、属性、暂存替换命令，所有路径独立引用；
+不读取外部终端命令，不提供任意命令输入或 Agent shell RPC。暂存、冲突及权限边界见 [文件传输契约](features/FILE_TRANSFER.md)。
 当前板级任务客户端只拥有请求构造、响应校验和快照值对象；轮询定时器与界面文案仍属于
 Presentation，不能为了复用一个页面提前增加通用任务控制器层级。
 
@@ -215,3 +226,14 @@ created -> queued -> running -> succeeded
 - 新 Agent 能力先定义固定协议和安全边界，再实现部署与界面。
 - 重大设计决定记录在 `docs/decisions/`；当前进度只写入 `STATUS.md`，历史证据写入 `DEVLOG.md`。
 - 当前优先级、验证和交付状态不得写入本架构文档，以免稳定规则与动态事实混合。
+
+## 11. UI 组件职责
+
+主窗口装配导航、设备上下文和各工作区；串口模式由工作区校验，导航只在成功切换后同步选择。
+`FileListModel` 只保存条目与显示数据，排序/过滤代理不访问文件系统；`FilePane` 负责列表、目录历史、选择与位置恢复，
+工作区拥有异步加载代次、固定目标和任务调度。`FileIconProvider` 按需后台请求 Windows Shell 图标并有界缓存，先返回回退图标；QImage 在线程间传递，QPixmap 与模型通知只在 GUI 线程创建/发出。绘制行时不阻塞查询设备或系统。
+`SerialConnectionBar` 拥有连接参数控件，`ReceiveConsole` 拥有终端光标绘制与滚动反馈；会话、发送队列和计划发送仍由无 Qt 服务管理。
+这些均是 `src/ui/widgets/` 内的表现组件，不成为 core/application 的依赖，也不复制业务状态机。
+
+调试服务健康检查通过独立短超时连接执行已有只读协议，应用层验证握手、版本与串口能力，GUI 按连接代次接收结果。
+失联清理撤销旧端口，ADB forward 清理在后台完成并阻止清理期间复用连接；本地串口保持独立。

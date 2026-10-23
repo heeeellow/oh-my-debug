@@ -6,6 +6,7 @@
 #include <cwchar>
 #include <future>
 #include <iterator>
+#include <memory>
 #include <mutex>
 
 #ifdef _WIN32
@@ -152,6 +153,55 @@ CommandResult ProcessRunner::run(const std::string &program,
         }
         result.exitCode = waiter.get();
     }
+    return result;
+}
+
+ManagedCommandResult ProcessRunner::runManaged(const std::string& program,
+    const std::vector<std::string>& arguments, std::chrono::milliseconds timeout,
+    const std::atomic<bool>& cancel, const std::function<void(const std::string&)>& progress)
+{
+    ManagedCommandResult result;
+    if (cancel) { result.cancelled = true; return result; }
+    std::mutex mutex;
+    std::atomic<bool> truncated{false};
+    const auto append = [&](std::string& output, const char* data, std::size_t size) {
+        { std::lock_guard<std::mutex> lock(mutex);
+          constexpr std::size_t limit = 4 * 1024 * 1024;
+          const auto available = limit - output.size();
+          output.append(data, std::min(size, available));
+          if (size > available) truncated = true;
+        }
+        if (progress) { try { progress(std::string(data, std::min<std::size_t>(size, 512))); } catch (...) {} }
+    };
+    {
+        TinyProcessLib::Process process(toNativeString(buildCommandLine(program, arguments)), {},
+            [&](const char* data, std::size_t size) { append(result.command.standardOutput, data, size); },
+            [&](const char* data, std::size_t size) { append(result.command.standardError, data, size); });
+        if (!process.get_id()) { result.command.standardError = "无法启动进程：" + program; return result; }
+#ifdef _WIN32
+        // Keep a native handle while waiting so an exited client's PID cannot be reused.
+        const std::unique_ptr<void, decltype(&CloseHandle)> client(
+            OpenProcess(PROCESS_TERMINATE, FALSE, process.get_id()), &CloseHandle);
+#endif
+        auto waiter = std::async(std::launch::async, [&] { return process.get_exit_status(); });
+        const auto deadline = std::chrono::steady_clock::now() + timeout;
+        while (waiter.wait_for(std::chrono::milliseconds(20)) != std::future_status::ready) {
+            if (cancel || truncated || std::chrono::steady_clock::now() >= deadline) {
+                result.cancelled = cancel.load();
+                result.command.timedOut = !result.cancelled && !truncated;
+                // TinyProcessLib::kill also terminates direct children on Windows.
+                // An ADB client may have started the shared server, which we do not own.
+#ifdef _WIN32
+                if (client) TerminateProcess(client.get(), 2);
+#else
+                process.kill(true);
+#endif
+                waiter.wait(); break;
+            }
+        }
+        result.command.exitCode = waiter.get();
+    }
+    result.outputTruncated = truncated.load();
     return result;
 }
 

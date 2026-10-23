@@ -18,24 +18,27 @@ namespace testtools {
 
 namespace {
 
-void setSocketTimeouts(asio::ip::tcp::socket &socket)
+void setSocketTimeouts(asio::ip::tcp::socket& socket, std::chrono::milliseconds timeout)
 {
 #ifdef _WIN32
-    const DWORD timeoutMs = 5000;
+    const DWORD timeoutMs = static_cast<DWORD>(timeout.count());
     setsockopt(socket.native_handle(), SOL_SOCKET, SO_RCVTIMEO,
                reinterpret_cast<const char *>(&timeoutMs), sizeof(timeoutMs));
     setsockopt(socket.native_handle(), SOL_SOCKET, SO_SNDTIMEO,
                reinterpret_cast<const char *>(&timeoutMs), sizeof(timeoutMs));
 #else
-    const timeval timeout{5, 0};
-    setsockopt(socket.native_handle(), SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-    setsockopt(socket.native_handle(), SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+    const timeval socketTimeout{static_cast<long>(timeout.count() / 1000),
+                                static_cast<long>((timeout.count() % 1000) * 1000)};
+    setsockopt(
+        socket.native_handle(), SOL_SOCKET, SO_RCVTIMEO, &socketTimeout, sizeof(socketTimeout));
+    setsockopt(
+        socket.native_handle(), SOL_SOCKET, SO_SNDTIMEO, &socketTimeout, sizeof(socketTimeout));
 #endif
 }
 
 } // namespace
 
-AgentClient::AgentClient() = default;
+AgentClient::AgentClient(std::chrono::milliseconds timeout) : timeout_(timeout) {}
 
 AgentClient::~AgentClient()
 {
@@ -51,7 +54,7 @@ bool AgentClient::connect(const std::string &host, std::uint16_t port, std::stri
         socket_ = std::make_unique<asio::ip::tcp::socket>(ioContext_);
         asio::connect(*socket_, endpoints);
         socket_->set_option(asio::ip::tcp::no_delay(true));
-        setSocketTimeouts(*socket_);
+        setSocketTimeouts(*socket_, timeout_);
         error.clear();
         return true;
     } catch (const std::exception &exception) {

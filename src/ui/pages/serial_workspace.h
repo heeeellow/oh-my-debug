@@ -1,5 +1,6 @@
 #pragma once
 
+#include "application/agent/agent_service_status.h"
 #include "application/serial/at_command_library.h"
 #include "application/serial/serial_session.h"
 #include "application/serial/serial_terminal.h"
@@ -44,11 +45,18 @@ class SerialWorkspace final : public QWidget {
     void setAdbDevice(const serialdemo::AdbDevice& device);
     void setAgentConnection(const std::string& adbSerial, std::uint16_t localControlPort);
     void refreshTargets();
+    void setServiceStatus(testtools::AgentServiceState state,
+                          const QString& detail,
+                          bool cleanupPending = false);
     void prepareForShutdown();
     bool hasActiveConnections() const;
+    bool selectWorkspaceMode(const QString& modeName);
+    QString currentWorkspaceMode() const;
     bool setWorkspaceModeForDiagnostics(const QString& modeName);
 
   signals:
+    void prepareServiceRequested();
+    void workspaceModeChanged(const QString& modeName);
     void busyChanged(bool busy);
     void activityChanged(const QString& message);
 
@@ -221,7 +229,13 @@ class SerialWorkspace final : public QWidget {
     QSplitter* channelSplitter_ = nullptr;
     QTimer* scheduleTimer_ = nullptr;
 
-    std::array<QPushButton*, 3> modeButtons_{};
+    QWidget* serviceHint_ = nullptr;
+    QLabel* serviceHintLabel_ = nullptr;
+    QPushButton* serviceConnectButton_ = nullptr;
+    testtools::AgentServiceState serviceState_ = testtools::AgentServiceState::Disconnected;
+    QString serviceDetail_;
+    bool serviceCleanupPending_ = false;
+    QLabel* pageTitle_ = nullptr;
     QPushButton* terminalOptionsButton_ = nullptr;
     std::array<QAction*, 3> terminalEndingActions_{};
     std::array<QAction*, 2> terminalBackspaceActions_{};

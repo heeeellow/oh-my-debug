@@ -13,3 +13,6 @@
 # Keep pinned upstream metadata byte-identical to its recorded SHA-256.
 third_party/platform-tools/NOTICE.txt -text -whitespace
 third_party/platform-tools/source.properties -text
+third_party/scrcpy/scrcpy-server binary
+third_party/scrcpy/LICENSE.txt -text -whitespace
+third_party/scrcpy/licenses/* -text -whitespace

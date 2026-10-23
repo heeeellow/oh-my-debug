@@ -1,4 +1,5 @@
 #pragma once
+#include <chrono>
 
 #include "core/protocol/agent_connection.h"
 #include "core/protocol/agent_protocol.h"
@@ -14,7 +15,7 @@ namespace testtools {
 
 class AgentClient final : public IAgentConnection {
   public:
-    AgentClient();
+    explicit AgentClient(std::chrono::milliseconds timeout = std::chrono::milliseconds(5000));
     ~AgentClient() override;
     AgentClient(const AgentClient&) = delete;
     AgentClient& operator=(const AgentClient&) = delete;
@@ -25,6 +26,7 @@ class AgentClient final : public IAgentConnection {
     bool isConnected() const;
 
   private:
+    std::chrono::milliseconds timeout_;
     asio::io_context ioContext_;
     std::unique_ptr<asio::ip::tcp::socket> socket_;
     AgentFrameDecoder decoder_;
