@@ -1,4 +1,5 @@
 #include "ui/pages/file_transfer_workspace.h"
+#include "ui/theme.h"
 #include "ui/widgets/file_pane.h"
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -33,7 +34,7 @@
 namespace {
 QString text(const std::string& value)
 {
-    return QString::fromUtf8(value.data(), qsizetype(value.size()));
+    return testtools::ui::fromUtf8(value);
 }
 std::filesystem::path path(const QString& value)
 {
@@ -171,7 +172,7 @@ QWidget* FileTransferWorkspace::buildPane(bool remote)
     return pane;
 }
 
-void FileTransferWorkspace::loadLocal()
+void FileTransferWorkspace::loadLocal(const QString& requestedDirectory)
 {
     if (closing_ || service_->snapshot().active)
         return;
@@ -180,7 +181,7 @@ void FileTransferWorkspace::loadLocal()
     auto cancel = localCancel_ = std::make_shared<std::atomic<bool>>(false);
     const auto generation = ++localGeneration_;
     localLoading_ = true;
-    const auto requested = localPath_->text();
+    const auto requested = requestedDirectory.isEmpty() ? localPath_->text() : requestedDirectory;
     const auto directory = path(requested);
     QPointer<FileTransferWorkspace> guard(this);
     updateControls();
@@ -348,7 +349,7 @@ void FileTransferWorkspace::transfer(testtools::TransferDirection direction)
             return;
         request.overwrite = question.clickedButton() == overwrite;
     }
-    // Modal dialogs run an event loop: recheck that the context has not changed.
+    // 模态对话框运行期间会嵌套事件循环，返回后需再次确认设备与目录上下文未发生变更。
     if (closing_ || service_->snapshot().active)
         return;
     if (request.device.serial != device_.serial || request.device.state != device_.state ||
@@ -407,7 +408,7 @@ bool FileTransferWorkspace::dropData(bool remote, const QMimeData* mime)
         return false;
     QString parent;
     QStringList names;
-    // No file-system queries here: the worker's directory listing validates names and types.
+    // GUI 线程不直接做文件系统状态探测，交由后台目录列举统一校验名称与条目类型。
     for (const auto& url : mime->urls()) {
         if (!url.isLocalFile())
             return false;
@@ -517,12 +518,13 @@ void FileTransferWorkspace::poll()
     tasks_.reapFinished();
     const auto state = service_->snapshot();
     if (entryRefreshPending_ && isVisible() && !closing_ && !state.active && !wasActive_ &&
-        !localLoading_ && !remoteLoading_ && device_.state == "device" &&
-        !qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE")) {
+        !localLoading_ && !remoteLoading_) {
         entryRefreshPending_ = false;
-        loadLocal();
-        const auto found = remoteDirectories_.find(device_.serial);
-        loadRemote(found == remoteDirectories_.end() ? "/" : found->second);
+        loadLocal(local_.path.empty() ? QString() : text(local_.path));
+        if (device_.state == "device" && !qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE")) {
+            const auto found = remoteDirectories_.find(device_.serial);
+            loadRemote(found == remoteDirectories_.end() ? "/" : found->second);
+        }
     }
     if (state.active || wasActive_) {
         while (shownRecords_ < state.records.size()) {
@@ -568,10 +570,11 @@ void FileTransferWorkspace::poll()
             emit activityChanged(
                 QStringLiteral("文件传输 · %1 · %2").arg(text(state.serial), text(state.summary)));
             if (!closing_) {
-                loadLocal();
+                loadLocal(local_.path.empty() ? QString() : text(local_.path));
                 if (device_.serial == state.serial) {
                     entryRefreshPending_ = false;
-                    loadRemote();
+                    const auto found = remoteDirectories_.find(device_.serial);
+                    loadRemote(found == remoteDirectories_.end() ? "/" : found->second);
                 }
             }
         }

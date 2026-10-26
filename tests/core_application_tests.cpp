@@ -5,6 +5,7 @@
 #include "application/agent/board_profile.h"
 #include "application/agent/board_test_job_client.h"
 #include "application/serial/serial_session.h"
+#include "application/serial/serial_port_claims.h"
 #include "application/serial/serial_terminal.h"
 #include "application/serial/at_command_library.h"
 #include "application/serial/serial_workspace_state.h"
@@ -402,6 +403,26 @@ int testBoardProfiles()
 
 int main()
 {
+    {
+        testtools::SerialPortClaims claims;
+        std::string error;
+        const auto key = testtools::SerialPortClaims::resourceKey(false, {}, "COM3");
+        if (key != testtools::SerialPortClaims::resourceKey(false, {}, "\\\\.\\com03"))
+            return fail("local port claims normalize Windows aliases");
+        auto terminalClaim = claims.acquire(key, "terminal", error);
+        if (!terminalClaim || claims.acquire(key, "monitor", error) ||
+            error.find("terminal") == std::string::npos)
+            return fail("independent pages cannot claim the same serial port");
+        terminalClaim.reset();
+        if (!claims.acquire(key, "monitor", error))
+            return fail("serial claim releases on disconnect or failure");
+        const auto board = testtools::SerialPortClaims::resourceKey(true, "A", "/dev/ttyS1");
+        auto boardClaim = claims.acquire(board, "terminal", error);
+        if (!boardClaim ||
+            claims.acquire(testtools::SerialPortClaims::resourceKey(true, "A", "/dev/ttyS9"), "monitor", error) ||
+            !claims.acquire(testtools::SerialPortClaims::resourceKey(true, "B", "/dev/ttyS1"), "other board", error))
+            return fail("Agent serial claims keep per-device single-session scope");
+    }
     {
         auto backend = std::make_unique<FakeMirrorBackend>();
         auto* fixture = backend.get();
@@ -835,6 +856,13 @@ int main()
     if (!boundedTerminal.truncated() || boundedTerminal.plainText() != "two\nthree\nfour") {
         return fail("terminal bounded scrollback");
     }
+    boundedTerminal.acknowledgeChanges();
+    const std::string moreOutput = "\nfive";
+    boundedTerminal.push({moreOutput.begin(), moreOutput.end()});
+    if (boundedTerminal.needsFullRedraw() || boundedTerminal.removedLines() != 1 ||
+        boundedTerminal.firstChangedLine() != 2 ||
+        boundedTerminal.plainText() != "three\nfour\nfive")
+        return fail("terminal eviction preserves incremental tail rendering");
     boundedTerminal.clear();
     if (boundedTerminal.truncated() || !boundedTerminal.plainText().empty()) return fail("terminal clear resets truncation");
     using TerminalKey = testtools::TerminalKey;
@@ -1035,13 +1063,65 @@ int main()
 
     {
         const std::string hello = R"({"ok":true,"result":{"agent_version":"0.3.7"}})";
-        const std::string capabilities = R"({"ok":true,"result":{"capabilities":[{"id":"serial.stream"}]}})";
+        const std::string capabilities = R"({"ok":true,"result":{"capabilities":[{"id":"serial.stream"},{"id":"memory.capacity"}]}})";
+        const std::string systemInfo = R"({"ok":true,"result":{"os_release":"Linux","architecture":"aarch64","model":"rk3572","board":"evb","product":"p1","cpu_cores":4,"memory_total_kib":3987456,"effective_uid":0}})";
         std::string error;
         if (!testtools::validateAgentService(hello, capabilities, "0.3.7", error) ||
             testtools::validateAgentService(hello, capabilities, "0.3.8", error) ||
             testtools::validateAgentService(hello, R"({"ok":true,"result":{"capabilities":[]}})", "0.3.7", error) ||
             testtools::validateAgentService(hello, R"({"ok":false,"result":{"capabilities":[{"id":"serial.stream"}]}})", "0.3.7", error) ||
             testtools::validateAgentService("broken", capabilities, "0.3.7", error)) return fail("service readiness requires handshake, version and serial capability");
+
+        const auto snapshot = testtools::parseAgentServiceSnapshot(hello, capabilities, systemInfo);
+        if (snapshot.agentVersion != "0.3.7" || snapshot.systemInfo.osRelease != "Linux" ||
+            snapshot.systemInfo.architecture != "aarch64" || snapshot.systemInfo.model != "rk3572" ||
+            snapshot.systemInfo.board != "evb" || snapshot.systemInfo.product != "p1" ||
+            snapshot.systemInfo.cpuCores != 4 || snapshot.systemInfo.memoryTotalKib != 3987456 ||
+            snapshot.systemInfo.effectiveUid != 0 ||
+            !snapshot.hasCapability("serial.stream") || !snapshot.hasCapability("memory.capacity") ||
+            snapshot.hasCapability("missing.capability")) {
+            return fail("agent service snapshot parsing");
+        }
+    }
+
+    {
+        serialdemo::SerialConfig config;
+        config.baudRate = 9600;
+        config.dataBits = 8;
+        config.parity = serialdemo::Parity::None;
+        config.stopBits = serialdemo::StopBits::One;
+        if (serialdemo::minimumStressIntervalMs(config, 256, 10) != 284 ||
+            serialdemo::minimumStressIntervalMs(config, 256, 500) != 500) {
+            return fail("stress test minimum wire-time interval");
+        }
+
+        std::string detectionBuffer;
+        std::string expectedFrame = "SERIAL_POC_A_TO_B_42";
+        const serialdemo::ByteBuffer chunk1{'S', 'E', 'R', 'I', 'A', 'L', '_'};
+        const serialdemo::ByteBuffer chunk2{'P', 'O', 'C', '_', 'A', '_', 'T', 'O', '_', 'B', '_', '4', '2', '\n'};
+        if (serialdemo::appendAndMatchFrame(detectionBuffer, chunk1, expectedFrame) ||
+            expectedFrame.empty() ||
+            !serialdemo::appendAndMatchFrame(detectionBuffer, chunk2, expectedFrame) ||
+            !expectedFrame.empty()) {
+            return fail("bidirectional frame sliding buffer match");
+        }
+
+        serialdemo::PeriodicSendPlan plan;
+        plan.start({std::chrono::milliseconds(10), 2});
+        const auto now = serialdemo::PeriodicSendPlan::Clock::now();
+        plan.recordAttempt(true, now);
+        plan.recordAttempt(true, now + std::chrono::milliseconds(10));
+        serialdemo::IntegrityStreamVerifier verifier;
+        verifier.push(serialdemo::encodeIntegrityFrame(0, 64));
+        const auto partialReport = serialdemo::evaluateStressDirection(plan, verifier);
+        if (partialReport.passed || partialReport.sentFrames != 2 || partialReport.lostFrames != 1) {
+            return fail("stress direction evaluation detects lost frames");
+        }
+        verifier.push(serialdemo::encodeIntegrityFrame(1, 64));
+        const auto passReport = serialdemo::evaluateStressDirection(plan, verifier);
+        if (!passReport.passed || passReport.sentFrames != 2 || passReport.lostFrames != 0) {
+            return fail("stress direction evaluation passes when all frames match");
+        }
     }
 
     std::cout << "PASS core and application contracts without Qt or devices\n";

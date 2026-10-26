@@ -7,6 +7,7 @@
 
 namespace testtools {
 
+// ADB 在线与离线设备扫描用例服务。
 struct DeviceScanResult {
     std::vector<serialdemo::AdbDevice> devices;
     std::string error;

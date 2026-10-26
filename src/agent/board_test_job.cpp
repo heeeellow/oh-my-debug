@@ -38,8 +38,8 @@ std::optional<BoardTestJobSnapshot> BoardTestJobManager::start(const BoardTestRu
         return std::nullopt;
     }
 
-    // A completed std::thread remains joinable. Mark the reaping interval so
-    // a concurrent caller cannot start a second task while we join it.
+    // 已执行完毕的 std::thread 仍处于 joinable 状态；先标记回收区间（joining_），
+    // 防止并发调用方在 join 期间抢先启动第二个任务。
     std::thread completedWorker;
     {
         std::unique_lock<std::mutex> lock(mutex_);
@@ -205,8 +205,7 @@ void BoardTestJobManager::finish(std::uint64_t jobId, BoardTestRunResult result)
     if (!current_ || current_->jobId != jobId) {
         return;
     }
-    // Linearize completion with cancel(): an accepted cancellation cannot be
-    // missed while result validation runs outside this lock.
+    // 将任务完成与 cancel() 线性化：确保在锁外校验结果期间已被接受的取消请求不会被遗漏。
     current_->state = finalState(result, cancelRequested_ && cancelRequested_->load());
     result.succeeded = current_->state == BoardTestJobState::succeeded;
     result.cancelled = current_->state == BoardTestJobState::cancelled;

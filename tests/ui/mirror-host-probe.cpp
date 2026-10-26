@@ -1,3 +1,4 @@
+#include "test_paths.h"
 #include <QtTest/QTest>
 #include <QtWidgets>
 #include <iostream>
@@ -70,7 +71,7 @@ int main(int argc, char** argv)
         check(before.right != after.right && after.right > 0, "native client follows Qt resize");
         app.primaryScreen()
             ->grabWindow(WId(host.winId()))
-            .save("build/iteration-0.8.0/mirror-host-probe.png");
+            .save(testOutputPath("mirror-host-probe.png"));
         foreign->setParent(nullptr);
         ShowWindow(found.window, SW_SHOWNORMAL);
         QTest::qWait(300);

@@ -31,8 +31,8 @@ struct FileTransferSnapshot {
     std::vector<FileTransferRecord> records;
 };
 
-// Synchronous use cases run on presentation-owned background workers. Only
-// prepare/cancel/snapshot are called by the GUI; none of them performs I/O.
+// 同步传输与目录列表操作均在界面层持有的后台线程中运行；
+// 界面线程仅调用 prepare / cancel / snapshot，三者均不执行任何阻塞 I/O。
 class FileTransferService {
   public:
     explicit FileTransferService(std::shared_ptr<IFileTransferBackend> backend);

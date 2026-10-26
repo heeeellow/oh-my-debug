@@ -8,6 +8,7 @@
 
 namespace testtools {
 
+// 跨 Android 与 Linux 平台的统一 ADB Agent 部署与端口转发结果。
 struct AdbAgentDeploymentResult {
     bool succeeded = false;
     std::string error;
@@ -20,6 +21,7 @@ struct AdbAgentDeploymentResult {
     std::uint16_t localPort = 0;
 };
 
+// 统一部署门面：自动探测远端系统类型（Android/Linux），委派对应部署器并管理回环转发。
 class AdbAgentDeployment {
   public:
     using ProgressCallback = std::function<void(const std::string&)>;

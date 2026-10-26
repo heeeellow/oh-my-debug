@@ -113,7 +113,7 @@ class AdbFileTransferBackend final : public IFileTransferBackend {
     {
         FileListing result;
         result.path = directory;
-        // NUL-delimited fields preserve whitespace and newlines in remote names.
+        // 使用 NUL 分隔字段，完整保留远端文件名中可能包含的空格与换行符。
         const std::string script = "cd " + quote(directory) + R"( || exit 1
 [ -r . ] && [ -x . ] || { printf 'Permission denied: directory is not readable\n' >&2; exit 1; }
 for f in * .[!.]* ..?*; do
@@ -286,7 +286,7 @@ done)";
             return {TransferOutcome::Failed, "无法创建本地传输临时目录"};
         const auto staged = staging / target.filename();
         const Cleanup cleanup{[&] {
-            // Only remove the newly created, direct child staging directory.
+            // 仅清理本次新创建的直接子级临时暂存目录。
             std::error_code ec;
             if (staging.parent_path() == parent &&
                 staging.filename().u8string().find(".testtools-download-") == 0)
@@ -342,8 +342,7 @@ done)";
         }
         const auto parent = remote.substr(0, remote.find_last_of('/') + 1);
         const auto name = remote.substr(remote.find_last_of('/') + 1);
-        // Avoid copying a large item only to discover a known skip conflict.
-        // The commit still checks again because the target can change meanwhile.
+        // 预先探测已知的跳过冲突，避免先上传大文件才发现目标不可覆盖；最终提交阶段仍会二次校验。
         std::string probe = "t=" + quote(remote) + "; if [ -e \"$t\" ] || [ -L \"$t\" ]; then ";
         probe += overwrite && kind == FileKind::Regular
                      ? "if [ -L \"$t\" ] || [ ! -f \"$t\" ]; then exit 73; fi; "
@@ -364,7 +363,7 @@ done)";
         if (!success(command, error))
             return failure(command);
         const Cleanup cleanup{[&] {
-            // staging is generated here, never supplied by the file picker.
+            // 暂存目录名由本函数内部生成，绝不接受外部文件选择器的输入。
             const std::atomic<bool> noCancel{false};
             if (staging.rfind(parent + ".testtools-upload-", 0) == 0)
                 run(serial,
@@ -375,8 +374,7 @@ done)";
         }};
         const auto staged = staging + '/' + name;
         if (kind == FileKind::Directory) {
-            // adb push may omit empty directories. Build the directory skeleton
-            // explicitly, then push into its parent so adb keeps the source name.
+            // adb push 可能会忽略空目录；先显式建立目录骨架，再推送到暂存父目录以保留源目录名。
             const auto prefix = "cd " + quote(staging) + " && mkdir -p -- ";
             std::string script = prefix + quote(name);
             const auto flush = [&]() {
@@ -420,8 +418,7 @@ done)";
         if (!success(command, error) || cancel)
             return cancel ? FileTransferResult{TransferOutcome::Cancelled, "已取消"}
                           : failure(command);
-        // Replace a file only after the staged upload succeeds. Existing file
-        // owner/mode/SELinux label are copied before the final same-filesystem move.
+        // 仅在暂存上传成功后替换目标文件；在最终同文件系统原子移动前复制原文件的属主、权限与 SELinux 标签。
         std::string script = "t=" + quote(remote) + "; s=" + quote(staged) + "; ";
         script += (kind == FileKind::Directory ? "[ -d \"$s\" ]" : "[ -f \"$s\" ]");
         script += R"( && [ ! -L "$s" ] || exit 1

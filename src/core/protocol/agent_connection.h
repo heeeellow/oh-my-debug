@@ -5,6 +5,7 @@
 
 namespace testtools {
 
+// 板端 Agent 控制连接抽象接口，解耦应用层用例与底层 Socket 传输实现。
 class IAgentConnection {
   public:
     virtual ~IAgentConnection() = default;

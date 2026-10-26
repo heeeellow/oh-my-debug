@@ -1,4 +1,5 @@
 #include "ui/screen_mirror_panel.h"
+#include "ui/theme.h"
 
 #include <QtCore/QDateTime>
 #include <QtCore/QMetaObject>
@@ -19,7 +20,7 @@
 namespace {
 QString text(const std::string& value)
 {
-    return QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
+    return testtools::ui::fromUtf8(value);
 }
 } // namespace
 
@@ -136,7 +137,7 @@ ScreenMirrorPanel::ScreenMirrorPanel(QWidget* parent,
 
 ScreenMirrorPanel::~ScreenMirrorPanel()
 {
-    // Normal main-window close awaits shutdownFinished before destroying this panel.
+    // 正常主窗口关闭流程会在销毁面板前等待 shutdownFinished 信号完成。
     service_->requestShutdown();
     tasks_.wait();
 }

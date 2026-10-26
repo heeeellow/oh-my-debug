@@ -1,3 +1,4 @@
+#include "test_paths.h"
 #include "application/device/file_transfer_service.h"
 #include <chrono>
 #include <fstream>
@@ -5,7 +6,7 @@
 int main()
 {
     namespace fs = std::filesystem;
-    const auto root = fs::absolute("build/iteration-0.8.0/perf-fixture") /
+    const auto root = testOutputDirectory() / "perf-fixture" /
                       std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
     fs::create_directories(root);
     for (int n : {1000, 10000}) {

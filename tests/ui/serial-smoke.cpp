@@ -112,7 +112,9 @@ int main(int argc, char** argv)
         window.show();
         QApplication::setActiveWindow(&window);
         pump();
-        auto* serial = window.findChild<SerialWorkspace*>();
+        // Key/render regression for the reusable workspace component. Separate
+        // application page ownership is covered by iteration-smoke.
+        auto* serial = window.findChild<SerialWorkspace*>("serialDebugWorkspace");
         require(serial, "workspace");
         auto& channel = serial->channels_[1];
         auto* edit = channel.receiveEdit;

@@ -8,6 +8,7 @@
 
 namespace testtools {
 
+// 快捷指令与串口偏好持久化模型及 JSON 存储服务。
 enum class AtCommandLineEnding { None, Lf, Cr, CrLf };
 
 struct AtCommand {

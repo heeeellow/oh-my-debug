@@ -2,12 +2,13 @@
 
 #include "adapters/adb/adb_transport.h"
 #include "adapters/agent/agent_client.h"
+#include "core/protocol/json_value.h"
 
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <limits>
 #include <regex>
-#include <sstream>
 
 namespace serialdemo {
 
@@ -25,72 +26,51 @@ std::string trim(std::string value)
     return value;
 }
 
-std::string jsonEscape(const std::string &value)
+std::string stringMember(const testtools::JsonValue &object, const char *name)
 {
-    std::string result;
-    result.reserve(value.size() + 8);
-    for (const char ch : value) {
-        switch (ch) {
-        case '"': result += "\\\""; break;
-        case '\\': result += "\\\\"; break;
-        case '\n': result += "\\n"; break;
-        case '\r': result += "\\r"; break;
-        case '\t': result += "\\t"; break;
-        default:
-            if (static_cast<unsigned char>(ch) >= 0x20) {
-                result.push_back(ch);
-            }
-            break;
-        }
-    }
-    return result;
+    const auto *field = object.find(name);
+    return (field && field->isString()) ? field->stringValue() : std::string{};
 }
 
-std::string jsonUnescape(const std::string &value)
+int intMember(const testtools::JsonValue &object, const char *name)
 {
-    std::string result;
-    result.reserve(value.size());
-    bool escaped = false;
-    for (const char ch : value) {
-        if (!escaped && ch == '\\') {
-            escaped = true;
-            continue;
-        }
-        if (escaped) {
-            result.push_back(ch == 'n' ? '\n' : ch == 'r' ? '\r' : ch == 't' ? '\t' : ch);
-            escaped = false;
-        } else {
-            result.push_back(ch);
-        }
-    }
-    return result;
-}
-
-std::string stringField(const std::string &json, const std::string &name)
-{
-    const std::regex pattern("\\\"" + name + "\\\"\\s*:\\s*\\\"((?:\\\\.|[^\\\"])*)\\\"");
-    std::smatch match;
-    return std::regex_search(json, match, pattern) ? jsonUnescape(match[1].str()) : std::string{};
-}
-
-int intField(const std::string &json, const std::string &name)
-{
-    const std::regex pattern("\\\"" + name + "\\\"\\s*:\\s*(\\d+)");
-    std::smatch match;
-    if (!std::regex_search(json, match, pattern)) {
+    const auto *field = object.find(name);
+    if (!field || !field->isInt64() || field->int64Value() < std::numeric_limits<int>::min() ||
+        field->int64Value() > std::numeric_limits<int>::max()) {
         return 0;
     }
-    try {
-        return std::stoi(match[1].str());
-    } catch (...) {
-        return 0;
-    }
+    return static_cast<int>(field->int64Value());
 }
 
-std::string responseError(const std::string &response, const std::string &fallback)
+bool boolMember(const testtools::JsonValue &object, const char *name)
 {
-    const std::string message = stringField(response, "message");
-    return message.empty() ? fallback : message;
+    const auto *field = object.find(name);
+    return field && field->isBool() && field->boolValue();
+}
+
+const testtools::JsonValue *unwrapResult(const std::string &response,
+                                         testtools::JsonValue &document,
+                                         const std::string &fallbackError,
+                                         std::string &error)
+{
+    std::string parseError;
+    if (!testtools::parseJson(response, document, parseError) || !document.isObject()) {
+        error = fallbackError;
+        return nullptr;
+    }
+    if (!boolMember(document, "ok")) {
+        const auto *errorObject = document.find("error");
+        const std::string message =
+            errorObject ? stringMember(*errorObject, "message") : std::string{};
+        error = message.empty() ? fallbackError : message;
+        return nullptr;
+    }
+    const auto *result = document.find("result");
+    if (!result || !result->isObject()) {
+        error = fallbackError;
+        return nullptr;
+    }
+    return result;
 }
 
 std::string parityName(Parity parity)
@@ -134,23 +114,30 @@ std::vector<AgentSerialPort> AgentSerialTransport::availablePorts(
                         response, error)) {
         return {};
     }
-    if (response.find("\"ok\":true") == std::string::npos) {
-        error = responseError(response, "Agent 无法枚举板端串口");
+    testtools::JsonValue document;
+    const auto *result = unwrapResult(response, document, "Agent 无法枚举板端串口", error);
+    if (!result) {
         return {};
     }
 
     std::vector<AgentSerialPort> ports;
-    static const std::regex endpointPattern(
-        R"json(\{"endpoint":"((?:\\.|[^"])*)","interface":"((?:\\.|[^"])*)","occupied_by":"((?:\\.|[^"])*)","readable":(true|false),"writable":(true|false)\})json");
-    for (std::sregex_iterator iterator(response.begin(), response.end(), endpointPattern), end;
-         iterator != end; ++iterator) {
-        AgentSerialPort port;
-        port.endpoint = jsonUnescape((*iterator)[1].str());
-        port.interfaceName = jsonUnescape((*iterator)[2].str());
-        port.occupiedBy = jsonUnescape((*iterator)[3].str());
-        port.readable = (*iterator)[4].str() == "true";
-        port.writable = (*iterator)[5].str() == "true";
-        ports.push_back(std::move(port));
+    const auto *endpoints = result->find("endpoints");
+    if (endpoints && endpoints->isArray()) {
+        for (const auto &item : endpoints->arrayItems()) {
+            if (!item.isObject()) {
+                continue;
+            }
+            AgentSerialPort port;
+            port.endpoint = stringMember(item, "endpoint");
+            if (port.endpoint.empty()) {
+                continue;
+            }
+            port.interfaceName = stringMember(item, "interface");
+            port.occupiedBy = stringMember(item, "occupied_by");
+            port.readable = boolMember(item, "readable");
+            port.writable = boolMember(item, "writable");
+            ports.push_back(std::move(port));
+        }
     }
     error.clear();
     return ports;
@@ -182,39 +169,51 @@ void AgentSerialTransport::workerMain(SerialConfig config)
         return;
     }
 
-    std::ostringstream request;
-    request << "{\"protocol\":1,\"request_id\":\"serial-open\","
-            << "\"method\":\"serial.open\",\"params\":{"
-            << "\"endpoint\":\"" << jsonEscape(config.endpoint) << "\","
-            << "\"baud_rate\":" << config.baudRate << ','
-            << "\"data_bits\":" << config.dataBits << ','
-            << "\"parity\":\"" << parityName(config.parity) << "\","
-            << "\"stop_bits\":" << (config.stopBits == StopBits::Two ? 2 : 1) << ','
-            << "\"flow_control\":\"" << flowControlName(config.flowControl) << "\"}}";
+    const std::string request = testtools::serializeJson(testtools::JsonValue::object({
+        {"method", testtools::JsonValue::string("serial.open")},
+        {"params",
+         testtools::JsonValue::object({
+             {"baud_rate", testtools::JsonValue::integer(config.baudRate)},
+             {"data_bits", testtools::JsonValue::integer(config.dataBits)},
+             {"endpoint", testtools::JsonValue::string(config.endpoint)},
+             {"flow_control", testtools::JsonValue::string(flowControlName(config.flowControl))},
+             {"parity", testtools::JsonValue::string(parityName(config.parity))},
+             {"stop_bits",
+              testtools::JsonValue::integer(config.stopBits == StopBits::Two ? 2 : 1)},
+         })},
+        {"protocol", testtools::JsonValue::integer(1)},
+        {"request_id", testtools::JsonValue::string("serial-open")},
+    }));
     std::string response;
-    if (!control.request(request.str(), response, error)) {
+    if (!control.request(request, response, error)) {
         publishStatus(TransportState::Error, error);
         return;
     }
-    if (response.find("\"ok\":true") == std::string::npos) {
-        publishStatus(TransportState::Error,
-                      responseError(response, "板端 Agent 打开串口失败"));
+    testtools::JsonValue document;
+    const auto *result = unwrapResult(response, document, "板端 Agent 打开串口失败", error);
+    if (!result) {
+        publishStatus(TransportState::Error, error);
         return;
     }
-    const int streamPort = intField(response, "stream_port");
-    const std::string sessionId = stringField(response, "session_id");
-    const int requestedBaudRate = intField(response, "baud_rate_requested");
-    const int effectiveBaudRate = intField(response, "baud_rate_effective");
-    const bool baudRateApplied = response.find("\"baud_rate_applied\":true")
-                                 != std::string::npos;
+    const int streamPort = intMember(*result, "stream_port");
+    const std::string sessionId = stringMember(*result, "session_id");
+    const int requestedBaudRate = intMember(*result, "baud_rate_requested");
+    const int effectiveBaudRate = intMember(*result, "baud_rate_effective");
+    const bool baudRateApplied = boolMember(*result, "baud_rate_applied");
     if (streamPort <= 0 || streamPort > 65535 || sessionId.empty()) {
         publishStatus(TransportState::Error, "板端 Agent 返回了无效的串口会话");
         return;
     }
     const auto closeSession = [&] {
-        const std::string closeRequest =
-            "{\"protocol\":1,\"request_id\":\"serial-close\",\"method\":\"serial.close\","
-            "\"params\":{\"session_id\":\"" + jsonEscape(sessionId) + "\"}}";
+        const std::string closeRequest = testtools::serializeJson(testtools::JsonValue::object({
+            {"method", testtools::JsonValue::string("serial.close")},
+            {"params",
+             testtools::JsonValue::object({
+                 {"session_id", testtools::JsonValue::string(sessionId)},
+             })},
+            {"protocol", testtools::JsonValue::integer(1)},
+            {"request_id", testtools::JsonValue::string("serial-close")},
+        }));
         control.request(closeRequest, response, error);
     };
     if (stopping_.load()) {

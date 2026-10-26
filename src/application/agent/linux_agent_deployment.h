@@ -8,6 +8,7 @@
 
 namespace testtools {
 
+// Linux 平台板端 Agent 部署结果。
 struct LinuxAgentDeploymentResult {
     bool succeeded = false;
     std::string error;
@@ -19,6 +20,7 @@ struct LinuxAgentDeploymentResult {
     std::uint16_t localPort = 0;
 };
 
+// Linux 平台板端 Agent 部署器：管理 /opt/testtools-agent 下的原子安装、回滚与后台守护进程。
 class LinuxAgentDeployment {
   public:
     using ProgressCallback = std::function<void(const std::string&)>;

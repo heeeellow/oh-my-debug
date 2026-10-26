@@ -4,7 +4,7 @@ class QComboBox;
 class QCheckBox;
 class QHBoxLayout;
 
-// Owns connection parameter controls; sessions and sends stay in the workspace/service.
+// 仅持有串口连接参数控件；实际会话生命周期与数据收发仍归属工作区及应用层服务。
 class SerialConnectionBar final : public QFrame {
   public:
     explicit SerialConnectionBar(QWidget* parent);

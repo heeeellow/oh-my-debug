@@ -10,6 +10,7 @@
 
 namespace testtools {
 
+// 远端/本地文件目录项模型与文件传输后端抽象契约。
 enum class FileKind { Regular, Directory, Symlink, Other };
 struct FileEntry {
     std::string name;

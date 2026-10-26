@@ -181,8 +181,12 @@ QString applicationStyleSheet()
         QPushButton#navigationChildButton:checked { background: #eee0d7; border-left-color: #ad694e; color: #754837; font-weight: 600; }
         QPushButton#navigationGroupButton:focus, QPushButton#navigationChildButton:focus { border: 1px solid #b56e52; }
         QPushButton#serviceStatusButton { min-height: 30px; padding: 0 12px; background: #f2f0ed; border: 1px solid #e1ddd8; border-radius: 8px; color: #67615c; font-size: 12px; }
+        QLabel#topServiceStatus { font-size: 12px; color: #67615c; }
         QPushButton#serviceStatusButton[serviceState="ready"] { background: #eef2ec; color: #5d715f; border-color: #d8e0d5; }
         QPushButton#serviceStatusButton[serviceState="failed"] { background: #f7eeeb; color: #a34a42; border-color: #e8c9c6; }
+        QPushButton#serviceStatusButton:hover { background: #e9e4de; border-color: #b9a99c; color: #493e36; }
+        QPushButton#serviceStatusButton:pressed { background: #ded3c9; border-color: #ad694e; }
+        QPushButton#serviceStatusButton:disabled { background: #f3f1ee; border-color: #e1ddd8; color: #8b837b; }
         QFrame#serialServiceHint { background: #f8f3e9; border: 1px solid #e7dbc5; border-radius: 6px; }
         QLabel#serialServiceMessage { color: #786348; font-size: 13px; }
     )" R"(

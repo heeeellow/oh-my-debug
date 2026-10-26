@@ -9,6 +9,7 @@
 
 namespace testtools {
 
+// 设备调试服务连接结果（含握手、能力清单、系统信息及活跃连接客户端）。
 struct AgentConnectionResult {
     bool succeeded = false;
     std::string error;
@@ -20,6 +21,7 @@ struct AgentConnectionResult {
     std::shared_ptr<IAgentConnection> client;
 };
 
+// 板端 Agent 连接编排服务：支持只读重连探测、按需部署升级与连接健康检查。
 class AgentConnectionService {
   public:
     using ProgressCallback = std::function<void(const std::string&)>;

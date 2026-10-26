@@ -15,6 +15,7 @@
 
 namespace serialdemo {
 
+// ADB 命令行与设备节点转发适配器：负责 ADB 程序解析、设备枚举、远端命令执行及备用串口桥接。
 class AdbTransport final : public ISerialTransport {
 public:
     explicit AdbTransport(std::string adbProgram = {});

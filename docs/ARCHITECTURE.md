@@ -66,6 +66,7 @@ TestTools 从串口助手演进为设备中心的调试与测试工作台。架�
 | Board Agent | `src/agent/agent_service.*`、`serial_bridge.*`、`board_capability.*`、`board_test_job.*`、`native_board_observations.*` | 固定能力、参数校验和板端资源访问 |
 | 快捷指令与偏好 | `src/application/serial/at_command_library.*` | 无 Qt 的快捷指令（AT/HEX）与串口界面偏好值对象、边界校验和版本化本地 JSON；界面只负责编辑、选择与发送意图 |
 | 串口终端 | `src/application/serial/serial_terminal.*` | 无 Qt 的 UTF-8/ANSI 解析、有界显示单元、键码/粘贴编码；复用串口会话，不产生隐式终端应答，命令历史由板端拥有 |
+| 串口页面占用 | `src/application/serial/serial_port_claims.*` | 无 Qt 的主机资源登记；Windows 端口别名归一化、按设备保持 Agent 单会话；登记不替代 OS/Agent 裁决 |
 | Android 投屏 | `src/core/device/screen_mirror.h`、`src/application/device/screen_mirror_service.*` | 固定控制接口、会话设备与生命周期；后台操作通过快照返回，不依赖 Qt |
 | 投屏适配与表现 | `src/adapters/device/scrcpy_backend.*`、`src/ui/screen_mirror_panel.*` | 适配器拥有 scrcpy 进程和固定 ADB 命令；Qt 只处理面板、调度和状态反馈 |
 | 文件传输 | `src/core/device/file_transfer.h`、`src/application/device/file_transfer_service.*` | 文件值对象与接口、固定批次设备和路径、取消及逐项结果；无 Qt |
@@ -230,6 +231,7 @@ created -> queued -> running -> succeeded
 ## 11. UI 组件职责
 
 主窗口装配导航、设备上下文和各工作区；串口模式由工作区校验，导航只在成功切换后同步选择。
+普通调试和终端分别装配一个工作区实例，共享连接栏/接收组件实现，各自拥有 `SerialSession`、偏好和缓冲；通过共享端口登记避免同口重复打开。界面复用不共享活动连接或 RX 状态。
 `FileListModel` 只保存条目与显示数据，排序/过滤代理不访问文件系统；`FilePane` 负责列表、目录历史、选择与位置恢复，
 工作区拥有异步加载代次、固定目标和任务调度。`FileIconProvider` 按需后台请求 Windows Shell 图标并有界缓存，先返回回退图标；QImage 在线程间传递，QPixmap 与模型通知只在 GUI 线程创建/发出。绘制行时不阻塞查询设备或系统。
 `SerialConnectionBar` 拥有连接参数控件，`ReceiveConsole` 拥有终端光标绘制与滚动反馈；会话、发送队列和计划发送仍由无 Qt 服务管理。

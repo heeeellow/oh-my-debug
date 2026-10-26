@@ -2,6 +2,7 @@
 #include "application/device/screen_mirror_service.h"
 #include "application/support/background_task_group.h"
 #include "ui/widgets/file_pane.h"
+#include "test_paths.h"
 #include <QtTest/QTest>
 #include <QtWidgets>
 #define private public
@@ -161,7 +162,7 @@ int main(int argc, char** argv)
                       12000),
                   "live reentry refreshes sdcard");
             QTest::qWait(400);
-            w->grab().save("build/iteration-0.8.0/files-live-device.png");
+            w->grab().save(testOutputPath("files-live-device.png"));
             std::cout << "Read-only live file entry, sdcard and reentry refresh passed; entries="
                       << f->remote_.entries.size() << std::endl;
             qputenv("TESTTOOLS_OFFLINE", "1");
@@ -214,10 +215,10 @@ int main(int argc, char** argv)
         w->screenMirrorPanel_->startCurrentDevice();
         check(await([&] { return w->screenMirrorPanel_->state_.running; }),
               "explicit mirror start");
-        w->grab().save("build/iteration-0.8.0/mirror-live.png");
+        w->grab().save(testOutputPath("mirror-live.png"));
         w->navigateTo("files");
         check(mirror->running, "keep mirror across pages");
-        const auto local = QDir::currentPath() + "/build/iteration-0.8.0/ui-local";
+        const auto local = testOutputPath("ui-local");
         QDir().mkpath(local);
         QFile fixture(local + "/upload.apk");
         check(fixture.open(QIODevice::WriteOnly), "local fixture");
@@ -269,10 +270,10 @@ int main(int argc, char** argv)
         check(await([&] { return !f->remoteLoading_; }), "return logs");
         f->remotePane_->selectNames({"boot.log"});
         backend->failOnce = true;
-        w->grab().save("build/iteration-0.8.0/files-live-1366.png");
+        w->grab().save(testOutputPath("files-live-1366.png"));
         w->resize(1920, 1080);
         QTest::qWait(30);
-        w->grab().save("build/iteration-0.8.0/files-live-1920.png");
+        w->grab().save(testOutputPath("files-live-1920.png"));
         w->resize(1366, 768);
         f->download_->click();
         check(f->service_->snapshot().active, "async transfer");
@@ -283,15 +284,23 @@ int main(int argc, char** argv)
         QTest::qWait(40);
         check(f->service_->snapshot().active && backend->listings == duringBatch,
               "entry refresh waits for active transfer");
-        w->grab().save("build/iteration-0.8.0/files-progress.png");
+        w->grab().save(testOutputPath("files-progress.png"));
         check(await([&] { return !f->wasActive_ && !f->localLoading_ && !f->remoteLoading_; }),
               "failed batch finishes");
         check(f->retry_->isEnabled(), "retry offered");
         f->remotePane_->navigate("/other");
         check(await([&] { return !f->remoteLoading_; }), "navigate before retry");
+        f->remotePath_->setText("/retry-unsubmitted");
+        f->localPath_->setText(QDir::toNativeSeparators(local + "/retry-unsubmitted"));
         f->retry_->click();
         check(await([&] { return !f->wasActive_ && !f->localLoading_ && !f->remoteLoading_; }),
               "retry finishes");
+        check(f->remote_.path == "/other" && f->remotePath_->text() == "/retry-unsubmitted" &&
+                  QDir::fromNativeSeparators(QString::fromStdString(f->local_.path)) == local &&
+                  f->localPath_->text() == QDir::toNativeSeparators(local + "/retry-unsubmitted"),
+              "retry completion refreshes loaded directories without submitting address drafts");
+        f->remotePath_->setText("/other");
+        f->localPath_->setText(QDir::toNativeSeparators(local));
         check(backend->targets.size() == 2 && backend->targets[0] == "/logs/boot.log" &&
                   backend->targets[1] == backend->targets[0],
               "retry original fixed path");
@@ -316,7 +325,7 @@ int main(int argc, char** argv)
         check(await([&] { return !f->remoteLoading_; }), "error list");
         check(!f->download_->isEnabled() && f->status_->text().contains("Permission denied"),
               "permission error state");
-        w->grab().save("build/iteration-0.8.0/files-denied.png");
+        w->grab().save(testOutputPath("files-denied.png"));
         for (const auto dir : {"/1000", "/10000"}) {
             QElapsedTimer t;
             t.start();
@@ -356,24 +365,25 @@ int main(int argc, char** argv)
                     child = b;
             check(child, "serial child exists");
             child->click();
-            check(child->isChecked() && w->serialWorkspace_->currentWorkspaceMode() == mode,
+            auto* activeWorkspace = std::string(mode) == "terminal" ? w->terminalWorkspace_ : w->serialWorkspace_;
+            check(child->isChecked() && activeWorkspace->currentWorkspaceMode() == mode,
                   "left serial mode navigation");
             QTest::qWait(80);
-            auto* port = w->serialWorkspace_->channels_[1].portCombo;
+            auto* port = activeWorkspace->channels_[1].portCombo;
             std::cerr << mode << " port visible=" << port->isVisible() << " size=" << port->width()
                       << "," << port->height() << " global=" << port->mapTo(w, QPoint()).x() << ","
                       << port->mapTo(w, QPoint()).y() << " window=" << w->width() << std::endl;
             check(port->isVisible(), "serial connection controls visible in all modes");
-            w->grab().save(QString("build/iteration-0.8.0/serial-%1.png").arg(mode));
+            w->grab().save(testOutputPath(QString("serial-%1.png").arg(mode)));
         }
         w->serialExpandButton_->click();
         check(w->serialChildren_->isHidden() &&
-                  w->serialWorkspace_->currentWorkspaceMode() == "terminal",
+                  w->pages_->currentIndex() == MainWindow::TerminalPage,
               "serial arrow only collapses");
         w->navigateTo("files");
         w->navigateTo("serial");
         check(!w->serialChildren_->isHidden() &&
-                  w->serialWorkspace_->currentWorkspaceMode() == "terminal",
+                  w->pages_->currentIndex() == MainWindow::TerminalPage,
               "serial parent restores last mode");
         w->navigateTo("files");
         f->remotePane_->navigate("/logs");

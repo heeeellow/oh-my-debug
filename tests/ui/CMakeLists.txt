@@ -5,12 +5,14 @@ if(NOT WIN32 OR NOT MSVC)
 endif()
 find_package(Qt6 REQUIRED COMPONENTS Widgets Test)
 get_filename_component(ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
+set(TESTTOOLS_TEST_OUTPUT "${CMAKE_BINARY_DIR}/evidence" CACHE PATH "Native test evidence directory")
+file(MAKE_DIRECTORY "${TESTTOOLS_TEST_OUTPUT}")
 if(NOT EXISTS "${ROOT}/build/intermediate/desktop/x64/Release/main_window.obj")
     message(FATAL_ERROR "Build TestTools Release first; checks link the actual product objects")
 endif()
 file(GLOB HOST_OBJECTS "${ROOT}/build/intermediate/desktop/x64/Release/*.obj")
 list(FILTER HOST_OBJECTS EXCLUDE REGEX "/main\\.obj$")
-foreach(target mock-adb backend-smoke ui-smoke serial-smoke service-icons-smoke device-smoke directory-perf mirror-host-probe)
+foreach(target mock-adb backend-smoke ui-smoke serial-smoke service-icons-smoke iteration-smoke device-smoke directory-perf mirror-host-probe)
     add_executable(${target} ${target}.cpp ${HOST_OBJECTS})
     target_include_directories(${target} PRIVATE ${ROOT}/src ${ROOT}/third_party/asio/include)
     target_compile_features(${target} PRIVATE cxx_std_17)
@@ -21,13 +23,14 @@ foreach(target mock-adb backend-smoke ui-smoke serial-smoke service-icons-smoke 
 endforeach()
 enable_testing()
 add_test(NAME file-workspace-ui COMMAND ui-smoke)
-add_test(NAME serial-workspace-ui COMMAND serial-smoke "${ROOT}/build/iteration-0.8.0")
+add_test(NAME serial-workspace-ui COMMAND serial-smoke "${TESTTOOLS_TEST_OUTPUT}")
 add_test(NAME native-file-backend COMMAND backend-smoke $<TARGET_FILE:mock-adb>)
 add_test(NAME service-icons-ui COMMAND service-icons-smoke)
-set_tests_properties(file-workspace-ui serial-workspace-ui native-file-backend service-icons-ui PROPERTIES
+add_test(NAME serial-independent-pages COMMAND iteration-smoke)
+set_tests_properties(file-workspace-ui serial-workspace-ui native-file-backend service-icons-ui serial-independent-pages PROPERTIES
     WORKING_DIRECTORY "${ROOT}"
     RUN_SERIAL TRUE
     TIMEOUT 60
-    ENVIRONMENT "QT_SCALE_FACTOR=1;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::Core>/../plugins/platforms;TESTTOOLS_DATA_DIR=${ROOT}/build/iteration-0.8.0/maintained-fixture-data"
+    ENVIRONMENT "QT_SCALE_FACTOR=1;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::Core>/../plugins/platforms;TESTTOOLS_DATA_DIR=${CMAKE_BINARY_DIR}/fixture-data;TESTTOOLS_TEST_OUTPUT=${TESTTOOLS_TEST_OUTPUT}"
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 # device-smoke and mirror-host-probe touch a real device and are never CTest defaults.

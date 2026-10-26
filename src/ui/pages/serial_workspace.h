@@ -3,6 +3,7 @@
 #include "application/agent/agent_service_status.h"
 #include "application/serial/at_command_library.h"
 #include "application/serial/serial_session.h"
+#include "application/serial/serial_port_claims.h"
 #include "application/serial/serial_terminal.h"
 #include "application/serial/serial_workspace_state.h"
 #include "application/support/background_task_group.h"
@@ -35,11 +36,15 @@ class QSpinBox;
 class QTimer;
 class QWidget;
 
+// 串口工作区（支持单口/双口调试与独立交互终端模式，复用底层会话、占用锁与核验引擎）。
 class SerialWorkspace final : public QWidget {
     Q_OBJECT
 
   public:
-    explicit SerialWorkspace(QWidget* parent = nullptr);
+    enum class Purpose { Debug, Terminal };
+    explicit SerialWorkspace(QWidget* parent = nullptr,
+                             Purpose purpose = Purpose::Debug,
+                             std::shared_ptr<testtools::SerialPortClaims> claims = {});
     ~SerialWorkspace() override;
 
     void setAdbDevice(const serialdemo::AdbDevice& device);
@@ -50,6 +55,7 @@ class SerialWorkspace final : public QWidget {
                           bool cleanupPending = false);
     void prepareForShutdown();
     bool hasActiveConnections() const;
+    bool hasActiveAgentConnection() const;
     bool selectWorkspaceMode(const QString& modeName);
     QString currentWorkspaceMode() const;
     bool setWorkspaceModeForDiagnostics(const QString& modeName);
@@ -126,8 +132,10 @@ class SerialWorkspace final : public QWidget {
         QPushButton* fillAtCommandButton = nullptr;
         QPushButton* sendAtCommandButton = nullptr;
 
+        std::shared_ptr<testtools::SerialPortClaims::Claim> portClaim;
         testtools::SerialSession session;
         testtools::SerialLogBuffer logBuffer;
+        // 双向验证的期望令牌与接收检测滑窗（具体匹配逻辑委托给 core::appendAndMatchFrame）。
         std::string expectedFrame;
         std::string detectionBuffer;
         int autoIntervalMs = 1000;
@@ -136,6 +144,7 @@ class SerialWorkspace final : public QWidget {
         bool disconnectPending = false;
     };
 
+    // 单向压测运行时状态（线速间隔推算与最终统计判定委托给 core::serial_test_engine）。
     struct StressDirection {
         bool active = false;
         int transmitter = 0;
@@ -247,6 +256,7 @@ class SerialWorkspace final : public QWidget {
     std::vector<serialdemo::AgentSerialPort> agentPorts_;
     std::string agentAdbSerial_;
     std::uint16_t agentControlPort_ = 0;
+    std::uint64_t agentPortGeneration_ = 0;
     testtools::BackgroundTaskGroup scanTasks_;
     testtools::BackgroundTaskGroup controlTasks_;
     bool scanning_ = false;
@@ -263,6 +273,8 @@ class SerialWorkspace final : public QWidget {
     std::filesystem::path preferencesStorePath_;
     bool preferencesLoaded_ = false;
     bool applyingPreferences_ = false;
+    Purpose purpose_ = Purpose::Debug;
+    std::shared_ptr<testtools::SerialPortClaims> portClaims_;
     std::array<StressDirection, 2> stressDirections_;
     std::uint64_t testGeneration_ = 0;
     std::uint64_t stressGeneration_ = 0;

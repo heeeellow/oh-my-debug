@@ -67,14 +67,13 @@ class BoardTestJobManager {
     BoardTestJobManager(const BoardTestJobManager&) = delete;
     BoardTestJobManager& operator=(const BoardTestJobManager&) = delete;
 
-    // Return a value snapshot captured under the operation's state lock. Replies
-    // remain valid even if another caller starts the next job before serialization.
+    // 返回在状态锁下捕获的值快照；即使另一调用方在应答序列化前启动了新任务，当前应答依然有效。
     std::optional<BoardTestJobSnapshot> start(const BoardTestRunRequest& request);
     std::optional<BoardTestJobSnapshot> cancel(std::uint64_t jobId);
     std::optional<BoardTestJobSnapshot> snapshot(std::uint64_t jobId) const;
     std::optional<BoardTestJobSnapshot> currentSnapshot() const;
 
-    // Requests cancellation and joins the worker without holding the state lock.
+    // 请求取消并在释放状态锁后等待工作线程退出。
     void stop();
 
   private:

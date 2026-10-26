@@ -8,6 +8,7 @@
 
 namespace serialdemo {
 
+// 串口传输状态事件枚举。
 enum class TransportState {
     Progress,
     Connected,
@@ -17,6 +18,7 @@ enum class TransportState {
 
 enum class SerialControlLine { Dtr, Rts };
 
+// 串口传输抽象接口：统一封装本机 COM、板端 Agent 串口流与 ADB 串口桥接。
 class ISerialTransport {
 public:
     using DataCallback = std::function<void(const ByteBuffer &)>;

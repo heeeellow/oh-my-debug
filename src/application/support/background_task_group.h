@@ -7,9 +7,8 @@
 
 namespace testtools {
 
-// Owns short-lived background work launched by the presentation layer.
-// Completed tasks are reaped before new work is accepted, while wait() gives
-// shutdown a deterministic boundary.
+// 管理由表现层发起的短生命周期后台异步任务：
+// 每次接受新任务前自动回收已完成任务，并通过 wait() 提供确定性的退出等待边界。
 class BackgroundTaskGroup {
 public:
     using Task = std::function<void()>;

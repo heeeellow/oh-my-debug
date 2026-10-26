@@ -290,9 +290,8 @@ AndroidAgentDeployment::deployAndForward(const std::string& serial,
                                  RemotePrevious + " ]; then mv " + RemotePrevious + " " +
                                  RemoteCurrent + "; fi";
     const std::string log = std::string(RemoteDirectory) + "/agent.log";
-    // Android toybox provides setsid on some images, but its option set is not
-    // consistent (the RK3562 image, for example, has no `setsid -f`).  nohup
-    // plus an explicit background job works across both toybox and Ubuntu.
+    // 部分 Android 镜像的 toybox 虽提供 setsid，但参数不一致（例如 RK3562 镜像不支持 setsid -f）；
+    // 使用 nohup 配合显式后台重定向可在 toybox 与 Ubuntu 环境下保持一致行为。
     const std::string launch = ": >" + log + "; nohup " + remoteAgent + " --port 27183 >" + log +
                                " 2>&1 </dev/null & echo $! >" + pidFile;
     const auto launchResult = adb.runCommand(serial, {"shell", launch}, std::chrono::seconds(5));

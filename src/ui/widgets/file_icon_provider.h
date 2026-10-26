@@ -10,7 +10,7 @@
 #include <atomic>
 #include <functional>
 
-// Windows Shell work stays off the GUI thread. QPixmap creation stays on it.
+// 异步文件图标提供器：Windows Shell 图标查询在后台线程执行，QPixmap 构造固定在 GUI 线程完成。
 class FileIconProvider final : public QObject {
   public:
     explicit FileIconProvider(QObject* parent);

@@ -6,6 +6,7 @@
 
 namespace serialdemo {
 
+// 通用串口帧参数与设备元数据值类型。
 enum class Parity {
     None,
     Odd,

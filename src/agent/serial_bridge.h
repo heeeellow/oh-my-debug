@@ -11,6 +11,7 @@
 
 namespace testtools::agent {
 
+// 板端 /dev/tty* 串口节点信息与本地回环 TCP 流桥接器。
 struct SerialEndpointInfo {
     std::string endpoint;
     std::string interfaceName;

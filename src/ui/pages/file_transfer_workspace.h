@@ -14,6 +14,7 @@ class QPushButton;
 class QLabel;
 class QTimer;
 
+// 本地与 ADB 设备双栏文件传输工作区（目录列举与批量传输均在后台线程执行）。
 class FileTransferWorkspace final : public QWidget {
     Q_OBJECT
   public:
@@ -31,7 +32,7 @@ class FileTransferWorkspace final : public QWidget {
 
   private:
     QWidget* buildPane(bool remote);
-    void loadLocal();
+    void loadLocal(const QString& directory = {});
     void loadRemote(const std::string& directory = {});
     void refreshOnEntry();
     void transfer(testtools::TransferDirection direction);

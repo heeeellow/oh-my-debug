@@ -12,6 +12,8 @@
 
 namespace testtools::agent {
 
+// 板端 Agent 核心协议调度服务：统一处理 session.hello、capability.list、system.info、
+// 板端只读诊断任务（job.*）与受管串口流（serial.*）请求。
 class AgentService {
   public:
     using CapabilityListFunction = std::function<std::vector<BoardCapabilityDefinition>()>;

@@ -109,7 +109,7 @@ void PeriodicSendPlan::recordAttempt(bool succeeded, Clock::time_point now)
         return;
     }
 
-    // Skip missed timer slots instead of bursting many writes after a UI stall.
+    // 跳过因界面或调度停顿而错过的定时器时间槽，避免恢复后突发连续写入。
     nextDue_ += config_.interval;
     if (nextDue_ <= now) {
         nextDue_ = now + config_.interval;
@@ -252,6 +252,67 @@ void IntegrityStreamVerifier::consumeFrame(std::size_t payloadSize)
     } else {
         ++stats_.corruptedFrames;
     }
+}
+
+int minimumStressIntervalMs(const SerialConfig &config,
+                            std::size_t payloadSize,
+                            int requestedIntervalMs)
+{
+    const std::size_t boundedPayload =
+        std::min(payloadSize, IntegrityStreamVerifier::MaximumPayloadSize);
+    const std::size_t frameBytes = HeaderSize + boundedPayload + TrailerSize;
+    const int stopBits = config.stopBits == StopBits::Two ? 2 : 1;
+    const int parityBits = config.parity == Parity::None ? 0 : 1;
+    const int bitsPerByte = 1 + std::max(5, config.dataBits) + parityBits + stopBits;
+    const int baudRate = std::max(300, config.baudRate);
+    // 按物理线速向上取整计算单帧传输毫秒数，防止发送间隔小于串口实际传输耗时导致缓冲堆积。
+    const auto wireMillis = static_cast<int>(
+        (frameBytes * static_cast<std::size_t>(bitsPerByte) * 1000 +
+         static_cast<std::size_t>(baudRate) - 1) /
+        static_cast<std::size_t>(baudRate));
+    return std::max(requestedIntervalMs, wireMillis);
+}
+
+bool appendAndMatchFrame(std::string &buffer,
+                         const ByteBuffer &data,
+                         std::string &expectedFrame,
+                         std::size_t maxBufferBytes)
+{
+    if (expectedFrame.empty()) {
+        return false;
+    }
+    if (!data.empty()) {
+        buffer.append(reinterpret_cast<const char *>(data.data()), data.size());
+    }
+    if (buffer.find(expectedFrame) != std::string::npos) {
+        expectedFrame.clear();
+        return true;
+    }
+    if (maxBufferBytes > 0 && buffer.size() > maxBufferBytes) {
+        const std::size_t keepBytes =
+            std::min(maxBufferBytes, std::max(maxBufferBytes / 2, expectedFrame.size()));
+        buffer.erase(0, buffer.size() - keepBytes);
+    }
+    return false;
+}
+
+StressDirectionReport evaluateStressDirection(const PeriodicSendPlan &sendPlan,
+                                              const IntegrityStreamVerifier &verifier)
+{
+    const auto &stats = verifier.stats();
+    StressDirectionReport report;
+    report.sentFrames = sendPlan.successes();
+    report.uniqueFrames = stats.uniqueFrames;
+    report.lostFrames =
+        report.sentFrames > stats.uniqueFrames ? report.sentFrames - stats.uniqueFrames : 0;
+    report.corruptedFrames = stats.corruptedFrames;
+    report.framingErrors = stats.framingErrors;
+    report.bitErrors = stats.bitErrors;
+    report.bitErrorRate = stats.bitErrorRate();
+    report.passed = report.sentFrames > 0 && report.lostFrames == 0 &&
+                    report.corruptedFrames == 0 && report.framingErrors == 0 &&
+                    report.bitErrors == 0;
+    return report;
 }
 
 } // namespace serialdemo

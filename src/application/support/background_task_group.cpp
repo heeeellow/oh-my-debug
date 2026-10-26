@@ -54,9 +54,7 @@ void BackgroundTaskGroup::consume(std::future<void> &task) noexcept
     try {
         task.get();
     } catch (...) {
-        // Boundary tasks report user-facing failures through their normal
-        // completion callbacks. Never let an abandoned exception terminate
-        // shutdown or a later refresh.
+        // 边界任务通过各自的完成回调向用户报告错误；绝不允许未捕获异常中断应用退出或后续刷新。
     }
 }
 

@@ -10,6 +10,7 @@
 
 namespace testtools {
 
+// Android 平台板端 Agent 部署结果。
 struct AndroidAgentDeploymentResult {
     bool succeeded = false;
     std::string error;
@@ -19,6 +20,7 @@ struct AndroidAgentDeploymentResult {
     std::uint16_t localPort = 0;
 };
 
+// Android 平台板端 Agent 部署器：管理 /data/local/tmp/testtools-agent 下的版本切换、回滚与进程生命周期。
 class AndroidAgentDeployment {
   public:
     using ProgressCallback = std::function<void(const std::string&)>;

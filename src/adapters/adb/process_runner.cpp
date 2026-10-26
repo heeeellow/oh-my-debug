@@ -91,7 +91,7 @@ bool createTerminalProcess(const std::wstring &program, std::wstring command,
     }
     CloseHandle(process.hThread);
     bool started = true;
-    // wt may exit after handing off a window. Only an immediate nonzero exit is a launch failure.
+    // wt.exe 在移交窗口后可能立即退出；仅当立即以非零退出码结束时才视为启动失败。
     if (checkLauncher && WaitForSingleObject(process.hProcess, 500) == WAIT_OBJECT_0) {
         DWORD exitCode = 0;
         if (GetExitCodeProcess(process.hProcess, &exitCode) && exitCode != 0) {
@@ -99,7 +99,7 @@ bool createTerminalProcess(const std::wstring &program, std::wstring command,
             started = false;
         }
     }
-    // External windows belong to the user, not to ProcessRunner's blocking command lifetime.
+    // 外部终端窗口归属于用户交互会话，不绑定到 ProcessRunner 的阻塞命令生命周期。
     CloseHandle(process.hProcess);
     return started;
 }
@@ -179,7 +179,7 @@ ManagedCommandResult ProcessRunner::runManaged(const std::string& program,
             [&](const char* data, std::size_t size) { append(result.command.standardError, data, size); });
         if (!process.get_id()) { result.command.standardError = "无法启动进程：" + program; return result; }
 #ifdef _WIN32
-        // Keep a native handle while waiting so an exited client's PID cannot be reused.
+        // 等待期间保留原生进程句柄，防止子进程退出后其 PID 被操作系统复用。
         const std::unique_ptr<void, decltype(&CloseHandle)> client(
             OpenProcess(PROCESS_TERMINATE, FALSE, process.get_id()), &CloseHandle);
 #endif
@@ -189,8 +189,8 @@ ManagedCommandResult ProcessRunner::runManaged(const std::string& program,
             if (cancel || truncated || std::chrono::steady_clock::now() >= deadline) {
                 result.cancelled = cancel.load();
                 result.command.timedOut = !result.cancelled && !truncated;
-                // TinyProcessLib::kill also terminates direct children on Windows.
-                // An ADB client may have started the shared server, which we do not own.
+                // TinyProcessLib::kill 在 Windows 上会连带终止直接子进程；
+                // 若当前 ADB 客户端刚拉起了共享的 ADB Server，只应终止客户端自身而不误杀共享服务。
 #ifdef _WIN32
                 if (client) TerminateProcess(client.get(), 2);
 #else
@@ -227,7 +227,7 @@ bool ProcessRunner::openTerminal(const std::string &program,
     }
     const auto wt = searchProgram(L"wt.exe");
     DWORD launchError = 0;
-    // A semicolon is a wt command separator; let cmd handle such literal arguments instead.
+    // 分号在 wt.exe 中是子命令分隔符；若路径或参数含字面分号则改由 cmd.exe 安全处理。
     const bool wtSafe = executable.find(L';') == std::wstring::npos &&
         std::none_of(arguments.begin(), arguments.end(), [](const auto &value) {
             return value.find(';') != std::string::npos;
@@ -254,8 +254,8 @@ bool ProcessRunner::openTerminal(const std::string &program,
     for (const auto &argument : arguments) {
         shellCommand += L" " + toNativeString(quoteArgument(argument, true));
     }
-    // Expand the command once from a private child environment. Percent signs in paths stay
-    // literal, and /v:off keeps exclamation marks literal without changing the parent environment.
+    // 通过私有子进程环境变量展开命令一次：保持路径中的百分号为字面值，
+    // 并配合 /v:off 使感叹号保持字面值，同时不污染父进程环境。
     const std::wstring variable = L"TESTTOOLS_TERMINAL_COMMAND=";
     std::vector<std::wstring> variables;
     wchar_t *inherited = GetEnvironmentStringsW();

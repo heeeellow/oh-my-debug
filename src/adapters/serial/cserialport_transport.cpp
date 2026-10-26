@@ -44,7 +44,7 @@ itas109::FlowControl toLibraryFlowControl(FlowControl value)
 CSerialPortTransport::CSerialPortTransport()
 {
     serialPort_.connectReadEvent(this);
-    // Deliver each RX event immediately; terminal echoes must not wait for an idle timeout.
+    // 收到字节后立即投递每次 RX 事件，确保交互式终端回显无需等待空闲超时。
     serialPort_.setReadIntervalTimeout(0);
 }
 
@@ -129,7 +129,7 @@ bool CSerialPortTransport::supportsControlLine(SerialControlLine line) const
 
 bool CSerialPortTransport::setControlLine(SerialControlLine line, bool enabled, std::string &error)
 {
-    // Keep native control requests and handle closure mutually exclusive.
+    // 保持底层控制线请求与串口句柄关闭操作互斥。
     std::lock_guard<std::mutex> lock(controlMutex_);
     if (!supportsControlLine(line)) {
         error = "串口未连接或 RTS 正由硬件流控管理";

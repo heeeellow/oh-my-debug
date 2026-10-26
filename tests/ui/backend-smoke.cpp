@@ -1,5 +1,6 @@
 #include "adapters/adb/process_runner.h"
 #include "application/device/file_transfer_service.h"
+#include "test_paths.h"
 #include <fstream>
 #include <iostream>
 #include <thread>
@@ -33,7 +34,7 @@ int wmain(int argc, wchar_t** argv)
     try {
         check(argc == 2, "mock exe path");
         _wputenv_s(L"ADB_PATH", argv[1]);
-        fs::path root = fs::absolute(fs::u8path("build/iteration-0.8.0/native data & 中文'空间")) /
+        fs::path root = testOutputDirectory() / fs::u8path("native data & 中文'空间") /
                         std::to_string(GetTickCount64());
         const auto local = root / "local", remote = root / "remote";
         fs::create_directories(local);

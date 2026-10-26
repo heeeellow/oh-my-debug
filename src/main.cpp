@@ -21,7 +21,7 @@
 
 int main(int argc, char* argv[])
 {
-    // Establish the offline boundary before any early diagnostic command can run.
+    // 在任何早期诊断命令执行前优先建立离线边界，确保 --offline 下不触发外部设备命令。
     for (int index = 1; index < argc; ++index) {
         if (std::string_view(argv[index]) == "--offline")
             qputenv("TESTTOOLS_OFFLINE", "1");
@@ -147,8 +147,8 @@ int main(int argc, char* argv[])
     const QSize requestedSize = window.size();
     window.show();
     if (!initialSize.empty() && !snapshotPath.empty()) {
-        // The window manager may constrain the initial show to the current screen.
-        // Restore the requested logical size for reproducible off-screen captures.
+        // 窗口管理器可能在初次 show 时将尺寸限制为当前屏幕大小；
+        // 重新应用请求尺寸以保证离屏快照的逻辑分辨率可复现。
         QTimer::singleShot(0, &window, [&window, requestedSize] { window.resize(requestedSize); });
     }
     if (!snapshotPath.empty()) {

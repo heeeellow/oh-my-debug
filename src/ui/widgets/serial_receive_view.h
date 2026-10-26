@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <functional>
 
+// 串口接收与交互终端视图控件（支持终端模式独立闪烁光标与滚轮跟随状态通知）。
 class ReceiveConsole final : public QPlainTextEdit {
   public:
     explicit ReceiveConsole(QWidget* parent) : QPlainTextEdit(parent), cursorBlink_(this)

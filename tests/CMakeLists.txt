@@ -15,6 +15,7 @@ add_executable(testtools-core-tests
     ${TESTTOOLS_ROOT}/src/application/agent/board_profile.cpp
     ${TESTTOOLS_ROOT}/src/application/agent/board_test_job_client.cpp
     ${TESTTOOLS_ROOT}/src/application/serial/serial_session.cpp
+    ${TESTTOOLS_ROOT}/src/application/serial/serial_port_claims.cpp
     ${TESTTOOLS_ROOT}/src/application/serial/at_command_library.cpp
     ${TESTTOOLS_ROOT}/src/application/serial/serial_workspace_state.cpp
     ${TESTTOOLS_ROOT}/src/application/serial/serial_terminal.cpp

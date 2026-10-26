@@ -29,7 +29,7 @@ public:
         const std::atomic<bool>& cancel,
         const std::function<void(const std::string&)>& progress = {});
 
-    // Windows argv quoting, shared by owned child processes (no command shell).
+    // Windows 子进程命令行参数转义拼装（直接启动受管子进程，不经过命令解释器 Shell）。
     static std::string buildCommandLine(const std::string &program,
                                         const std::vector<std::string> &arguments);
 };

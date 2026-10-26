@@ -190,7 +190,7 @@ bool SerialSession::setControlLine(std::uint64_t expectedGeneration,
     std::shared_ptr<serialdemo::ISerialTransport> transport;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        // A queued click must never apply to a replacement connection.
+        // 排队到达的点击操作绝不能作用到随后替换的新连接代次上。
         if (generation_ != expectedGeneration || state_ != SerialSessionState::Connected ||
             closing_ || scheduledSendPlan_.isRunning()) {
             error = "连接已变化或正在计划发送，未修改控制线";

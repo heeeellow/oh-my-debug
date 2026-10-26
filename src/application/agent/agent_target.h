@@ -6,6 +6,7 @@
 
 namespace testtools {
 
+// 板端 Agent 目标操作系统与 CPU 架构枚举及版本解析辅助函数。
 enum class AgentPlatform { Android, Linux };
 enum class AgentArchitecture { ArmV7, Arm64 };
 

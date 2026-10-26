@@ -31,11 +31,11 @@ struct TerminalLine {
     std::string text() const;
 };
 
-// A bounded, line-oriented terminal screen. It consumes RX only, never sends replies.
+// 有界、面向行的 ANSI/VT 串口终端屏幕缓冲区：仅消费接收流（RX），绝不自动回发终端应答。
 class SerialTerminalBuffer {
 public:
-    explicit SerialTerminalBuffer(std::size_t maxLines = 2000,
-                                  std::size_t maxCells = 128 * 1024);
+    explicit SerialTerminalBuffer(std::size_t maxLines = 10000,
+                                  std::size_t maxCells = 1024 * 1024);
     void push(const serialdemo::ByteBuffer& bytes, const std::string& timestamp = {});
     void resetStream();
     void clear();
@@ -46,6 +46,7 @@ public:
     std::size_t cursorColumn() const noexcept { return column_; }
     bool needsFullRedraw() const noexcept { return fullRedraw_; }
     std::size_t firstChangedLine() const noexcept { return firstChangedLine_; }
+    std::size_t removedLines() const noexcept { return removedLines_; }
     void acknowledgeChanges() noexcept;
     std::string plainText(bool timestamps = false, const std::string& filter = {}) const;
 
@@ -68,6 +69,7 @@ private:
     std::size_t maxLines_, maxCells_, totalCells_ = 0;
     std::size_t row_ = 0, column_ = 0, savedRow_ = 0, savedColumn_ = 0;
     std::size_t firstChangedLine_ = 0, ignoredBytes_ = 0;
+    std::size_t removedLines_ = 0;
     bool truncated_ = false, dirty_ = true, fullRedraw_ = true;
     State state_ = State::Text;
     TerminalStyle style_;

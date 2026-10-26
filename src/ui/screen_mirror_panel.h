@@ -11,6 +11,7 @@ class QPlainTextEdit;
 class QPushButton;
 class QTimer;
 
+// Android 投屏控制面板（仅负责展示状态、发起异步控制动作与接收轮询快照）。
 class ScreenMirrorPanel final : public QDialog {
     Q_OBJECT
 public:

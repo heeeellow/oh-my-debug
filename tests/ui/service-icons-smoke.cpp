@@ -2,6 +2,7 @@
 #include "application/agent/agent_service_status.h"
 #include "core/protocol/agent_protocol.h"
 #include "ui/widgets/file_pane.h"
+#include "test_paths.h"
 #include <QtTest/QSignalSpy>
 #include <QtTest/QTest>
 #include <QtWidgets>
@@ -128,13 +129,14 @@ int main(int argc, char** argv)
         types.resize(750, 360);
         types.show();
         QTest::qWait(300);
-        types.grab().save("build/iteration-0.8.0/remote-file-types.png");
+        types.grab().save(testOutputPath("remote-file-types.png"));
         types.hide();
 
         MainWindow window;
         window.resize(1366, 768);
         window.show();
-        auto* serial = window.serialWorkspace_;
+        window.setSerialModeForDiagnostics("terminal");
+        auto* serial = window.terminalWorkspace_;
         {
             QSignalBlocker block(window.deviceCombo_);
             window.deviceCombo_->clear();
@@ -148,7 +150,7 @@ int main(int argc, char** argv)
         serial->channels_[1].portCombo->setEditText("/dev/ttyTEST");
         check(serial->serviceHint_->isVisible() && !serial->channels_[1].connectButton->isEnabled(),
               "missing board service explained next to connection");
-        window.grab().save("build/iteration-0.8.0/service-disconnected.png");
+        window.grab().save(testOutputPath("service-disconnected.png"));
         auto held = std::make_shared<HeldClient>();
         window.agentClient_ = held;
         window.agentAdbSerial_ = "device-A";
@@ -161,8 +163,10 @@ int main(int argc, char** argv)
             serial->agentAdbSerial_ = "device-A";
             serial->agentControlPort_ = server.port;
             serial->setWorkspaceModeForDiagnostics("terminal");
+            serial->busyChanged(false); // Publish the injected ready fixture to both pages.
             check(!serial->serviceHint_->isVisible() &&
-                      window.topServiceButton_->text().contains(QStringLiteral("已连接")),
+                      window.topServiceStatus_->text().contains(QStringLiteral("已连接")) &&
+                      window.topServiceButton_->text() == QStringLiteral("详情"),
                   "service readiness visible separately from ADB");
             qunsetenv("TESTTOOLS_OFFLINE");
             QMetaObject::invokeMethod(window.serviceHealthTimer_, "timeout", Qt::DirectConnection);
@@ -183,9 +187,10 @@ int main(int argc, char** argv)
         check(held->closed && serial->agentControlPort_ == 0 && serial->serviceHint_->isVisible() &&
                   !serial->channels_[1].connectButton->isEnabled(),
               "stale control port cannot reopen a board serial");
-        check(window.topServiceButton_->text().contains(QStringLiteral("连接失败")),
+        check(window.topServiceStatus_->text().contains(QStringLiteral("连接失败")) &&
+                  window.topServiceButton_->text() == QStringLiteral("重试"),
               "loss reflected in top bar");
-        window.grab().save("build/iteration-0.8.0/service-failed.png");
+        window.grab().save(testOutputPath("service-failed.png"));
         serial->channels_[1].sourceCombo->setCurrentIndex(0);
         check(!serial->serviceHint_->isVisible(), "local COM independent of service failure");
         window.close();

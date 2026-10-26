@@ -21,6 +21,7 @@ struct MirrorOperationResult {
     std::string error;
 };
 
+// 屏幕镜像与设备按键控制应用层服务。
 class ScreenMirrorService {
 public:
     explicit ScreenMirrorService(std::unique_ptr<IScreenMirrorBackend> backend);
@@ -40,7 +41,7 @@ private:
     ScreenMirrorSnapshot state_;
 };
 
-// Composition entry point; the desktop adapter supplies the concrete backend.
+// 组合根入口：由桌面适配层提供具体的镜像后端实现。
 std::shared_ptr<ScreenMirrorService> createScreenMirrorService();
 
 } // namespace testtools

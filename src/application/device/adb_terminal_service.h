@@ -6,6 +6,7 @@
 
 namespace testtools {
 
+// 外部交互式 ADB Shell 终端启动结果与用例服务。
 struct AdbTerminalResult {
     bool started = false;
     std::string host;

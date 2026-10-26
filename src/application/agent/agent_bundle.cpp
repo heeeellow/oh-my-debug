@@ -1,267 +1,52 @@
 #include "application/agent/agent_bundle.h"
 
 #include "core/protocol/agent_version.h"
+#include "core/protocol/json_value.h"
 
 #include <algorithm>
 #include <array>
 #include <cctype>
 #include <fstream>
 #include <iomanip>
-#include <map>
 #include <sstream>
 #include <vector>
 
 namespace testtools {
 namespace {
 
-struct JsonValue {
-    enum class Type { Null, Bool, Number, String, Object, Array } type = Type::Null;
-    std::string scalar;
-    std::map<std::string, JsonValue> object;
-    std::vector<JsonValue> array;
-};
-
-class JsonParser {
-  public:
-    explicit JsonParser(std::string text) : text_(std::move(text)) {}
-
-    bool parse(JsonValue& value, std::string& error)
-    {
-        skip();
-        if (!parseValue(value, error)) {
-            return false;
-        }
-        skip();
-        if (position_ != text_.size()) {
-            error = "manifest JSON contains trailing data";
-            return false;
-        }
-        return true;
-    }
-
-  private:
-    void skip()
-    {
-        while (position_ < text_.size() &&
-               std::isspace(static_cast<unsigned char>(text_[position_]))) {
-            ++position_;
-        }
-    }
-
-    bool consume(char expected)
-    {
-        skip();
-        if (position_ >= text_.size() || text_[position_] != expected) {
-            return false;
-        }
-        ++position_;
-        return true;
-    }
-
-    bool parseValue(JsonValue& value, std::string& error)
-    {
-        skip();
-        if (position_ >= text_.size()) {
-            error = "manifest JSON ended unexpectedly";
-            return false;
-        }
-        const char ch = text_[position_];
-        if (ch == '{')
-            return parseObject(value, error);
-        if (ch == '[')
-            return parseArray(value, error);
-        if (ch == '"') {
-            value.type = JsonValue::Type::String;
-            return parseString(value.scalar, error);
-        }
-        if (text_.compare(position_, 4, "true") == 0) {
-            position_ += 4;
-            value.type = JsonValue::Type::Bool;
-            value.scalar = "true";
-            return true;
-        }
-        if (text_.compare(position_, 5, "false") == 0) {
-            position_ += 5;
-            value.type = JsonValue::Type::Bool;
-            value.scalar = "false";
-            return true;
-        }
-        if (text_.compare(position_, 4, "null") == 0) {
-            position_ += 4;
-            value.type = JsonValue::Type::Null;
-            return true;
-        }
-        if (ch == '-' || std::isdigit(static_cast<unsigned char>(ch))) {
-            const auto begin = position_++;
-            while (position_ < text_.size() &&
-                   (std::isdigit(static_cast<unsigned char>(text_[position_])) ||
-                    text_[position_] == '.' || text_[position_] == '-' || text_[position_] == '+' ||
-                    text_[position_] == 'e' || text_[position_] == 'E')) {
-                ++position_;
-            }
-            value.type = JsonValue::Type::Number;
-            value.scalar = text_.substr(begin, position_ - begin);
-            return true;
-        }
-        error = "manifest JSON contains an invalid value";
-        return false;
-    }
-
-    bool parseString(std::string& value, std::string& error)
-    {
-        if (!consume('"')) {
-            error = "manifest JSON string expected";
-            return false;
-        }
-        value.clear();
-        while (position_ < text_.size()) {
-            const char ch = text_[position_++];
-            if (ch == '"')
-                return true;
-            if (ch == '\\') {
-                if (position_ >= text_.size())
-                    break;
-                const char escaped = text_[position_++];
-                switch (escaped) {
-                case '"':
-                case '\\':
-                case '/':
-                    value.push_back(escaped);
-                    break;
-                case 'b':
-                    value.push_back('\b');
-                    break;
-                case 'f':
-                    value.push_back('\f');
-                    break;
-                case 'n':
-                    value.push_back('\n');
-                    break;
-                case 'r':
-                    value.push_back('\r');
-                    break;
-                case 't':
-                    value.push_back('\t');
-                    break;
-                default:
-                    error = "manifest JSON uses unsupported string escape";
-                    return false;
-                }
-            } else {
-                if (static_cast<unsigned char>(ch) < 0x20) {
-                    error = "manifest JSON string contains control character";
-                    return false;
-                }
-                value.push_back(ch);
-            }
-        }
-        error = "manifest JSON string is unterminated";
-        return false;
-    }
-
-    bool parseObject(JsonValue& value, std::string& error)
-    {
-        if (!consume('{')) {
-            error = "manifest JSON object expected";
-            return false;
-        }
-        value.type = JsonValue::Type::Object;
-        value.object.clear();
-        skip();
-        if (consume('}'))
-            return true;
-        while (true) {
-            std::string key;
-            if (!parseString(key, error) || !consume(':')) {
-                error = "manifest JSON object member expected";
-                return false;
-            }
-            if (value.object.find(key) != value.object.end()) {
-                error = "manifest JSON contains duplicate object key: " + key;
-                return false;
-            }
-            JsonValue member;
-            if (!parseValue(member, error))
-                return false;
-            value.object.emplace(std::move(key), std::move(member));
-            if (consume('}'))
-                return true;
-            if (!consume(',')) {
-                error = "manifest JSON object separator expected";
-                return false;
-            }
-        }
-    }
-
-    bool parseArray(JsonValue& value, std::string& error)
-    {
-        if (!consume('[')) {
-            error = "manifest JSON array expected";
-            return false;
-        }
-        value.type = JsonValue::Type::Array;
-        value.array.clear();
-        skip();
-        if (consume(']'))
-            return true;
-        while (true) {
-            JsonValue item;
-            if (!parseValue(item, error))
-                return false;
-            value.array.push_back(std::move(item));
-            if (consume(']'))
-                return true;
-            if (!consume(',')) {
-                error = "manifest JSON array separator expected";
-                return false;
-            }
-        }
-    }
-
-    std::string text_;
-    std::size_t position_ = 0;
-};
-
 const JsonValue* member(const JsonValue& value, const char* key)
 {
-    if (value.type != JsonValue::Type::Object)
-        return nullptr;
-    const auto it = value.object.find(key);
-    return it == value.object.end() ? nullptr : &it->second;
+    return value.find(key);
 }
 
 bool stringMember(const JsonValue& object, const char* key, std::string& output)
 {
     const auto* value = member(object, key);
-    if (!value || value->type != JsonValue::Type::String || value->scalar.empty())
+    if (!value || !value->isString() || value->stringValue().empty())
         return false;
-    output = value->scalar;
+    output = value->stringValue();
     return true;
 }
 
 bool numberMember(const JsonValue& object, const char* key, std::uintmax_t& output)
 {
     const auto* value = member(object, key);
-    if (!value || value->type != JsonValue::Type::Number || value->scalar.empty() ||
-        value->scalar.find_first_not_of("0123456789") != std::string::npos)
+    if (!value || !value->isInt64() || value->int64Value() < 0)
         return false;
-    try {
-        output = static_cast<std::uintmax_t>(std::stoull(value->scalar));
-        return true;
-    } catch (...) {
-        return false;
-    }
+    output = static_cast<std::uintmax_t>(value->int64Value());
+    return true;
 }
 
 bool boolMember(const JsonValue& object, const char* key, bool& output)
 {
     const auto* value = member(object, key);
-    if (!value || value->type != JsonValue::Type::Bool)
+    if (!value || !value->isBool())
         return false;
-    output = value->scalar == "true";
+    output = value->boolValue();
     return true;
 }
 
+// 校验包内相对路径：禁止绝对路径、反斜杠、父目录跳转（..）及非法字符。
 bool safeRelative(std::string_view value, bool allowNested)
 {
     if (value.empty() || value.front() == '/' || value.find('\\') != std::string_view::npos ||
@@ -465,8 +250,12 @@ std::optional<AgentBundle> loadAgentBundle(const std::filesystem::path& bundleRo
     const std::string text((std::istreambuf_iterator<char>(input)),
                            std::istreambuf_iterator<char>());
     JsonValue document;
-    if (!JsonParser(text).parse(document, error))
+    if (!parseJson(text, document, error))
         return std::nullopt;
+    if (!document.isObject()) {
+        error = "manifest JSON object expected";
+        return std::nullopt;
+    }
     std::uintmax_t schema = 0;
     if (!numberMember(document, "schema_version", schema) || schema != 2) {
         error = "unsupported Agent Bundle schema; expected v2";
@@ -500,12 +289,12 @@ std::optional<AgentBundle> loadAgentBundle(const std::filesystem::path& bundleRo
         return std::nullopt;
     }
     const auto* packages = member(document, "packages");
-    if (!packages || packages->type != JsonValue::Type::Array || packages->array.size() != 3) {
+    if (!packages || !packages->isArray() || packages->arrayItems().size() != 3) {
         error = "manifest must contain exactly three packages";
         return std::nullopt;
     }
     std::vector<std::string> seenIds;
-    for (const auto& item : packages->array) {
+    for (const auto& item : packages->arrayItems()) {
         AgentBundlePackage package;
         std::string platform, architecture;
         if (!stringMember(item, "id", package.id) || !safeRelative(package.id, true) ||
@@ -565,13 +354,13 @@ std::optional<AgentBundle> loadAgentBundle(const std::filesystem::path& bundleRo
             }
         }
         const auto* files = member(item, "files");
-        if (!files || files->type != JsonValue::Type::Array || files->array.empty() ||
-            files->array.size() > 128) {
+        if (!files || !files->isArray() || files->arrayItems().empty() ||
+            files->arrayItems().size() > 128) {
             error = "manifest package file count is invalid";
             return std::nullopt;
         }
         std::size_t agentCount = 0;
-        for (const auto& fileValue : files->array) {
+        for (const auto& fileValue : files->arrayItems()) {
             AgentBundleFile file;
             std::uintmax_t size = 0;
             if (!stringMember(fileValue, "path", file.path) || !safeRelative(file.path, true) ||

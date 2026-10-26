@@ -72,6 +72,7 @@ void SerialTerminalBuffer::markChanged(std::size_t row)
 void SerialTerminalBuffer::acknowledgeChanges() noexcept
 {
     dirty_ = fullRedraw_ = false;
+    removedLines_ = 0;
     firstChangedLine_ = 0;
 }
 
@@ -99,14 +100,16 @@ void SerialTerminalBuffer::trim()
         lines_.pop_front();
         row_ = row_ ? row_ - 1 : 0;
         savedRow_ = savedRow_ ? savedRow_ - 1 : 0;
-        truncated_ = fullRedraw_ = dirty_ = true;
-        firstChangedLine_ = 0;
+        truncated_ = dirty_ = true;
+        ++removedLines_;
+        if (firstChangedLine_)
+            --firstChangedLine_;
     }
 }
 
 void SerialTerminalBuffer::put(char32_t character)
 {
-    // Bound a line without silently overwriting its final character on overflow.
+    // 限制单行最大列数并自动换行，避免在行超长时静默覆盖末尾字符。
     if (column_ >= MaximumColumns) lineFeed();
     auto& line = lines_[row_];
     if (line.cells.empty()) line.timestamp = timestamp_;
@@ -162,7 +165,7 @@ void SerialTerminalBuffer::push(const serialdemo::ByteBuffer& bytes, const std::
         trim();
     }
     if (row_ != previousRow || column_ != previousColumn) {
-        // Cursor-only echoes (BS / CSI D / CR) must also reach the renderer.
+        // 仅移动光标的回显序列（如 BS / CSI D / CR）也必须触发渲染器刷新。
         if (column_ > lines_[row_].cells.size()) resizeLine(row_, column_);
         trim();
         markChanged(row_);
@@ -175,7 +178,7 @@ void SerialTerminalBuffer::consume(std::uint8_t byte)
         if (byte == 7 || (state_ == State::OscEscape && byte == '\\') || ++ignoredBytes_ > 4096)
             state_ = State::Text;
         else state_ = byte == 0x1b ? State::OscEscape : State::Osc;
-        return; // OSC titles/clipboard requests are consumed, never acted on.
+        return; // 仅消费并丢弃 OSC 窗口标题或剪贴板控制序列，绝不执行外部动作。
     }
     if (byte == 0x1b) { finishUtf8(); state_ = State::Escape; return; }
     if (state_ == State::Charset) { state_ = State::Text; return; }
@@ -250,8 +253,7 @@ void SerialTerminalBuffer::controlSequence(char final)
     }
     case 'J':
         if (params[0] == 2 || params[0] == 3) {
-            // This scrollback view has no separate alternate screen. Keep the next
-            // prompt visible after the common clear-screen + home sequence.
+            // 当前回滚视图不设独立备用屏幕；在常见的“清屏 + 光标归位”序列后保留下一条提示符可见。
             const auto graphics = style_;
             clear();
             style_ = graphics;
@@ -311,6 +313,7 @@ void SerialTerminalBuffer::clear()
 {
     lines_.clear(); lines_.emplace_back(); totalCells_ = 0;
     row_ = column_ = savedRow_ = savedColumn_ = firstChangedLine_ = 0;
+    removedLines_ = 0;
     state_ = State::Text; style_ = {}; sequence_.clear(); utf8Remaining_ = 0;
     truncated_ = false; dirty_ = fullRedraw_ = true;
 }

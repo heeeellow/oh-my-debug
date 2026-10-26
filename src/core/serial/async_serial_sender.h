@@ -12,6 +12,7 @@
 
 namespace serialdemo {
 
+// 有界异步串口发送器：由独立工作线程执行底层写入并回报完成状态，避免阻塞界面线程。
 class AsyncSerialSender {
 public:
     using Writer = std::function<bool(const ByteBuffer &)>;

@@ -103,7 +103,7 @@ int cancellationCompletionRace()
     AgentService service(
         [&](const BoardTestRunRequest&, const std::atomic_bool& cancel) {
             entered = true;
-            // The provider completed its work before noticing the cancellation.
+            // 模拟提供器在感知到取消标志前已完成工作并返回成功结果的并发竞态。
             while (!cancel.load())
                 std::this_thread::yield();
             return successfulResult();
@@ -141,7 +141,7 @@ int responseSnapshotRace()
     BoardTestJobSnapshot completed;
     if (!first || !wait(manager, first->jobId, completed))
         return bad("snapshot race setup");
-    // Another control connection starts a task before the first reply is serialized.
+    // 模拟另一个控制连接在首个应答尚未序列化前立即启动下一项任务。
     const auto second = manager.start({"storage.device.info", 1});
     const auto reply = first;
     if (!second || !reply || reply->jobId != first->jobId ||
@@ -226,7 +226,7 @@ int timeoutCompletionConsistency()
     AgentService service(
         [](const BoardTestRunRequest&, const std::atomic_bool&) {
             auto result = successfulResult();
-            // Timeout remains authoritative if a provider reports mixed flags.
+            // 当提供器同时上报混合标志时，超时判定仍具有最高优先级。
             result.timedOut = true;
             result.cancelled = true;
             return result;

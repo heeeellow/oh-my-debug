@@ -245,8 +245,8 @@ bool configureSerial(int descriptor, const serialdemo::SerialConfig &config,
         return true;
     }
 
-    // Some USB modem drivers reject changing the termios baud even though all
-    // framing flags are valid. Preserve the original speed and retry.
+    // 部分 USB 调制解调器驱动在所有帧格式标志均合法时仍拒绝修改 termios 波特率；此时保留原速率重试。
+    // 若包含波特率参数设置失败，先保留原有速率仅应用其余帧格式参数。
     cfsetispeed(&settings, cfgetispeed(&original));
     cfsetospeed(&settings, cfgetospeed(&original));
     if (tcsetattr(descriptor, TCSANOW, &settings) == 0) {
@@ -463,10 +463,10 @@ void SerialBridge::stop()
         if (listenFd_ >= 0) {
             shutdown(listenFd_, SHUT_RDWR);
         }
-        // The worker owns the serial descriptor after start().  Closing it
-        // here could race with poll/read and allow the descriptor number to be
-        // reused.  The 250 ms poll interval bounds shutdown latency, after
-        // which workerMain closes it exactly once.
+        // start() 成功后串口文件描述符归工作线程所有；在此处直接 close 会与 poll/read 竞态并导致文件描述符编号被重用。
+        // 250 ms 的轮询周期限制了退出延迟，随后由 workerMain 唯一关闭一次串口描述符。
+        // 确保描述符生命周期不跨越工作线程边界。
+        // 待 worker_.join() 返回后再统一收尾。
     }
     if (worker_.joinable()) {
         worker_.join();

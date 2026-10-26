@@ -142,6 +142,7 @@
     <ClCompile Include="src\adapters\device\scrcpy_backend.cpp" />
     <ClCompile Include="src\ui\screen_mirror_panel.cpp" />
       <ClCompile Include="src\application\serial\serial_session.cpp" />
+    <ClCompile Include="src\application\serial\serial_port_claims.cpp" />
       <ClCompile Include="src\application\serial\at_command_library.cpp" />
       <ClCompile Include="src\application\serial\serial_transport_service.cpp" />
     <ClCompile Include="src\application\serial\serial_workspace_state.cpp" />
@@ -193,6 +194,7 @@
     <ClInclude Include="src\adapters\device\scrcpy_backend.h" />
     <ClInclude Include="src\core\device\screen_mirror.h" />
       <ClInclude Include="src\application\serial\serial_session.h" />
+    <ClInclude Include="src\application\serial\serial_port_claims.h" />
       <ClInclude Include="src\application\serial\at_command_library.h" />
       <ClInclude Include="src\application\serial\serial_transport_service.h" />
     <ClInclude Include="src\application\serial\serial_workspace_state.h" />

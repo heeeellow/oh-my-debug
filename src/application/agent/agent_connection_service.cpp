@@ -3,6 +3,7 @@
 
 #include "adapters/agent/agent_client.h"
 #include "core/protocol/json_value.h"
+#include <exception>
 
 namespace testtools {
 
@@ -23,7 +24,8 @@ std::string agentVersion(const std::string& response)
     return version != nullptr && version->isString() ? version->stringValue() : std::string{};
 }
 
-bool connectAndDiscover(AgentConnectionResult& result)
+bool connectAndDiscover(AgentConnectionResult& result,
+                        const AgentConnectionService::ProgressCallback& progress)
 {
     if (!result.deployment.succeeded) {
         result.error = result.deployment.error;
@@ -35,6 +37,8 @@ bool connectAndDiscover(AgentConnectionResult& result)
     result.capabilities.clear();
     result.systemInfo.clear();
     result.observedVersion.clear();
+    if (progress)
+        progress("正在校验服务连接…");
     result.client = AgentConnectionService::createClient();
     if (!result.client->connect("127.0.0.1", result.deployment.localPort, result.error) ||
         !result.client->request("{\"protocol\":1,\"request_id\":\"ui-hello\","
@@ -51,15 +55,20 @@ bool connectAndDiscover(AgentConnectionResult& result)
         return false;
     }
 
-    return result.client->request("{\"protocol\":1,\"request_id\":\"ui-capabilities\","
+    if (progress)
+        progress("正在读取服务能力…");
+    if (!(result.client->request("{\"protocol\":1,\"request_id\":\"ui-capabilities\","
                                   "\"method\":\"capability.list\",\"params\":{}}",
                                   result.capabilities,
                                   result.error) &&
            validateAgentService(result.hello,
                                 result.capabilities,
                                 AdbAgentDeployment::RequiredAgentVersion,
-                                result.error) &&
-           result.client->request("{\"protocol\":1,\"request_id\":\"ui-system-info\","
+                                result.error)))
+        return false;
+    if (progress)
+        progress("正在读取设备信息…");
+    return result.client->request("{\"protocol\":1,\"request_id\":\"ui-system-info\","
                                   "\"method\":\"system.info\",\"params\":{}}",
                                   result.systemInfo,
                                   result.error);
@@ -102,16 +111,20 @@ AgentConnectionResult AgentConnectionService::connectDevice(const std::string& s
     AdbAgentDeployment deployment;
     AgentConnectionResult result;
     result.client = createClient();
-    result.deployment = deployment.reconnect(serial, progress);
-    result.succeeded = connectAndDiscover(result);
+    try {
+        result.deployment = deployment.reconnect(serial, progress);
+        result.succeeded = connectAndDiscover(result, progress);
 
-    if (!result.succeeded && allowDeploy) {
-        closeAndRemoveForward(serial, deployment, result);
-        if (progress) {
-            progress("设备服务尚未就绪，正在准备当前版本...");
+        if (!result.succeeded && allowDeploy) {
+            closeAndRemoveForward(serial, deployment, result);
+            if (progress)
+                progress("设备服务尚未就绪，正在准备当前版本...");
+            result.deployment = deployment.deployAndForward(serial, applicationDirectory, progress);
+            result.succeeded = connectAndDiscover(result, progress);
         }
-        result.deployment = deployment.deployAndForward(serial, applicationDirectory, progress);
-        result.succeeded = connectAndDiscover(result);
+    } catch (const std::exception& error) {
+        result.succeeded = false;
+        result.error = error.what();
     }
 
     if (!result.succeeded) {

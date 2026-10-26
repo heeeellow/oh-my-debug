@@ -3,6 +3,7 @@
 #include "application/agent/agent_service_status.h"
 #include "application/device/device_discovery.h"
 #include "application/support/background_task_group.h"
+#include "application/serial/serial_port_claims.h"
 
 #include <QtWidgets/QMainWindow>
 
@@ -24,6 +25,8 @@ namespace testtools {
 class IAgentConnection;
 }
 
+// 应用主窗口：统一编排顶部设备/服务状态栏、左侧功能导航树、
+// 串口调试工作区、独立串口终端、ADB 文件传输、屏幕镜像及连接与设备信息页。
 class MainWindow final : public QMainWindow {
     Q_OBJECT
 
@@ -39,12 +42,13 @@ class MainWindow final : public QMainWindow {
   private:
     enum class StatusTone { Neutral, Good, Warning, Error };
 
-    enum PageIndex { SerialPage = 0, DeviceInfoPage, FileTransferPage, MirrorPage };
+    enum PageIndex { SerialPage = 0, DeviceInfoPage, FileTransferPage, MirrorPage, TerminalPage };
 
     void buildUi();
     QWidget* buildTopBar();
     QWidget* buildNavigation();
-    QWidget* buildSerialPage();
+    QWidget* buildSerialPage(bool terminal = false);
+    bool agentSerialBusy() const;
     QWidget* buildDeviceInfoPage();
     QWidget* buildFileTransferPage();
     QWidget* buildMirrorPage();
@@ -82,6 +86,7 @@ class MainWindow final : public QMainWindow {
     QComboBox* deviceCombo_ = nullptr;
     QLabel* adbStatusLabel_ = nullptr;
     QLabel* agentStatusLabel_ = nullptr;
+    QLabel* topServiceStatus_ = nullptr;
     QPushButton* topServiceButton_ = nullptr;
     QPushButton *serialGroupButton_ = nullptr, *adbGroupButton_ = nullptr;
     QTimer* serviceHealthTimer_ = nullptr;
@@ -96,6 +101,7 @@ class MainWindow final : public QMainWindow {
     QWidget* adbChildren_ = nullptr;
     QToolButton* adbExpandButton_ = nullptr;
     int lastAdbPage_ = FileTransferPage;
+    int lastSerialPage_ = SerialPage;
     bool closeRequested_ = false;
     bool fileShutdownComplete_ = false;
     FileTransferWorkspace* fileWorkspace_ = nullptr;
@@ -104,6 +110,9 @@ class MainWindow final : public QMainWindow {
     QTimer* deviceRefreshTimer_ = nullptr;
     QStackedWidget* pages_ = nullptr;
     SerialWorkspace* serialWorkspace_ = nullptr;
+    SerialWorkspace* terminalWorkspace_ = nullptr;
+    std::shared_ptr<testtools::SerialPortClaims> portClaims_ =
+        std::make_shared<testtools::SerialPortClaims>();
     QLabel* activityLabel_ = nullptr;
     QLabel* agentDeviceValue_ = nullptr;
     QPushButton* deployAgentButton_ = nullptr;

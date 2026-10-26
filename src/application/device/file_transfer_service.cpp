@@ -143,7 +143,7 @@ bool FileTransferService::prepare(FileTransferRequest request, std::string& erro
     }
     std::set<std::string> names;
     for (const auto& entry : request.entries) {
-        // Remote names must remain a single Windows path component as well.
+        // 远端文件名同样必须保持为合法的单个 Windows 路径组件。
         if (!validName(entry.name) || entry.name.find_first_of("\\:") != std::string::npos ||
             !names.insert(entry.name).second) {
             error = "所选文件名无效或重复";

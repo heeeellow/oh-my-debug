@@ -1,5 +1,6 @@
 #include "ui/widgets/file_pane.h"
 #include "application/device/file_transfer_service.h"
+#include "ui/theme.h"
 #include "ui/widgets/file_icon_provider.h"
 #include <QtCore/QCollator>
 #include <QtCore/QDateTime>
@@ -28,7 +29,7 @@
 namespace {
 QString text(const std::string& s)
 {
-    return QString::fromUtf8(s.data(), qsizetype(s.size()));
+    return testtools::ui::fromUtf8(s);
 }
 QString type(const testtools::FileEntry& e)
 {
@@ -226,7 +227,7 @@ QVariant FileListModel::data(const QModelIndex& i, int role) const
         bool byAttributes = remote_;
         const bool link = e.kind == testtools::FileKind::Symlink;
         if (remote_) {
-            // No download/content sniffing for remote icons; use common Shell file types.
+            // 远端条目不下载或嗅探文件内容，直接按扩展名映射常见系统 Shell 文件类型图标。
             if (icon == 4)
                 extension = "wav";
             else if (icon == 5)

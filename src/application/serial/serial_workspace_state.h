@@ -10,6 +10,7 @@
 
 namespace testtools {
 
+// 串口工作区模式切换守卫、双通道端点冲突判定与有界收发日志缓冲。
 enum class SerialWorkspaceMode {
     Single,
     Dual,

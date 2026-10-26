@@ -5,6 +5,7 @@
 
 namespace testtools {
 
+// 屏幕镜像控制按键与外部镜像进程后端抽象接口。
 enum class MirrorControl { Back, Home, Recents, Power, VolumeUp, VolumeDown };
 
 struct MirrorProcessStatus {

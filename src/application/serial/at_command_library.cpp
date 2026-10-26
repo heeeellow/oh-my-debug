@@ -325,7 +325,7 @@ bool AtCommandStore::importCommands(const std::filesystem::path& path,
     if (!load(path, imported, error)) {
         return false;
     }
-    // Sharing commands must not change the active serial channel's send semantics.
+    // 共享或导入指令列表时不得改变当前串口通道已选的发送行尾语义。
     imported.setLineEnding(library.lineEnding());
     library = std::move(imported);
     return true;

@@ -15,7 +15,7 @@ class QLabel;
 class QPushButton;
 class QMimeData;
 
-// UI-only model: stable entry names, no file system or ADB calls in data().
+// 纯 UI 文件列表模型：持有稳定条目快照，不在 data() 中发起任何文件系统或 ADB 调用。
 class FileListModel final : public QAbstractTableModel {
   public:
     explicit FileListModel(QObject* parent = nullptr, bool remote = false);
@@ -34,6 +34,7 @@ class FileListModel final : public QAbstractTableModel {
     bool remote_;
 };
 
+// 单侧文件浏览面板（可复用为本地目录栏或远端 ADB 目录栏）。
 class FilePane final : public QFrame {
   public:
     explicit FilePane(bool remote, QWidget* parent = nullptr);

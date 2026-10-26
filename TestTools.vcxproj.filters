@@ -43,6 +43,7 @@
     <ClCompile Include="src\adapters\device\scrcpy_backend.cpp"><Filter>适配器</Filter></ClCompile>
     <ClCompile Include="src\ui\screen_mirror_panel.cpp"><Filter>界面</Filter></ClCompile>
       <ClCompile Include="src\application\serial\serial_session.cpp"><Filter>应用层\串口</Filter></ClCompile>
+    <ClCompile Include="src\application\serial\serial_port_claims.cpp"><Filter>应用层\串口</Filter></ClCompile>
       <ClCompile Include="src\application\serial\at_command_library.cpp"><Filter>应用层\串口</Filter></ClCompile>
       <ClCompile Include="src\application\serial\serial_transport_service.cpp"><Filter>应用层\串口</Filter></ClCompile>
     <ClCompile Include="src\application\serial\serial_workspace_state.cpp"><Filter>应用层\串口</Filter></ClCompile>
@@ -94,6 +95,7 @@
     <ClInclude Include="src\adapters\device\scrcpy_backend.h"><Filter>适配器</Filter></ClInclude>
     <ClInclude Include="src\core\device\screen_mirror.h"><Filter>核心层</Filter></ClInclude>
       <ClInclude Include="src\application\serial\serial_session.h"><Filter>应用层\串口</Filter></ClInclude>
+    <ClInclude Include="src\application\serial\serial_port_claims.h"><Filter>应用层\串口</Filter></ClInclude>
       <ClInclude Include="src\application\serial\at_command_library.h"><Filter>应用层\串口</Filter></ClInclude>
       <ClInclude Include="src\application\serial\serial_transport_service.h"><Filter>应用层\串口</Filter></ClInclude>
     <ClInclude Include="src\application\serial\serial_workspace_state.h"><Filter>应用层\串口</Filter></ClInclude>

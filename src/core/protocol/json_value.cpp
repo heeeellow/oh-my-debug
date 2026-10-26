@@ -63,9 +63,8 @@ bool continuation(unsigned char byte)
     return (byte & 0xC0u) == 0x80u;
 }
 
-// Reads one UTF-8 scalar at offset. The caller owns the string and may pass an offset
-// at which an ASCII byte is also valid. The sequence is rejected for overlong encodings,
-// surrogate code points, and values above U+10FFFF.
+// 从 offset 处读取一个 UTF-8 标量字符。调用方持有字符串且可传入 ASCII 字节偏移；
+// 拒绝过长编码（Overlong）、代理项码点（Surrogate）以及超过 U+10FFFF 的非法值。
 bool readUtf8(const std::string& text,
               std::size_t offset,
               std::size_t& length,
@@ -379,7 +378,7 @@ class Parser {
     bool parseString(std::string& output)
     {
         const std::size_t start = position_;
-        ++position_; // opening quote
+        ++position_; // 跳过起始双引号
         output.clear();
         while (position_ < input_.size()) {
             const unsigned char byte = static_cast<unsigned char>(input_[position_++]);
@@ -521,7 +520,7 @@ class Parser {
 
     bool parseArray(JsonValue& output, std::size_t depth)
     {
-        ++position_; // opening bracket
+        ++position_; // 跳过起始左方括号
         JsonValue::Array items;
         skipWhitespace();
         if (position_ < input_.size() && input_[position_] == ']') {
@@ -573,7 +572,7 @@ class Parser {
 
     bool parseObject(JsonValue& output, std::size_t depth)
     {
-        ++position_; // opening brace
+        ++position_; // 跳过起始左花括号
         JsonValue::Object members;
         skipWhitespace();
         if (position_ < input_.size() && input_[position_] == '}') {

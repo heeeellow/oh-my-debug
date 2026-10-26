@@ -50,7 +50,7 @@ struct BoardTestJobSnapshot {
     std::string capabilityId;
     int capabilityVersion = 0;
     BoardTestJobState state = BoardTestJobState::Failed;
-    // A running/cancelling job has no result. Terminal jobs must have one.
+    // 运行中或取消中的任务尚无结果；进入终态的任务必须包含结构化结果。
     std::optional<BoardTestResult> result;
 };
 
@@ -70,6 +70,7 @@ struct BoardTestJobCall {
     BoardTestJobError error;
 };
 
+// 板端测试任务协议客户端：封装 job.start / job.status / job.cancel 调用与响应校验。
 class BoardTestJobClient {
   public:
     explicit BoardTestJobClient(std::shared_ptr<IAgentConnection> connection);
@@ -77,8 +78,7 @@ class BoardTestJobClient {
     BoardTestJobClient(const BoardTestJobClient&) = delete;
     BoardTestJobClient& operator=(const BoardTestJobClient&) = delete;
 
-    // These calls are synchronous at the transport boundary. Application/UI
-    // callers should invoke them from their existing background task owner.
+    // 传输边界上为同步调用；应用层或界面层应通过各自的后台任务组发起调用。
     BoardTestJobCall start(const std::string& capabilityId);
     BoardTestJobCall status(const std::string& jobId);
     BoardTestJobCall cancel(const std::string& jobId);

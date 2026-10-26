@@ -1,3 +1,4 @@
+#include "test_paths.h"
 #include "adapters/adb/process_runner.h"
 #include "application/device/file_transfer_service.h"
 #include <fstream>
@@ -66,7 +67,7 @@ int wmain(int argc, wchar_t** argv)
             resolved.standardOutput.pop_back();
         check(resolved.exitCode == 0 && resolved.standardOutput == remote,
               "verify physical fixture path: " + resolved.standardOutput + resolved.standardError);
-        const auto root = fs::absolute("build/iteration-0.8.0/device-smoke") / stamp;
+        const auto root = testOutputDirectory() / "device-smoke" / stamp;
         const auto send = root / "send", receive = root / "receive";
         fs::create_directories(send / "folder" / "empty");
         fs::create_directories(send / "empty");

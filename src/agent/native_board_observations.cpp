@@ -124,14 +124,13 @@ bool isDecimalDigits(const std::string& value, std::size_t offset)
 
 bool isWholeEmmcName(const std::string& name)
 {
-    // This exact form excludes mmcblk0p1, mmcblk0boot0 and mmcblk0rpmb.
+    // 严格匹配 mmcblk<数字>，从而排除 mmcblk0p1 分区、mmcblk0boot0 和 mmcblk0rpmb。
     return name.rfind("mmcblk", 0) == 0 && isDecimalDigits(name, 6);
 }
 
 bool isWholeUfsLunName(const std::string& name)
 {
-    // Linux presents UFS user LUNs as sd[a-z]+.  Requiring only letters
-    // excludes sda1 and vendor names such as sda_boot0.
+    // Linux 将 UFS 用户 LUN 呈现为 sd[a-z]+；仅允许纯字母后缀以排除 sda1 分区或 sda_boot0 等特殊节点。
     if (name.size() < 3 || name.rfind("sd", 0) != 0) {
         return false;
     }
@@ -230,8 +229,7 @@ void readEmmcHealth(StorageDeviceObservation& observation, const Path& devicePat
     if (secondEnd != std::string::npos) {
         second.resize(secondEnd);
     }
-    // eMMC life_time is conventionally two hexadecimal bytes, with or
-    // without a 0x prefix.  Parse each token independently and preserve 0.
+    // eMMC life_time 通常为两个十六进制字节（带或不带 0x 前缀）；独立解析两个字段并保留 0 值。
     observation.health.lifeTimeEstimationA = readHexNumeric(first);
     observation.health.lifeTimeEstimationB = readHexNumeric(second);
 }
@@ -366,8 +364,7 @@ std::vector<StorageDeviceObservation> enumerateNativeStorage(const NativeObserva
             continue;
         }
         const auto capacity = readCapacityBytes(entry.path());
-        // UFS boot/RPMB LUNs may be exposed under an sd* name.  The RK
-        // reference layout treats user LUNs below 1 GiB as auxiliary LUNs.
+        // UFS boot/RPMB LUN 也可能暴露为 sd* 节点；按瑞芯微参考分区布局，将小于 1 GiB 的 LUN 视为辅助 LUN 排除。
         if (!capacity || (ufs && *capacity < std::uint64_t{1} * 1024 * 1024 * 1024)) {
             continue;
         }

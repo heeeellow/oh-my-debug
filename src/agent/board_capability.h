@@ -9,6 +9,7 @@
 
 namespace testtools::agent {
 
+// 板端固定只读诊断能力元数据与执行入口（严格绑定固定能力 ID，不提供任意 Shell 执行）。
 struct BoardCapabilityDefinition {
     std::string id;
     std::string name;

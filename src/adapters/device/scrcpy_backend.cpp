@@ -128,7 +128,7 @@ public:
         const bool attributesReady = UpdateProcThreadAttribute(startup.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
             inheritedHandles, sizeof(inheritedHandles), nullptr, nullptr) != FALSE;
         PROCESS_INFORMATION process{};
-        // A private environment binds ADB without changing other concurrent commands.
+        // 使用私有环境块为 scrcpy 绑定 ADB 路径，避免修改全局环境影响其他并发命令。
         const bool created = attributesReady && CreateProcessW(program.c_str(), command.data(), nullptr, nullptr, TRUE,
             CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT,
             environment.data(), program.parent_path().c_str(), &startup.StartupInfo, &process);
@@ -169,7 +169,7 @@ public:
     void stop() override
     {
         if (process_) {
-            // Close only windows owned by this exact process; never kill a shared ADB server.
+            // 仅关闭归属于当前 scrcpy 进程 PID 的窗口，绝不终止共享的 ADB Server。
             EnumWindows([](HWND window, LPARAM parameter) -> BOOL {
                 const auto target = static_cast<DWORD>(parameter); DWORD owner = 0;
                 GetWindowThreadProcessId(window, &owner);

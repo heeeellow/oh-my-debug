@@ -9,9 +9,8 @@
 
 namespace testtools {
 
-// Limits are deliberately conservative defaults for control-plane JSON.  A caller may
-// lower any limit for a particular message, but a parser never treats an absent limit as
-// unbounded.
+// 控制面 JSON 解析与序列化的安全边界配置。调用方可根据具体报文场景收紧上限，
+// 但解析器绝不允许超出硬性上限或退化为无界解析。
 struct JsonLimits {
     static constexpr std::size_t HardMaxInputBytes = 8 * 1024 * 1024;
     static constexpr std::size_t HardMaxOutputBytes = 8 * 1024 * 1024;
@@ -122,13 +121,13 @@ class JsonValue {
     Object object_items_;
 };
 
-// The overload with JsonError preserves a machine-readable code and byte offset.
+// 带 JsonError 的重载保留机器可读的错误码与出错字节偏移量。
 bool parseJson(const std::string& input,
                JsonValue& value,
                JsonError& error,
                const JsonLimits& limits = {});
 
-// Convenience overload for callers that only need a diagnostic string.
+// 仅需诊断字符串时的便捷重载。
 bool parseJson(const std::string& input,
                JsonValue& value,
                std::string& error,
@@ -139,9 +138,7 @@ bool serializeJson(const JsonValue& value,
                    JsonError& error,
                    const JsonLimits& limits = {});
 
-// Returns an empty string when serialization fails. Use the overload above when the
-// caller needs to distinguish an invalid value from a valid empty document (which JSON
-// does not have).
+// 序列化失败时返回空字符串；由于合法 JSON 文档不可能为空字符串，调用方可直接判空或使用带 JsonError 的重载。
 std::string serializeJson(const JsonValue& value, const JsonLimits& limits = {});
 
 } // namespace testtools

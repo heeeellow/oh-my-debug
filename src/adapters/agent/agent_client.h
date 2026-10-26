@@ -13,6 +13,7 @@
 
 namespace testtools {
 
+// 基于 Asio TCP Socket 的板端 Agent 控制通道客户端实现（带超时与长度前缀帧编解码）。
 class AgentClient final : public IAgentConnection {
   public:
     explicit AgentClient(std::chrono::milliseconds timeout = std::chrono::milliseconds(5000));

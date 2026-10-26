@@ -35,6 +35,7 @@ struct SerialSessionSnapshot {
 
 enum class ScheduledSendTick { Idle, Queued, Completed, Failed };
 
+// 单路串口会话编排器：管理连接代次（Generation）、异步发送队列、定时发送计划与收发字节计数。
 class SerialSession {
   public:
     using DataCallback =

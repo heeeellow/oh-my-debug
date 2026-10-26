@@ -12,9 +12,8 @@
 
 namespace testtools {
 
-// Board identity values come from the structured system.info response.  Profile
-// identity fields are compared literally; an absent value never matches a
-// configured field.
+// 板卡身份字段来自结构化 system.info 响应；Profile 身份字段按字面值精确比对，
+// 缺失字段绝不会匹配已配置的预期字段。
 struct BoardIdentity {
     std::map<std::string, std::string> fields;
 };
@@ -31,8 +30,7 @@ struct StorageHealthExpectation {
 };
 
 struct StorageExpectation {
-    // Canonical values are "emmc" and "ufs".  The loader accepts their
-    // conventional spelling variants and stores the canonical lower-case form.
+    // 规范化取值为 "emmc" 和 "ufs"；加载器接受常见大小写拼写变体并统一存为小写规范形式。
     std::optional<std::string> type;
     std::optional<std::uint64_t> minimumCapacityBytes;
     std::optional<std::uint64_t> maximumCapacityBytes;
@@ -58,8 +56,7 @@ struct StorageHealthObservation {
 };
 
 struct StorageObservation {
-    // Canonical values are "emmc" and "ufs"; an empty or unknown value is
-    // retained so the evaluator can report VERIFY instead of guessing.
+    // 规范化取值为 "emmc" 和 "ufs"；保留空值或未知值以便评估器给出 VERIFY 而非猜测。
     std::string type;
     std::optional<std::uint64_t> capacityBytes;
     StorageHealthObservation health;
@@ -103,18 +100,14 @@ struct ProfileEvaluation {
     std::string reason;
 };
 
-// Zero or multiple identity matches deliberately remain VERIFY.  A unique
-// identity match is then evaluated against only the expectations present in
-// that profile.  Missing observations are VERIFY; explicit mismatches are
-// FAIL.
+// 零个或多个身份匹配结果一律保持 VERIFY；仅当唯一匹配某个 Profile 时，
+// 才针对该 Profile 中声明的预期项进行评估（观测缺失记为 VERIFY，明确不符记为 FAIL）。
 ProfileEvaluation evaluateBoardProfile(const BoardIdentity& identity,
                                        const BoardObservations& observations,
                                        const std::vector<Profile>& profiles);
 
-// Evaluates only the expectation domain represented by a single capability.
-// This keeps a read-only memory result independent from storage observations
-// (and storage identity independent from health) while preserving the same
-// exact Board Profile match rule.
+// 仅评估单个能力对应的预期域，使只读内存检查独立于存储观测（存储身份也独立于健康度），
+// 同时保持完全一致的 Board Profile 唯一身份匹配规则。
 ProfileEvaluation evaluateBoardProfileForCapability(const BoardIdentity& identity,
                                                     const BoardObservations& observations,
                                                     const std::vector<Profile>& profiles,
@@ -144,17 +137,12 @@ struct BoardProfileLoadResult {
     std::vector<BoardProfileLoadError> errors;
 };
 
-// Loads only regular *.json files immediately within directory.  The loader
-// never writes, follows symlink files, recurses, or accepts more than the
-// configured file/byte/profile limits.  Valid profiles are returned alongside
-// errors so callers may present diagnostics without silently hiding them.
+// 仅加载指定目录顶层的常规 *.json 文件：不写入、不跟随符号链接、不递归子目录，
+// 并严格执行文件数/字节数/Profile 数量上限；有效配置与错误列表一并返回以便诊断。
 BoardProfileLoadResult loadBoardProfiles(const std::filesystem::path& directory,
                                          const BoardProfileLoaderLimits& limits = {});
 
-// Exposed for callers that already have a bounded JSON document (for example,
-// tests or a packaged profile reader).  The document must use the fixed
-// profile schema described by Profile; no expressions or inheritance are
-// interpreted.
+// 解析单个已加载的有界 JSON 文档为 Profile 结构，仅使用固定 Schema，不解释表达式或继承。
 bool parseBoardProfile(const JsonValue& document, Profile& profile, std::string& error);
 
 } // namespace testtools

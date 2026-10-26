@@ -129,7 +129,7 @@ SerialModeSwitchDecision SerialWorkspaceState::evaluateModeSwitch(
         || activity.reliabilityTestRunning) {
         return {false, SerialModeSwitchBlock::TaskRunning};
     }
-    // Single-port and terminal views both hide A. Never hide a live connection.
+    // 单串口与终端视图均会隐藏通道 A；绝不允许在通道 A 仍保持连接时将其隐藏。
     if (requested != SerialWorkspaceMode::Dual && activity.channelActive[0]) {
         return {false, SerialModeSwitchBlock::HiddenChannelActive};
     }
@@ -209,7 +209,7 @@ SerialLogAppendResult SerialLogBuffer::appendRx(const serialdemo::ByteBuffer &da
         if (endsWithLf) {
             ++lineEnd;
         }
-        // Keep receive callbacks separate. Timing does not define a protocol frame.
+        // 保持各次接收回调记录独立，不用到达时间间隔暗中拼接协议帧。
         SerialLogEntry entry;
         entry.direction = SerialLogDirection::Rx;
         entry.timestampMs = timestampMs;
@@ -308,7 +308,7 @@ std::string SerialLogBuffer::formatEntry(const SerialLogEntry &entry,
                    entry.bytes[contentLength - 1] == '\r') {
             --contentLength;
         }
-        // Escape incomplete UTF-8 immediately; no hidden bytes waiting for another batch.
+        // 对不完整的 UTF-8 序列立即进行转义显示，不隐藏字节等待后续分片。
         line += formatUtf8Text(entry.bytes, contentLength, false);
     }
     line.push_back('\n');
@@ -326,7 +326,7 @@ std::string SerialLogBuffer::formatAll(bool hexDisplay, bool showTimestamp,
     std::string output;
     for (const auto &entry : entries_) {
         const auto text = formatEntry(entry, hexDisplay, showTimestamp);
-        // Filtering selects rendered records; retained bytes are never rewritten.
+        // 过滤仅筛选渲染输出记录，绝不改写底层保留的原始字节。
         if (filter.empty() || text.find(filter) != std::string::npos) {
             output += text;
         }

@@ -9,6 +9,7 @@
 
 namespace testtools {
 
+// 串口端点枚举与底层传输实例工厂服务。
 class SerialTransportService {
 public:
     static std::vector<serialdemo::PortInfo> localPorts();

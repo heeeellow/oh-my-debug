@@ -56,8 +56,7 @@ std::string commandError(const std::string &operation, const CommandResult &resu
 #ifdef _WIN32
 std::wstring environmentVariable(const wchar_t *name)
 {
-    // The size returned for a null buffer includes the terminating null.
-    // Allocate one extra character so a long path cannot be truncated.
+    // 空缓冲区查询返回的长度已包含结尾空字符；额外多分配一个宽字符防止超长路径被截断。
     const DWORD requiredLength = GetEnvironmentVariableW(name, nullptr, 0);
     if (requiredLength == 0) {
         return {};
@@ -109,7 +108,7 @@ std::string resolveAdbProgram(const std::string &requested)
     }
 
 #ifdef _WIN32
-    // Discovery, deployment and external terminals all resolve ADB here.
+    // 设备发现、Agent 部署和外部终端统一在此处解析 ADB 可执行程序路径。
     std::vector<std::filesystem::path> candidates;
     const auto adbPath = environmentVariable(L"ADB_PATH");
     if (!adbPath.empty()) {
@@ -168,7 +167,7 @@ AdbTransport::~AdbTransport()
 bool AdbTransport::openShellTerminal(const std::string &serial,
                                      std::string &host, std::string &error) const
 {
-    // Bind the device once; later UI selection changes must not retarget this shell.
+    // 在启动时一次性绑定目标设备序列号；后续界面切换设备不得影响已打开的外部终端会话。
     return ProcessRunner::openTerminal(adbProgram_, {"-s", serial, "shell"}, host, error);
 }
 
@@ -325,8 +324,7 @@ bool AdbTransport::ensureEndpointNotBusy(const SerialConfig &config, std::string
                       + " 2>/dev/null; fi"},
         std::chrono::seconds(3));
     if (result.timedOut || result.exitCode != 0) {
-        // Occupancy detection is an optional diagnostic. Older Android images
-        // do not necessarily provide lsof, so absence must not block a port.
+        // 进程占用检测属于可选诊断：旧版 Android 镜像未必提供 lsof，命令缺失不得阻塞端口打开。
         return true;
     }
     for (const auto &line : splitLines(result.standardOutput)) {
@@ -419,9 +417,8 @@ void AdbTransport::workerMain(SerialConfig config)
             return;
         }
 
-        // Several Android USB modem drivers expose a termios baud field but
-        // reject changing it because the physical link is USB, not a UART
-        // clock. Retry every meaningful framing flag without the baud value.
+        // 部分 Android USB 调制解调器驱动虽暴露 termios 波特率字段，但因底层物理链路为 USB
+        // 而拒绝修改速率；此时去掉波特率参数重试其余有效的串口帧格式标志。
         configureResult = runAdb(config.adbSerial,
                                  {"shell", sttyCommand(config, false)},
                                  std::chrono::seconds(4));
@@ -506,10 +503,8 @@ void AdbTransport::removeForward(const std::string &serial, int localPort) const
 
     const std::string localEndpoint = "tcp:" + std::to_string(localPort);
 
-    // ADB normally removes forwards when a transport disappears. Treat cleanup
-    // as idempotent: query the host-side registry first and only remove the
-    // exact mapping created by this transport. Never use --remove-all because
-    // other tools may own unrelated mappings.
+    // ADB 通常会在设备断开时自动移除转发。此处保持幂等清理：先查询宿主侧转发注册表，
+    // 仅移除当前实例创建的精确端口映射；绝不使用 --remove-all 以免破坏其他工具的映射。
     const auto listResult = runAdb({}, {"forward", "--list"}, std::chrono::seconds(2));
     if (listResult.exitCode != 0 || listResult.timedOut) {
         return;

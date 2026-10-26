@@ -11,9 +11,6 @@
 #include <QtCore/QCoreApplication>
 #include <QtCore/QTimer>
 #include <QtGui/QCloseEvent>
-#include <QtCore/QJsonArray>
-#include <QtCore/QJsonDocument>
-#include <QtCore/QJsonObject>
 #include <QtCore/QMetaObject>
 #include <QtCore/QPointer>
 #include <QtCore/QSignalBlocker>
@@ -37,38 +34,12 @@
 
 namespace {
 
-QString fromUtf8(const std::string& text)
-{
-    return QString::fromUtf8(text.data(), static_cast<qsizetype>(text.size()));
-}
+using testtools::ui::fromUtf8;
+using testtools::ui::toUtf8;
 
-QJsonObject jsonResultObject(const std::string& json)
+QString nonEmptyOr(const std::string& text, const QString& fallback = {})
 {
-    QJsonParseError error;
-    const QJsonDocument document = QJsonDocument::fromJson(
-        QByteArray(json.data(), static_cast<qsizetype>(json.size())), &error);
-    if (error.error != QJsonParseError::NoError || !document.isObject()) {
-        return {};
-    }
-    return document.object().value(QStringLiteral("result")).toObject();
-}
-
-QString infoText(const QJsonObject& object, const char* key, const QString& fallback = {})
-{
-    const QString value = object.value(QString::fromLatin1(key)).toString().trimmed();
-    return value.isEmpty() ? fallback : value;
-}
-
-bool hasCapability(const std::string& response, const QString& capabilityId)
-{
-    const QJsonArray capabilities =
-        jsonResultObject(response).value(QStringLiteral("capabilities")).toArray();
-    for (const QJsonValue& capability : capabilities) {
-        if (capability.toObject().value(QStringLiteral("id")).toString() == capabilityId) {
-            return true;
-        }
-    }
-    return false;
+    return text.empty() ? fallback : fromUtf8(text);
 }
 
 QString deviceDisplayName(const serialdemo::AdbDevice& device)
@@ -183,6 +154,8 @@ void MainWindow::prepareForShutdown()
     if (serialWorkspace_) {
         serialWorkspace_->prepareForShutdown();
     }
+    if (terminalWorkspace_)
+        terminalWorkspace_->prepareForShutdown();
     terminalTasks_.wait();
     if (qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE")) return;
     ++agentGeneration_;
@@ -200,9 +173,8 @@ void MainWindow::prepareForShutdown()
     }
     scanTasks_.wait();
     agentTasks_.wait();
-    // A deployment may have completed after the event loop began shutting
-    // down, before its queued result could transfer ownership of the port.
-    // Remove only forwards targeting this Agent's fixed control port.
+    // 部署任务可能在事件循环开始退出后才完成，此时排队回调尚未接管端口所有权；
+    // 因此仅针对当前 Agent 固定控制端口执行定向转发清理。
     testtools::AdbAgentDeployment().removeControlForwards(selectedSerial);
     if (!agentSerial.empty() && agentSerial != selectedSerial) {
         testtools::AdbAgentDeployment().removeControlForwards(agentSerial);
@@ -214,7 +186,9 @@ bool MainWindow::navigateTo(const QString& pageName)
 {
     const QString normalized = pageName.trimmed().toLower();
     if (normalized == QStringLiteral("serial") || normalized == QStringLiteral("overview")) {
-        showPage(SerialPage);
+        showPage(lastSerialPage_);
+    } else if (normalized == QStringLiteral("terminal")) {
+        showPage(TerminalPage);
     } else if (normalized == QStringLiteral("settings") ||
                normalized == QStringLiteral("device")) {
         showPage(DeviceInfoPage);
@@ -232,6 +206,11 @@ bool MainWindow::navigateTo(const QString& pageName)
 
 bool MainWindow::setSerialModeForDiagnostics(const QString& modeName)
 {
+    if (modeName == QStringLiteral("terminal")) {
+        showPage(TerminalPage);
+        return terminalWorkspace_ != nullptr;
+    }
+    showPage(SerialPage);
     return serialWorkspace_ && serialWorkspace_->setWorkspaceModeForDiagnostics(modeName);
 }
 
@@ -260,6 +239,7 @@ void MainWindow::buildUi()
     pages_->addWidget(buildDeviceInfoPage());
     pages_->addWidget(buildFileTransferPage());
     pages_->addWidget(buildMirrorPage());
+    pages_->addWidget(buildSerialPage(true));
     bodyLayout->addWidget(pages_, 1);
     root->addWidget(body, 1);
 
@@ -296,7 +276,7 @@ QWidget* MainWindow::buildTopBar()
     brand->setSpacing(8);
     auto* title = new QLabel(QStringLiteral("TestTools"), bar);
     title->setObjectName(QStringLiteral("appTitle"));
-    auto* subtitle = new QLabel(QStringLiteral("板卡与模块调试工作台"), bar);
+    auto* subtitle = new QLabel(QStringLiteral("调试工作台"), bar);
     subtitle->setObjectName(QStringLiteral("appSubtitle"));
     brand->addWidget(title);
     brand->addWidget(subtitle);
@@ -317,9 +297,13 @@ QWidget* MainWindow::buildTopBar()
     layout->addWidget(caption);
     layout->addWidget(deviceCombo_);
     layout->addWidget(adbStatusLabel_);
-    topServiceButton_ = new QPushButton(QStringLiteral("调试服务 · 未连接"), bar);
+    topServiceStatus_ = new QLabel(QStringLiteral("设备串口服务 · 未连接"), bar);
+    topServiceStatus_->setObjectName(QStringLiteral("topServiceStatus"));
+    layout->addWidget(topServiceStatus_);
+    topServiceButton_ = new QPushButton(QStringLiteral("连接 / 准备"), bar);
     topServiceButton_->setObjectName(QStringLiteral("serviceStatusButton"));
     topServiceButton_->setProperty("diagnosticObjectName", QStringLiteral("serviceStatusButton"));
+    topServiceButton_->setCursor(Qt::PointingHandCursor);
     layout->addWidget(topServiceButton_);
     connect(topServiceButton_, &QPushButton::clicked, this, [this] {
         if (agentClient_)
@@ -360,9 +344,9 @@ QWidget* MainWindow::buildNavigation()
     serialPages->setSpacing(4);
     serialPages->addWidget(addNavigationButton(QStringLiteral("单串口调试"), SerialPage, QStringLiteral("single")));
     serialPages->addWidget(addNavigationButton(QStringLiteral("双端调试"), SerialPage, QStringLiteral("dual")));
-    serialPages->addWidget(addNavigationButton(QStringLiteral("串口终端"), SerialPage, QStringLiteral("terminal")));
+    serialPages->addWidget(addNavigationButton(QStringLiteral("串口终端"), TerminalPage, QStringLiteral("terminal")));
     layout->addWidget(serialChildren_); setSerialExpanded(true);
-    connect(serial, &QPushButton::clicked, this, [this]{showPage(SerialPage);});
+    connect(serial, &QPushButton::clicked, this, [this]{showPage(lastSerialPage_);});
     connect(serialExpandButton_, &QToolButton::clicked, this, [this]{setSerialExpanded(serialChildren_->isHidden());});
     auto* parentRow = new QHBoxLayout;
     parentRow->setContentsMargins(0, 0, 0, 0); parentRow->setSpacing(0);
@@ -467,29 +451,39 @@ QPushButton* MainWindow::addNavigationButton(const QString& text, int pageIndex,
     button->setCheckable(true);
     button->setCursor(Qt::PointingHandCursor);
     connect(button, &QPushButton::clicked, this, [this, pageIndex, serialMode] {
-        if (!serialMode.isEmpty() && !serialWorkspace_->selectWorkspaceMode(serialMode)) { updateNavigation(); return; }
+        if (pageIndex == SerialPage && !serialMode.isEmpty() &&
+            !serialWorkspace_->selectWorkspaceMode(serialMode)) { updateNavigation(); return; }
         showPage(pageIndex);
     });
     navigationButtons_.push_back(button);
     return button;
 }
 
-QWidget* MainWindow::buildSerialPage()
+QWidget* MainWindow::buildSerialPage(bool terminal)
 {
-    serialWorkspace_ = new SerialWorkspace(this);
-    connect(serialWorkspace_,
+    auto* workspace = new SerialWorkspace(this,
+        terminal ? SerialWorkspace::Purpose::Terminal : SerialWorkspace::Purpose::Debug, portClaims_);
+    workspace->setObjectName(terminal ? QStringLiteral("serialTerminalWorkspace")
+                                     : QStringLiteral("serialDebugWorkspace"));
+    if (terminal)
+        terminalWorkspace_ = workspace;
+    else
+        serialWorkspace_ = workspace;
+    connect(workspace,
             &SerialWorkspace::prepareServiceRequested,
             this,
             &MainWindow::deploySelectedAgent);
-    connect(serialWorkspace_, &SerialWorkspace::workspaceModeChanged, this, [this] { updateNavigation(); });
-    connect(serialWorkspace_, &SerialWorkspace::activityChanged, this, &MainWindow::setActivity);
-    connect(serialWorkspace_, &SerialWorkspace::busyChanged, this, [this](bool busy) {
-        serialBusy_ = busy;
+    connect(workspace, &SerialWorkspace::workspaceModeChanged, this, [this] { updateNavigation(); });
+    connect(workspace, &SerialWorkspace::activityChanged, this, &MainWindow::setActivity);
+    connect(workspace, &SerialWorkspace::busyChanged, this, [this](bool) {
+        serialBusy_ = (serialWorkspace_ && serialWorkspace_->hasActiveConnections()) ||
+                      (terminalWorkspace_ && terminalWorkspace_->hasActiveConnections());
         updateDeviceControls();
+        updateAgentControls();
     });
     return wrapPage({},
                     {},
-                    serialWorkspace_,
+                    workspace,
                     false);
 }
 
@@ -673,15 +667,21 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
 
     QPointer<MainWindow> guard(this);
     agentTasks_.start([guard, serial, applicationDirectory, generation, allowDeploy] {
-        const auto progress = [guard, generation, allowDeploy](const std::string&) {
+        const auto progress = [guard, generation, allowDeploy](const std::string& message) {
+            QString detail = fromUtf8(message);
+            detail.replace(QStringLiteral("Android Agent Bundle"), QStringLiteral("服务文件"));
+            detail.replace(QStringLiteral("Linux Agent"), QStringLiteral("设备服务"));
+            detail.replace(QStringLiteral("板端 Agent"), QStringLiteral("设备服务"));
+            detail.replace(QStringLiteral("Agent"), QStringLiteral("服务"));
             QMetaObject::invokeMethod(
                 guard,
-                [guard, generation, allowDeploy] {
+                [guard, generation, allowDeploy, detail] {
                     if (guard && !guard->shuttingDown_ && generation == guard->agentGeneration_) {
                         guard->setAgentStatus(allowDeploy ? QStringLiteral("调试服务 · 准备中")
                                                           : QStringLiteral("调试服务 · 检查中"),
                                               StatusTone::Neutral,
-                                              QStringLiteral("正在准备设备连接"));
+                                               detail);
+                        guard->setActivity(detail);
                     }
                 },
                 Qt::QueuedConnection);
@@ -748,18 +748,17 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
                 if (guard->serialWorkspace_) {
                     guard->serialWorkspace_->setAgentConnection(serial, deploymentResult.localPort);
                 }
-                const QJsonObject helloObject = jsonResultObject(hello);
-                const QString version = infoText(helloObject, "agent_version");
-                const bool systemInfoCapability =
-                    hasCapability(capabilities, QStringLiteral("system.info"));
-                const bool serialStream =
-                    hasCapability(capabilities, QStringLiteral("serial.stream"));
-                const bool memoryCapacity =
-                    hasCapability(capabilities, QStringLiteral("memory.capacity"));
-                const bool storageInfo =
-                    hasCapability(capabilities, QStringLiteral("storage.device.info"));
-                const bool storageHealth =
-                    hasCapability(capabilities, QStringLiteral("storage.device.health"));
+                if (guard->terminalWorkspace_)
+                    guard->terminalWorkspace_->setAgentConnection(serial, deploymentResult.localPort);
+                // 通过应用层服务解析握手、能力清单与系统信息，界面层仅负责展示文案拼装。
+                const auto snapshot =
+                    testtools::parseAgentServiceSnapshot(hello, capabilities, systemInfo);
+                const QString version = nonEmptyOr(snapshot.agentVersion);
+                const bool systemInfoCapability = snapshot.hasCapability("system.info");
+                const bool serialStream = snapshot.hasCapability("serial.stream");
+                const bool memoryCapacity = snapshot.hasCapability("memory.capacity");
+                const bool storageInfo = snapshot.hasCapability("storage.device.info");
+                const bool storageHealth = snapshot.hasCapability("storage.device.health");
                 std::vector<std::string> boardCapabilities;
                 QStringList boardCapabilityLabels;
                 if (memoryCapacity) {
@@ -796,23 +795,22 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
                                  ? QStringLiteral("—")
                                  : capabilityLabels.join(QStringLiteral("、"))));
                 guard->agentCapabilitiesValue_->setToolTip({});
-                const QJsonObject info = jsonResultObject(systemInfo);
-                const QString model = infoText(info, "model", QStringLiteral("未知型号"));
-                const QString manufacturer = infoText(info, "manufacturer");
-                const QString brand = infoText(info, "brand");
-                const QString product = infoText(info, "product");
-                const QString board = infoText(info, "board");
-                const QString hardware = infoText(info, "hardware");
+                const auto& info = snapshot.systemInfo;
+                const QString model = nonEmptyOr(info.model, QStringLiteral("未知型号"));
+                const QString manufacturer = nonEmptyOr(info.manufacturer);
+                const QString brand = nonEmptyOr(info.brand);
+                const QString product = nonEmptyOr(info.product);
+                const QString board = nonEmptyOr(info.board);
+                const QString hardware = nonEmptyOr(info.hardware);
                 const QString architecture =
-                    infoText(info, "architecture", fromUtf8(deploymentResult.target));
-                const int cores = info.value(QStringLiteral("cpu_cores")).toInt();
-                const qint64 memoryKib =
-                    info.value(QStringLiteral("memory_total_kib")).toVariant().toLongLong();
-                const QString release = infoText(info, "os_release", QStringLiteral("未知版本"));
-                const QString sdk = infoText(info, "android_sdk");
-                const QString kernel = infoText(info, "kernel", QStringLiteral("未知内核"));
-                const QString systemBuild = infoText(info, "build_id");
-                const int uid = info.value(QStringLiteral("effective_uid")).toInt(-1);
+                    nonEmptyOr(info.architecture, fromUtf8(deploymentResult.target));
+                const int cores = info.cpuCores;
+                const qint64 memoryKib = static_cast<qint64>(info.memoryTotalKib);
+                const QString release = nonEmptyOr(info.osRelease, QStringLiteral("未知版本"));
+                const QString sdk = nonEmptyOr(info.androidSdk);
+                const QString kernel = nonEmptyOr(info.kernel, QStringLiteral("未知内核"));
+                const QString systemBuild = nonEmptyOr(info.buildId);
+                const int uid = info.effectiveUid;
 
                 guard->agentModelValue_->setText(
                     board.isEmpty() ? model : QStringLiteral("%1 · %2").arg(model, board));
@@ -907,6 +905,8 @@ void MainWindow::disconnectAgent(const QString& reason)
     auto client = std::move(agentClient_);
     if (serialWorkspace_)
         serialWorkspace_->setAgentConnection({}, 0);
+    if (terminalWorkspace_)
+        terminalWorkspace_->setAgentConnection({}, 0);
     const auto oldSerial = agentAdbSerial_;
     const auto oldPort = agentForwardPort_;
     if (client || (!oldSerial.empty() && oldPort)) {
@@ -1003,14 +1003,23 @@ void MainWindow::updateServicePresentation()
     const QString tone = state == State::Ready    ? "ready"
                          : state == State::Failed ? "failed"
                                                   : "neutral";
-    topServiceButton_->setText(label);
+    const auto displayed = state == State::Connecting && !serviceDetail_.isEmpty()
+        ? QStringLiteral("设备串口服务 · %1").arg(serviceDetail_)
+        : QString(label).replace(QStringLiteral("调试服务"), QStringLiteral("设备串口服务"));
+    topServiceStatus_->setText(displayed);
+    topServiceStatus_->setToolTip(serviceDetail_.isEmpty()
+        ? QStringLiteral("仅设备串口需要此服务；Windows 本地串口、ADB 文件、Shell 和投屏独立可用。")
+        : serviceDetail_);
+    topServiceButton_->setText(state == State::Ready ? QStringLiteral("详情")
+        : state == State::Connecting ? QStringLiteral("连接中…")
+        : state == State::Failed ? QStringLiteral("重试") : QStringLiteral("连接 / 准备"));
     topServiceButton_->setToolTip(
         serviceDetail_.isEmpty()
             ? QStringLiteral("设备串口需要调试服务；文件传输、终端和投屏可独立使用。")
             : serviceDetail_);
     topServiceButton_->setEnabled(
         !shuttingDown_ && !closeRequested_ && !agentConnecting_ && !agentCleanupPending_ &&
-        (agentClient_ || (!serialBusy_ && selectedDevice().state == "device")) &&
+        (agentClient_ || (!agentSerialBusy() && selectedDevice().state == "device")) &&
         !qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE"));
     if (topServiceButton_->property("serviceState").toString() != tone) {
         topServiceButton_->setProperty("serviceState", tone);
@@ -1019,6 +1028,14 @@ void MainWindow::updateServicePresentation()
     }
     if (serialWorkspace_)
         serialWorkspace_->setServiceStatus(state, serviceDetail_, agentCleanupPending_);
+    if (terminalWorkspace_)
+        terminalWorkspace_->setServiceStatus(state, serviceDetail_, agentCleanupPending_);
+}
+
+bool MainWindow::agentSerialBusy() const
+{
+    return (serialWorkspace_ && serialWorkspace_->hasActiveAgentConnection()) ||
+           (terminalWorkspace_ && terminalWorkspace_->hasActiveAgentConnection());
 }
 
 void MainWindow::checkServiceHealth()
@@ -1067,9 +1084,9 @@ void MainWindow::updateAgentControls()
     const auto device = selectedDevice();
     const bool online = !device.serial.empty() && device.state == "device";
     deployAgentButton_->setEnabled(online && !agentConnecting_ && !agentCleanupPending_ &&
-                                   !connected && !serialBusy_);
-    disconnectAgentButton_->setEnabled(connected && !serialBusy_);
-    stopAgentButton_->setEnabled(online && !agentConnecting_ && !serialBusy_);
+                                    !connected && !agentSerialBusy());
+    disconnectAgentButton_->setEnabled(connected && !agentSerialBusy());
+    stopAgentButton_->setEnabled(online && !agentConnecting_ && !agentSerialBusy());
     updateServicePresentation();
     deployAgentButton_->setText(agentConnecting_ ? QStringLiteral("正在连接…")
                                                  : QStringLiteral("连接调试服务"));
@@ -1098,7 +1115,7 @@ void MainWindow::openAdbTerminal()
     updateAdbTerminalControls();
     setActivity(QStringLiteral("正在为 %1 打开 ADB 终端…").arg(fromUtf8(device.serial)));
     QPointer<MainWindow> guard(this);
-    // Capture the selection on click; the independent shell keeps this device for its lifetime.
+    // 在点击瞬间捕获目标设备快照；外部独立终端在整个生命周期内固定绑定该设备。
     terminalTasks_.start([guard, device] {
         const auto result = testtools::AdbTerminalService().open(device);
         QMetaObject::invokeMethod(guard, [guard, device, result] {
@@ -1258,8 +1275,7 @@ void MainWindow::applyDeviceScan(testtools::DeviceScanResult result, bool automa
     }
     applySelectedDevice();
     updateDeviceControls();
-    // Refreshing the selected device also refreshes Agent/serial state and can
-    // replace the activity text. Keep the actionable ADB failure visible.
+    // 刷新当前选中设备会连带刷新 Agent 与串口状态并可能覆盖活动提示，此处重新保留可操作的 ADB 异常文本。
     if (!scanError.isEmpty()) {
         setActivity(scanError);
     }
@@ -1271,13 +1287,9 @@ serialdemo::AdbDevice MainWindow::selectedDevice() const
     if (!deviceCombo_ || deviceCombo_->currentData().toString().isEmpty()) {
         return device;
     }
-    const QByteArray serial = deviceCombo_->currentData().toString().toUtf8();
-    const QByteArray state = deviceCombo_->currentData(Qt::UserRole + 1).toString().toUtf8();
-    const QByteArray description = deviceCombo_->currentData(Qt::UserRole + 2).toString().toUtf8();
-    device.serial.assign(serial.constData(), static_cast<std::size_t>(serial.size()));
-    device.state.assign(state.constData(), static_cast<std::size_t>(state.size()));
-    device.description.assign(description.constData(),
-                              static_cast<std::size_t>(description.size()));
+    device.serial = toUtf8(deviceCombo_->currentData().toString());
+    device.state = toUtf8(deviceCombo_->currentData(Qt::UserRole + 1).toString());
+    device.description = toUtf8(deviceCombo_->currentData(Qt::UserRole + 2).toString());
     return device;
 }
 
@@ -1301,6 +1313,8 @@ void MainWindow::applySelectedDevice()
         disconnectAgent(QStringLiteral("已切换设备，原连接已断开"));
     }
     serialWorkspace_->setAdbDevice(device);
+    if (terminalWorkspace_)
+        terminalWorkspace_->setAdbDevice(device);
     updateAgentControls();
     if (!agentClient_ && !agentConnecting_ && device.state == "device" && !device.serial.empty()) {
         connectSelectedAgent(false);
@@ -1316,7 +1330,12 @@ void MainWindow::showPage(int pageIndex)
     if (pageIndex == FileTransferPage || pageIndex == MirrorPage) {
         lastAdbPage_ = pageIndex; setAdbExpanded(true);
     }
-    if (pageIndex == SerialPage) setSerialExpanded(true);
+    if (pageIndex == SerialPage || pageIndex == TerminalPage) {
+        lastSerialPage_ = pageIndex;
+        setSerialExpanded(true);
+    }
+    if (pageIndex == TerminalPage && terminalWorkspace_)
+        terminalWorkspace_->selectWorkspaceMode(QStringLiteral("terminal"));
     updateNavigation();
 }
 
@@ -1330,13 +1349,15 @@ void MainWindow::setSerialExpanded(bool expanded)
 void MainWindow::updateNavigation()
 {
     if (!pages_) return;
-    serialGroupButton_->setChecked(pages_->currentIndex() == SerialPage);
+    serialGroupButton_->setChecked(pages_->currentIndex() == SerialPage ||
+                                   pages_->currentIndex() == TerminalPage);
     adbGroupButton_->setChecked(pages_->currentIndex() == FileTransferPage ||
                                 pages_->currentIndex() == MirrorPage);
     for (auto* button : navigationButtons_) {
         const auto mode = button->property("serialMode").toString();
         button->setChecked(button->property("pageIndex").toInt() == pages_->currentIndex() &&
-            (mode.isEmpty() || (serialWorkspace_ && mode == serialWorkspace_->currentWorkspaceMode())));
+            (mode.isEmpty() || pages_->currentIndex() == TerminalPage ||
+             (serialWorkspace_ && mode == serialWorkspace_->currentWorkspaceMode())));
     }
 }
 

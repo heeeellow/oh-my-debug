@@ -1,4 +1,5 @@
 #include "serial_workspace.h"
+#include "ui/theme.h"
 #include "ui/widgets/serial_receive_view.h"
 #include "ui/widgets/serial_connection_bar.h"
 
@@ -59,17 +60,8 @@ using namespace serialdemo;
 
 namespace {
 
-
-QString fromUtf8(const std::string &text)
-{
-    return QString::fromUtf8(text.data(), static_cast<qsizetype>(text.size()));
-}
-
-std::string toUtf8(const QString &text)
-{
-    const QByteArray bytes = text.toUtf8();
-    return {bytes.constData(), static_cast<std::size_t>(bytes.size())};
-}
+using testtools::ui::fromUtf8;
+using testtools::ui::toUtf8;
 
 QString channelName(int index)
 {
@@ -78,7 +70,7 @@ QString channelName(int index)
 
 QString selectedEndpoint(const QComboBox* combo)
 {
-    // An edited endpoint must not inherit the previous item's hidden data.
+    // 已手动编辑的端点文本不得继承旧选项隐藏的绑定数据。
     const auto text = combo->currentText().trimmed();
     const auto data = combo->currentData().toString();
     return !data.isEmpty() && combo->currentText() == combo->itemText(combo->currentIndex())
@@ -153,8 +145,10 @@ QTextCharFormat logEntryFormat(testtools::SerialLogDirection direction)
 
 } // namespace
 
-SerialWorkspace::SerialWorkspace(QWidget *parent)
-    : QWidget(parent)
+SerialWorkspace::SerialWorkspace(QWidget* parent, Purpose purpose,
+                                 std::shared_ptr<testtools::SerialPortClaims> claims)
+    : QWidget(parent), purpose_(purpose),
+      portClaims_(claims ? std::move(claims) : std::make_shared<testtools::SerialPortClaims>())
 {
     const auto configuredStorage = qEnvironmentVariable("TESTTOOLS_DATA_DIR");
     const auto storageRoot = configuredStorage.isEmpty()
@@ -172,14 +166,20 @@ SerialWorkspace::SerialWorkspace(QWidget *parent)
         testtools::AtCommandStore::save(
             atCommandStorePath_, atCommandLibrary_, commandStoreError);
 
-    preferencesStorePath_ =
-        std::filesystem::path(storageRoot.toStdWString()) / L"serial-preferences.json";
+    const auto dataRoot = std::filesystem::path(storageRoot.toStdWString());
+    preferencesStorePath_ = dataRoot /
+        (purpose_ == Purpose::Terminal ? L"terminal-preferences.json" : L"serial-preferences.json");
     std::error_code prefExistsError;
     const bool prefFileExists = std::filesystem::exists(preferencesStorePath_, prefExistsError);
     std::string prefStoreError;
     preferencesLoaded_ = !prefExistsError && prefFileExists &&
                          testtools::SerialPreferencesStore::load(
                              preferencesStorePath_, preferences_, prefStoreError);
+    if (purpose_ == Purpose::Terminal && !prefFileExists) {
+        // 首次进入终端模式时继承端点 B 的上次配置，之后将终端偏好独立持久化。
+        preferencesLoaded_ = testtools::SerialPreferencesStore::load(
+            dataRoot / L"serial-preferences.json", preferences_, prefStoreError);
+    }
     if (!preferencesLoaded_) {
         preferences_.channels[1].lineEnding =
             storedLineEndingIndex(atCommandLibrary_.lineEnding());
@@ -187,11 +187,17 @@ SerialWorkspace::SerialWorkspace(QWidget *parent)
 
     buildUi();
     applyPreferencesToUi();
+    if (purpose_ == Purpose::Terminal) {
+        workspaceState_.applyMode(WorkspaceMode::Terminal, {});
+        applyWorkspaceMode();
+    }
     refreshAtCommandChoices();
     for (int index = 0; index < static_cast<int>(channels_.size()); ++index) {
         attachSessionCallbacks(index);
     }
     refreshTargets();
+    if (purpose_ == Purpose::Terminal && !prefFileExists)
+        savePreferences();
     if (!commandStoreError.empty()) {
         const QString message = QStringLiteral("AT \u6307\u4ee4\u5e93\u672a\u80fd\u4ece\u672c\u5730\u6587\u4ef6\u6062\u590d\uff1a%1")
                                     .arg(fromUtf8(commandStoreError));
@@ -213,6 +219,8 @@ bool SerialWorkspace::setWorkspaceModeForDiagnostics(const QString& modeName) { 
 bool SerialWorkspace::selectWorkspaceMode(const QString &modeName)
 {
     const QString normalized = modeName.trimmed().toLower();
+    if (purpose_ == Purpose::Terminal && normalized != QStringLiteral("terminal"))
+        return false;
     WorkspaceMode mode = WorkspaceMode::Single;
     if (normalized == QStringLiteral("dual")) {
         mode = WorkspaceMode::Dual;
@@ -317,7 +325,7 @@ void SerialWorkspace::buildUi()
     channelSplitter_->setStretchFactor(1, 1);
     rootLayout->addWidget(channelSplitter_, 1);
 
-    // Results follow the two work areas; long summaries never share the action row.
+    // 验证与压测结果独占底部区域，避免长摘要挤压上方操作栏。
     resultsPanel_ = new QFrame(this);
     resultsPanel_->setObjectName(QStringLiteral("serialResults"));
     auto *resultsLayout = new QVBoxLayout(resultsPanel_);
@@ -502,7 +510,7 @@ void SerialWorkspace::applyWorkspaceMode()
                                          QSizePolicy::Fixed);
         channel.baudCombo->setMinimumWidth(118);
         channel.baudCombo->setMaximumWidth(132);
-        // Narrow dual-port panels give counters their own compact toolbar row.
+        // 双口面板宽度较窄时，将字节计数与截断提示移至独立紧凑工具行。
         auto *counterLayout = single ? channel.receiveHeaderLayout : channel.counterRowLayout;
         auto *previousLayout = single ? channel.counterRowLayout : channel.receiveHeaderLayout;
         previousLayout->removeWidget(channel.counterLabel);
@@ -809,7 +817,7 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     channel.receiveEdit = new ReceiveConsole(terminalFrame);
     channel.receiveEdit->setObjectName(QStringLiteral("receiveConsole"));
     channel.receiveEdit->setReadOnly(true);
-    // SerialLogBuffer already bounds retention; do not silently trim the view a second time.
+    // SerialLogBuffer 已限制日志容量，视图层不再二次隐式裁剪行数。
     channel.receiveEdit->setMaximumBlockCount(0);
     channel.receiveEdit->installEventFilter(this);
     channel.receiveEdit->setPlaceholderText(
@@ -1309,6 +1317,7 @@ void SerialWorkspace::refreshTargets()
 
 void SerialWorkspace::refreshAgentPorts()
 {
+    const auto generation = ++agentPortGeneration_;
     agentPorts_.clear();
     applyPorts(0);
     applyPorts(1);
@@ -1328,13 +1337,13 @@ void SerialWorkspace::refreshAgentPorts()
     updateGlobalControls();
     const std::uint16_t controlPort = agentControlPort_;
     QPointer<SerialWorkspace> guard(this);
-    scanTasks_.start([guard, controlPort] {
+    scanTasks_.start([guard, controlPort, generation] {
         std::string error;
         auto ports = testtools::SerialTransportService::agentPorts(controlPort, error);
         QMetaObject::invokeMethod(
             guard,
-            [guard, ports = std::move(ports), error = std::move(error)] {
-                if (!guard || guard->shuttingDown_) {
+            [guard, generation, ports = std::move(ports), error = std::move(error)] {
+                if (!guard || guard->shuttingDown_ || generation != guard->agentPortGeneration_) {
                     return;
                 }
                 guard->scanning_ = false;
@@ -1355,9 +1364,8 @@ void SerialWorkspace::refreshAgentPorts()
 
 void SerialWorkspace::setAdbDevice(const AdbDevice& device)
 {
-    if (hasActiveConnections()) {
-        return;
-    }
+    // 本地 COM 连接已开启时仍允许切换当前选中的 ADB 设备上下文；
+    // 活跃传输对象已各自持有独立的设备与配置快照。
     currentAdbDevice_ = device;
     refreshTargets();
     updateRouteSummary();
@@ -1386,13 +1394,22 @@ void SerialWorkspace::setAgentConnection(const std::string& adbSerial,
     }
     agentAdbSerial_ = adbSerial;
     agentControlPort_ = localControlPort;
-    refreshTargets();
+    if (hasActiveConnections() && !hasActiveAgentConnection())
+        refreshAgentPorts();
+    else
+        refreshTargets();
     updateRouteSummary();
 }
 
 bool SerialWorkspace::hasActiveConnections() const
 {
     return channelActive(0) || channelActive(1);
+}
+
+bool SerialWorkspace::hasActiveAgentConnection() const
+{
+    return (channelUsesAgent(0) && channelActive(0)) ||
+           (channelUsesAgent(1) && channelActive(1));
 }
 
 void SerialWorkspace::applyPorts(int index, bool preserveEditedEndpoint)
@@ -1613,6 +1630,17 @@ void SerialWorkspace::connectChannel(int index)
     }
 
     const bool agent = channelUsesAgent(index);
+    std::string claimError;
+    const auto key = testtools::SerialPortClaims::resourceKey(
+        agent, agentAdbSerial_, channelConfig(index).endpoint);
+    channel.portClaim = portClaims_->acquire(
+        key, purpose_ == Purpose::Terminal ? "串口终端" : index == 0 ? "双端调试 A" : "单/双串口调试 B",
+        claimError);
+    if (!channel.portClaim) {
+        setChannelStatus(index, fromUtf8(claimError), true);
+        emit activityChanged(fromUtf8(claimError));
+        return;
+    }
     std::unique_ptr<ISerialTransport> transport;
     if (agent) {
         transport =
@@ -1772,6 +1800,7 @@ void SerialWorkspace::completeChannelDisconnect(int index,
         return;
     }
     channel.disconnectPending = false;
+    channel.portClaim.reset();
     channel.controlPending = false;
     channel.lineStates = {Qt::PartiallyChecked, Qt::PartiallyChecked};
     for (auto *control : {channel.dtrCheck, channel.rtsCheck}) {
@@ -1872,7 +1901,8 @@ void SerialWorkspace::updateGlobalControls()
         } else if (channelActive(index)) {
             channels_[index].connectButton->setEnabled(true);
         } else {
-            channels_[index].connectButton->setEnabled(!scanning_ && channelReady(index));
+            channels_[index].connectButton->setEnabled(
+                (!scanning_ || !channelUsesAgent(index)) && channelReady(index));
         }
         channels_[index].sendButton->setEnabled(open && !stressTestRunning_ &&
                                                 !session.scheduledSend.running);
@@ -1906,7 +1936,9 @@ void SerialWorkspace::updateGlobalControls()
         firstSnapshot.state == testtools::SerialSessionState::Disconnecting ||
         secondSnapshot.state == testtools::SerialSessionState::Disconnecting ||
         channels_[0].disconnectPending || channels_[1].disconnectPending;
-    connectBothButton_->setEnabled(!scanning_ && !bothOpen && !transitioning &&
+    const bool waitingForAgent = scanning_ &&
+        ((channelUsesAgent(0) && !firstActive) || (channelUsesAgent(1) && !secondActive));
+    connectBothButton_->setEnabled(!waitingForAgent && !bothOpen && !transitioning &&
                                    missingChannelsReady && pairCompatible);
     connectBothButton_->setText(bothOpen    ? QStringLiteral("两端已连接")
                                 : anyActive ? QStringLiteral("连接另一端")
@@ -2149,7 +2181,7 @@ void SerialWorkspace::importAtCommands()
             QStringLiteral("将当前 %1 条指令替换为文件中的 %2 条。\n当前串口行尾保持不变，不会发送指令。")
                 .arg(atCommandLibrary_.commands().size()).arg(imported.commands().size()),
             QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes) return;
-    // Commit the file before replacing the live library, so a save failure leaves both unchanged.
+    // 先落盘再替换内存中的指令库，确保写盘失败时原内存状态与磁盘均保持不变。
     if (!testtools::AtCommandStore::save(atCommandStorePath_, imported, error)) {
         QMessageBox::warning(this, QStringLiteral("导入失败"), fromUtf8(error));
         return;
@@ -2519,17 +2551,14 @@ void SerialWorkspace::appendReceived(int index, const ByteBuffer& data)
     }
 
     if (bidirectionalTestRunning_ && !channel.expectedFrame.empty()) {
-        channel.detectionBuffer.append(reinterpret_cast<const char*>(data.data()), data.size());
-        if (channel.detectionBuffer.find(channel.expectedFrame) != std::string::npos) {
-            channel.expectedFrame.clear();
+        // 委托核心层执行滑动缓冲拼接与令牌匹配，命中后自动清空 expectedFrame。
+        if (appendAndMatchFrame(channel.detectionBuffer, data, channel.expectedFrame)) {
             if (index == 0) {
                 bToAPassed_ = true;
             } else {
                 aToBPassed_ = true;
             }
             updateBidirectionalResult();
-        } else if (channel.detectionBuffer.size() > 8192) {
-            channel.detectionBuffer.erase(0, channel.detectionBuffer.size() - 8192);
         }
     }
 
@@ -2538,7 +2567,7 @@ void SerialWorkspace::appendReceived(int index, const ByteBuffer& data)
         data,
         now.toMSecsSinceEpoch(),
         toUtf8(now.toString(QStringLiteral("HH:mm:ss.zzz"))));
-    if (index == 1) {
+    if (index == 1 && workspaceState_.mode() == WorkspaceMode::Terminal) {
         terminalBuffer_.push(data, toUtf8(now.toString(QStringLiteral("HH:mm:ss.zzz"))));
     }
     applyLogAppendResult(index, result);
@@ -2631,11 +2660,18 @@ void SerialWorkspace::renderTerminal(bool fullRedraw)
     channel.truncatedLabel->setVisible(terminalBuffer_.truncated());
     if (!fullRedraw && !terminalBuffer_.dirty()) return;
 
-    // Search highlights history without removing rows from the terminal screen.
+    // 搜索仅高亮终端历史匹配项，不从终端屏幕裁剪未匹配行。
     std::size_t first = terminalBuffer_.firstChangedLine();
-    const bool rebuild = fullRedraw || terminalBuffer_.needsFullRedraw();
+    const auto removed = terminalBuffer_.removedLines();
+    const bool rebuild = fullRedraw || terminalBuffer_.needsFullRedraw() ||
+                         removed >= std::size_t(edit->document()->blockCount());
     QTextCursor cursor(edit->document());
     cursor.beginEditBlock();
+    if (!rebuild && removed) {
+        cursor.setPosition(edit->document()->findBlockByNumber(int(removed)).position());
+        cursor.movePosition(QTextCursor::Start, QTextCursor::KeepAnchor);
+        cursor.removeSelectedText();
+    }
     const auto block = edit->document()->findBlockByNumber(static_cast<int>(first));
     if (rebuild || !block.isValid()) {
         cursor.select(QTextCursor::Document);
@@ -2673,7 +2709,9 @@ void SerialWorkspace::renderTerminal(bool fullRedraw)
     terminalBuffer_.acknowledgeChanges();
     updateTerminalCursor(follow);
     updateSearchMatches(1);
-    scroll->setValue(follow ? scroll->maximum() : std::min(previousScroll, scroll->maximum()));
+    const int retainedScroll = rebuild ? previousScroll
+        : std::max(0, previousScroll - int(removed));
+    scroll->setValue(follow ? scroll->maximum() : std::min(retainedScroll, scroll->maximum()));
 }
 
 void SerialWorkspace::renderReceiveLog(int index)
@@ -2728,7 +2766,7 @@ void SerialWorkspace::applyLogAppendResult(int index,
     current.truncatedLabel->setVisible(current.logBuffer.truncated());
     scheduleSearchRefresh(index);
     if (current.filterCheck->isChecked() && !current.searchEdit->text().isEmpty()) {
-        return; // One timer refresh covers a burst; raw log retention is already updated.
+        return; // 过滤模式下由单次定时器合并刷新突发日志，底层原始缓冲已先行更新。
     }
     if (result.addedEntries == 0) {
         return;
@@ -2963,24 +3001,15 @@ void SerialWorkspace::startStressTest(int direction, std::uint64_t frameCount,
     stopAutoSend(1);
     stressDirections_ = {};
 
+    // 委托核心层根据串口线速参数推算单帧最小发送间隔，防止后台写队列无限堆积。
     int effectiveIntervalMs = intervalMs;
-    const auto accountWireTime = [this, payloadSize, &effectiveIntervalMs](int transmitter) {
-        const auto config = channelConfig(transmitter);
-        const int parityBits = config.parity == Parity::None ? 0 : 1;
-        const int stopBits = config.stopBits == StopBits::Two ? 2 : 1;
-        const int bitsPerByte = 1 + config.dataBits + parityBits + stopBits;
-        const std::uint64_t frameBits = static_cast<std::uint64_t>(payloadSize + 16)
-                                        * static_cast<std::uint64_t>(bitsPerByte);
-        const int wireTimeMs = static_cast<int>((frameBits * 1000
-                                                 + static_cast<std::uint64_t>(config.baudRate) - 1)
-                                                / static_cast<std::uint64_t>(config.baudRate));
-        effectiveIntervalMs = std::max(effectiveIntervalMs, wireTimeMs);
-    };
     if (direction == 0 || direction == 2) {
-        accountWireTime(0);
+        effectiveIntervalMs =
+            minimumStressIntervalMs(channelConfig(0), payloadSize, effectiveIntervalMs);
     }
     if (direction == 1 || direction == 2) {
-        accountWireTime(1);
+        effectiveIntervalMs =
+            minimumStressIntervalMs(channelConfig(1), payloadSize, effectiveIntervalMs);
     }
     if (effectiveIntervalMs > intervalMs) {
         QMessageBox::information(
@@ -3033,11 +3062,8 @@ void SerialWorkspace::stopStressTest(const QString &reason, bool completed)
         if (!direction.active) {
             continue;
         }
-        const auto &stats = direction.verifier.stats();
-        const std::uint64_t sent = direction.sendPlan.successes();
-        const std::uint64_t lost = sent > stats.uniqueFrames ? sent - stats.uniqueFrames : 0;
-        passed = passed && lost == 0 && stats.corruptedFrames == 0
-                 && stats.framingErrors == 0 && stats.bitErrors == 0;
+        const auto report = evaluateStressDirection(direction.sendPlan, direction.verifier);
+        passed = passed && report.passed;
         summaries.push_back(stressDirectionSummary(direction));
         direction.sendPlan.stop();
     }
@@ -3069,16 +3095,14 @@ void SerialWorkspace::finishStressTest(std::uint64_t generation)
 
 QString SerialWorkspace::stressDirectionSummary(const StressDirection &direction) const
 {
-    const auto &stats = direction.verifier.stats();
-    const std::uint64_t sent = direction.sendPlan.successes();
-    const std::uint64_t lost = sent > stats.uniqueFrames ? sent - stats.uniqueFrames : 0;
+    const auto report = evaluateStressDirection(direction.sendPlan, direction.verifier);
     return QStringLiteral("%1 → %2   接收 %3 / %4 帧   丢帧 %5   坏帧 %6   格式错误 %7   BER %8")
         .arg(direction.transmitter == 0 ? QStringLiteral("A") : QStringLiteral("B"))
         .arg(direction.receiver == 0 ? QStringLiteral("A") : QStringLiteral("B"))
-        .arg(stats.uniqueFrames)
-        .arg(sent)
-        .arg(lost)
-        .arg(stats.corruptedFrames)
-        .arg(stats.framingErrors)
-        .arg(QString::number(stats.bitErrorRate(), 'g', 4));
+        .arg(report.uniqueFrames)
+        .arg(report.sentFrames)
+        .arg(report.lostFrames)
+        .arg(report.corruptedFrames)
+        .arg(report.framingErrors)
+        .arg(QString::number(report.bitErrorRate, 'g', 4));
 }
