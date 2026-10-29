@@ -219,8 +219,8 @@ RK PCBA 的 `echo_*` 程序仍由对应 SDK/rootfs 所有，不复制进通用 A
 - `--agent-serial-smoke <adb-serial> <control-port> <endpoint>`：经真实 Agent 打开指定串口并保持
   5 秒，验证数据通道不会立即 EOF；不发送任何字节。
 - `--adb-serial-smoke` 仅保留用于复现旧固件 ADB 设备节点转发问题，不是产品串口路径。
-- `--ui-snapshot <png>`：保存启动页快照；用 `--ui-page serial|device|files|mirror` 选择串口、设备信息、文件传输或投屏控制页，
-  用 `--ui-size 1366x768` 指定逻辑窗口尺寸。串口页可加 `--ui-serial-mode single|dual|terminal`。
+- `--ui-snapshot <png>`：保存启动页快照；用 `--ui-page serial|terminal|device|files|mirror` 选择页面，
+  用 `--ui-size 1366x768` 指定逻辑窗口尺寸。普通串口页再加 `--ui-serial-mode single|dual`；其他页面不混用模式参数，避免目标页被覆盖。
 - UI 快照：检查主要分辨率和 DPI 下的裁切、重叠、文字清晰度、状态层级和主动作。
 - 实机验证：串口连接、收发、双向验证和异常断开。
 - Agent 阶段：协议单元测试、真实板端部署、能力枚举、稳定保持，再进行已知安全指令的收发测试。
@@ -238,7 +238,10 @@ cmake --build build/tests/host --config Release --parallel
 ctest --test-dir build/tests/host -C Release --output-on-failure
 ```
 
-主机 CTest 包含 `core-application-contract` 和 `file-transfer-contract`；Agent 主机契约由 `src/agent/` 的独立 CMake 工程验证。
+主机 CTest 包含 `core-application-contract`、`file-transfer-contract` 和 `serial-recording-contract`；Agent 主机契约由 `src/agent/` 的独立 CMake 工程验证。
+录制检查覆盖精确字节、UTF-8、成功 TX、停止/断线/退出、目标覆盖保护、注入的慢写与文件失败，以及有界显示投递；不访问串口设备。
+原生 `serial-recording-ui` 使用离线串口和文件夹具检查录制对话框、工具栏/全局停止、显示截断、搜索/高亮/ANSI、偏好和窗口退出。
+按需设置 `TESTTOOLS_RECORDING_SNAPSHOTS=1` 留下代表状态及实际尺寸/DPR 元数据，常规交互回归不必重新留图。
 主机测试和离线快照均不要求开发板。`--offline` 跳过 ADB 发现、连接和设备退出清理；
 与设备冒烟或 `--self-test` 同时使用时返回 2，不执行设备命令。
 
@@ -254,6 +257,28 @@ ctest --test-dir build/tests/host -C Release --output-on-failure
 - 串口终端解析与输入契约见 [串口终端](features/SERIAL_TERMINAL.md)，主机检查覆盖跨批次 UTF-8/ANSI、
   行覆盖与擦除、纯光标序列刷新、限额、键码和终端偏好往返。Qt 假串口验证焦点、视图和字节映射，
   实机单独验证 U-Boot/Linux 的历史、补全和中断；这些交互状态由板端拥有。
+
+### 5.2 按改动选择快照与回归
+
+每批按受影响页面、共享组件和关键状态选择检查范围。窗口尺寸、缩放支持和交互质量要求仍见
+[`UI_DESIGN.md`](UI_DESIGN.md)，不默认展开全部页面、尺寸、DPR 和状态的所有组合；36 张不是每轮要求。
+
+| 改动 | 默认检查范围 | 扩大范围的依据 |
+| --- | --- | --- |
+| 局部控件或单页面布局 | 受影响页面的窄窗口与相关状态；宽度分配变化再看宽窗口，拥挤或文字尺寸变化补高 DPI 样本 | 共享布局受影响、发现裁切，或现有参考样本不能覆盖该问题 |
+| 顶栏、导航、按钮等共享样式 | 受影响页面各选一次常用尺寸/缩放，再对最拥挤页面补宽窗口或高 DPI | 问题跨页面出现，或字体、DPI 处理、基础布局机制发生广泛变化时再展开完整矩阵 |
+| 业务逻辑变化，界面布局未变 | 优先跑对应核心/交互测试，沿用适用的界面参考；新增状态只补该状态的快照 | 新状态改变了控件布局、长度、可见性或可操作性 |
+| 仅文档 | 静态、入口/链接及差异检查 | 无需构建或重新抓图 |
+
+- 优先覆盖与改动相关的启用/禁用、进行中/失败、长文本、展开/收起等状态；在少量代表样本中组合这些条件，
+  不把每个状态再乘全部分辨率和缩放。截图数量随检查目的确定，不以减少或达到固定张数作为验收条件。
+- 日常选择的代表快照逐张目检。使用完整矩阵时，元数据检查可以覆盖全部组合，目检选择代表样本，
+  在 `STATUS.md` 现有验证表中分别说明：页面/尺寸/实际 DPR 检查范围、实际目检样本及结论、交互测试结果。
+  元数据有效不能写成所有图片均已通过视觉或交互验收。
+- 界面切换、焦点、精确发送字节、任务停止与失败等行为由对应交互/核心检查验证。截图不能替代这些断言，
+  也不为截图检查新增一套通用测试框架。
+- 一组改动稳定后集中验证。通过后只因新的相关修改、失败或未解决问题补查受影响部分；未受影响的检查结果沿用，
+  不因每次小修重复全矩阵。只有广泛变更或明确覆盖缺口需要时才建立新全量参考，发版本身不自动要求重拍所有组合。
 
 ## 6. 新增功能
 
@@ -339,8 +364,10 @@ ctest --test-dir build/tests/ui -C Release --output-on-failure
 `mirror-host-probe <scrcpy.exe绝对路径> <adb.exe绝对路径> <设备序列号>` 仅作真实外部窗口接入试验，退出收敛自己创建的进程；
 挂接成功不代表输入法、回嵌和 APK 拖放验收通过。这两个可执行文件均不由 CTest 自动运行。
 
-截图诊断支持 `--offline --ui-page files|mirror|serial --ui-serial-mode single|dual|terminal --ui-size 1366x768 --ui-snapshot <PNG>`。
-`QT_SCALE_FACTOR` 设置 1/1.25/1.5，JSON 附带实际逻辑尺寸与 DPR，PNG 为设备像素；逻辑窗口尺寸与物理屏幕分辨率必须分别记录。
+截图诊断按目标页选择 `--offline --ui-page serial|terminal|device|files|mirror --ui-size 1366x768 --ui-snapshot <PNG>`；
+只有普通串口页追加 `--ui-serial-mode single|dual`。检查侧车 JSON 中的实际可见页面，不能只根据输出文件名判断。
+`QT_SCALE_FACTOR` 是进程缩放系数，不能直接当作实际 DPR；以 JSON 记录的逻辑尺寸和实际 DPR 为准，必要时调整系数补拍对应样本。
+PNG 使用设备像素，逻辑窗口尺寸与物理屏幕分辨率分别记录。快照选择与复查范围遵循第 5.2 节。
 
 `ui-smoke --live-files <设备序列号> <adb.exe绝对路径>` 为显式只读文件页实机检查：跳过 Agent 准备和设备自动发现，
 验证进入自动打开根目录、浏览 `/sdcard`、返回文件页刷新与关闭；只读取设备目录，不执行 push/pull、安装或串口发送。

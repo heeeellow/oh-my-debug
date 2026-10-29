@@ -5,6 +5,7 @@
 #include <QtGui/QPainter>
 #include <QtGui/QPainterPath>
 #include <QtGui/QPen>
+#include <QtGui/QPixmap>
 
 namespace testtools::ui {
 
@@ -62,6 +63,27 @@ QString ensureCheckmarkIconPath(bool mixed = false)
 }
 
 } // namespace
+
+QIcon navigationChevron(bool expanded, bool selected)
+{
+    QIcon icon;
+    for (int scale : {1, 2, 3}) {
+        QPixmap pixmap(16 * scale, 16 * scale);
+        pixmap.setDevicePixelRatio(scale);
+        pixmap.fill(Qt::transparent);
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(QPen(QColor(selected ? "#754837" : "#67615c"), 1.6,
+                            Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        QPainterPath path;
+        if (expanded) { path.moveTo(4, 6); path.lineTo(8, 10); path.lineTo(12, 6); }
+        else { path.moveTo(6, 4); path.lineTo(10, 8); path.lineTo(6, 12); }
+        painter.drawPath(path);
+        painter.end();
+        icon.addPixmap(pixmap);
+    }
+    return icon;
+}
 
 QString applicationStyleSheet()
 {
@@ -171,8 +193,13 @@ QString applicationStyleSheet()
             min-height: 38px; padding: 0 10px; border: 0; border-radius: 6px;
             background: transparent; text-align: left; color: #494541; font-size: 14px; font-weight: 600;
         }
-        QPushButton#navigationGroupButton:hover { background: #ece9e6; }
-        QPushButton#navigationGroupButton:checked { background: #e9e5e0; color: #694d3f; }
+        QFrame#navigationGroupRow { background: transparent; border: 0; border-radius: 6px; }
+        QFrame#navigationGroupRow:hover { background: #ece9e6; }
+        QFrame#navigationGroupRow[active="true"] { background: #e9e5e0; }
+        QPushButton#navigationGroupButton:hover { background: transparent; }
+        QPushButton#navigationGroupButton:checked { background: transparent; color: #694d3f; }
+        QFrame#navigationGroupRow QToolButton { background: transparent; border: 1px solid transparent; }
+        QFrame#navigationGroupRow QToolButton:focus { border-color: #b56e52; }
         QPushButton#navigationChildButton {
             min-height: 36px; padding: 0 10px; border: 0; border-left: 3px solid transparent;
             border-radius: 6px; background: transparent; color: #77716c; text-align: left; font-size: 13px;
@@ -182,13 +209,16 @@ QString applicationStyleSheet()
         QPushButton#navigationGroupButton:focus, QPushButton#navigationChildButton:focus { border: 1px solid #b56e52; }
         QPushButton#serviceStatusButton { min-height: 30px; padding: 0 12px; background: #f2f0ed; border: 1px solid #e1ddd8; border-radius: 8px; color: #67615c; font-size: 12px; }
         QLabel#topServiceStatus { font-size: 12px; color: #67615c; }
-        QPushButton#serviceStatusButton[serviceState="ready"] { background: #eef2ec; color: #5d715f; border-color: #d8e0d5; }
+        QLabel#topServiceStatus[serviceState="ready"] { color: #5d715f; }
+        QLabel#topServiceStatus[serviceState="working"] { color: #87652f; }
+        QLabel#topServiceStatus[serviceState="failed"] { color: #a34a42; }
         QPushButton#serviceStatusButton[serviceState="failed"] { background: #f7eeeb; color: #a34a42; border-color: #e8c9c6; }
         QPushButton#serviceStatusButton:hover { background: #e9e4de; border-color: #b9a99c; color: #493e36; }
         QPushButton#serviceStatusButton:pressed { background: #ded3c9; border-color: #ad694e; }
         QPushButton#serviceStatusButton:disabled { background: #f3f1ee; border-color: #e1ddd8; color: #8b837b; }
-        QFrame#serialServiceHint { background: #f8f3e9; border: 1px solid #e7dbc5; border-radius: 6px; }
-        QLabel#serialServiceMessage { color: #786348; font-size: 13px; }
+        QFrame#serialServiceHint { background: transparent; border: 0; }
+        QLabel#serialServiceMessage { color: #87652f; font-size: 12px; }
+        QGroupBox#endpointCard[singleChannel="true"] { background: transparent; border: 0; border-radius: 0; }
     )" R"(
         QScrollArea#pageScroll { border: 0; background: transparent; }
         QWidget#pageSurface { background: transparent; }
@@ -267,6 +297,12 @@ QString applicationStyleSheet()
             font-size: 12px;
             font-weight: 600;
         }
+        QFrame#shortcutSidebar { background: #ffffff; border: 1px solid #dedad5; border-radius: 8px; }
+        QListWidget#shortcutList { background: transparent; border: 0; }
+        QListWidget#shortcutList::item { padding: 0; border-radius: 5px; }
+        QListWidget#shortcutList::item:selected { background: #f0e6e1; }
+        QLabel#shortcutName { font-size: 13px; font-weight: 600; background: transparent; }
+        QLabel#shortcutPreview { font-size: 12px; color: #77716c; background: transparent; }
         QFrame#composerFrame {
             background: #ffffff;
             border: 1px solid #cfc9c2;
@@ -350,6 +386,11 @@ QString applicationStyleSheet()
             background: #f7e9e8;
             color: #a34a42;
             border: 1px solid #e8c9c6;
+        }
+        QLabel#topStatusNeutral, QLabel#topStatusGood, QLabel#topStatusWarn, QLabel#topStatusError,
+        QLabel#connectionStatusIdle, QLabel#connectionStatusWorking,
+        QLabel#connectionStatusGood, QLabel#connectionStatusError {
+            background: transparent; border: 0; border-radius: 0; padding: 3px 2px;
         }
         QLabel#testStatusNeutral, QLabel#testStatusWorking, QLabel#testStatusWarn,
         QLabel#testStatusGood, QLabel#testStatusError {
@@ -461,21 +502,21 @@ QString applicationStyleSheet()
         QPushButton:pressed { background: #ebe7e3; }
         QPushButton:focus { border: 1px solid #b56e52; }
         QPushButton:disabled { color: #918a84; background: #eeece9; border-color: #ddd8d3; }
-        QPushButton#primaryButton { background: #ad694e; color: #ffffff; border-color: #ad694e; font-weight: 600; }
-        QPushButton#primaryButton:hover { background: #995b43; border-color: #995b43; }
-        QPushButton#primaryButton:pressed { background: #874e39; border-color: #874e39; }
-        QPushButton#primaryButton:disabled { color: #918a84; background: #e8e4e1; border-color: #d9d4cf; }
+        QPushButton#primaryButton, QPushButton[buttonRole="primary"] { background: #ad694e; color: #ffffff; border-color: #ad694e; font-weight: 600; }
+        QPushButton#primaryButton:hover, QPushButton[buttonRole="primary"]:hover { background: #995b43; border-color: #995b43; }
+        QPushButton#primaryButton:pressed, QPushButton[buttonRole="primary"]:pressed { background: #874e39; border-color: #874e39; }
+        QPushButton#primaryButton:disabled, QPushButton[buttonRole="primary"]:disabled { color: #918a84; background: #e8e4e1; border-color: #d9d4cf; }
         QPushButton#verifyButton {
-            min-height: 28px;
+            min-height: 32px;
             padding: 0 11px;
             border-radius: 6px;
-            background: #fdfaf8;
-            color: #7b4835;
-            border: 1px solid #cda594;
+            background: #ffffff;
+            color: #302f2d;
+            border: 1px solid #cfc9c2;
             font-size: 12px;
             font-weight: 600;
         }
-        QPushButton#verifyButton:hover { background: #f5ece8; border-color: #b56e52; }
+        QPushButton#verifyButton:hover { background: #f3f0ed; border-color: #a79e96; }
         QPushButton#verifyButton:disabled { color: #918a84; background: #eeece9; border-color: #ddd8d3; }
         QPushButton#ghostButton {
             min-height: 28px;
@@ -500,6 +541,10 @@ QString applicationStyleSheet()
         }
         QPushButton#clearButton:hover { background: #f3f0ed; color: #302f2d; border-color: #a79e96; }
         QPushButton#clearButton:disabled { color: #918a84; background: #eeece9; border-color: #ddd8d3; }
+        QPushButton#serialRecordButton, QPushButton#serialHighlightButton { min-height: 32px; padding: 0 10px; font-size: 12px; }
+        QPushButton#serialRecordButton[recordState="recording"] { color: #854f39; border-color: #c8b2a6; }
+        QPushButton#serialRecordButton[recordState="failed"] { color: #a34a42; background: #f7eeeb; border-color: #e8c9c6; }
+        QPushButton#serialHighlightButton:checked { color: #754837; background: #eee0d7; border-color: #c9b0a1; }
         QPushButton#topGhostButton {
             min-height: 28px;
             padding: 0 10px;
@@ -511,6 +556,10 @@ QString applicationStyleSheet()
         }
         QPushButton#topGhostButton:hover { background: #ece9e4; color: #302f2d; border-color: #c7c1bb; }
         QPushButton#topGhostButton:disabled { color: #918a84; background: #eeece9; border-color: #ddd8d3; }
+        QPushButton#ghostButton, QPushButton#clearButton, QPushButton#topGhostButton {
+            min-height: 32px;
+        }
+        QPushButton[buttonRole="tool"] { min-height: 30px; padding: 0 3px; font-size: 12px; }
         QCheckBox { color: #55504c; spacing: 6px; font-size: 13px; }
         QCheckBox:focus { color: #7b4634; }
         QCheckBox::indicator {

@@ -12,7 +12,7 @@ if(NOT EXISTS "${ROOT}/build/intermediate/desktop/x64/Release/main_window.obj")
 endif()
 file(GLOB HOST_OBJECTS "${ROOT}/build/intermediate/desktop/x64/Release/*.obj")
 list(FILTER HOST_OBJECTS EXCLUDE REGEX "/main\\.obj$")
-foreach(target mock-adb backend-smoke ui-smoke serial-smoke service-icons-smoke iteration-smoke device-smoke directory-perf mirror-host-probe)
+foreach(target mock-adb backend-smoke ui-smoke serial-smoke service-icons-smoke iteration-smoke recording-smoke device-smoke directory-perf mirror-host-probe)
     add_executable(${target} ${target}.cpp ${HOST_OBJECTS})
     target_include_directories(${target} PRIVATE ${ROOT}/src ${ROOT}/third_party/asio/include)
     target_compile_features(${target} PRIVATE cxx_std_17)
@@ -27,7 +27,8 @@ add_test(NAME serial-workspace-ui COMMAND serial-smoke "${TESTTOOLS_TEST_OUTPUT}
 add_test(NAME native-file-backend COMMAND backend-smoke $<TARGET_FILE:mock-adb>)
 add_test(NAME service-icons-ui COMMAND service-icons-smoke)
 add_test(NAME serial-independent-pages COMMAND iteration-smoke)
-set_tests_properties(file-workspace-ui serial-workspace-ui native-file-backend service-icons-ui serial-independent-pages PROPERTIES
+add_test(NAME serial-recording-ui COMMAND recording-smoke)
+set_tests_properties(file-workspace-ui serial-workspace-ui native-file-backend service-icons-ui serial-independent-pages serial-recording-ui PROPERTIES
     WORKING_DIRECTORY "${ROOT}"
     RUN_SERIAL TRUE
     TIMEOUT 60

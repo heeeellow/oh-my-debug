@@ -48,6 +48,8 @@
       <ClCompile Include="src\application\serial\serial_transport_service.cpp"><Filter>应用层\串口</Filter></ClCompile>
     <ClCompile Include="src\application\serial\serial_workspace_state.cpp"><Filter>应用层\串口</Filter></ClCompile>
     <ClCompile Include="src\application\serial\serial_terminal.cpp"><Filter>应用层\串口</Filter></ClCompile>
+    <ClCompile Include="src\application\serial\serial_recorder.cpp"><Filter>应用层\串口</Filter></ClCompile>
+    <ClCompile Include="src\application\serial\serial_receive_queue.cpp"><Filter>应用层\串口</Filter></ClCompile>
     <ClCompile Include="src\application\support\background_task_group.cpp"><Filter>应用层\通用</Filter></ClCompile>
     <ClCompile Include="src\adapters\adb\adb_transport.cpp"><Filter>适配器\ADB</Filter></ClCompile>
     <ClCompile Include="src\adapters\adb\process_runner.cpp"><Filter>适配器\ADB</Filter></ClCompile>
@@ -66,6 +68,8 @@
     <ClCompile Include="src\ui\widgets\file_icon_provider.cpp"><Filter>界面</Filter></ClCompile>
     <ClCompile Include="src\ui\widgets\file_pane.cpp"><Filter>界面</Filter></ClCompile>
     <ClCompile Include="src\ui\widgets\serial_connection_bar.cpp"><Filter>界面</Filter></ClCompile>
+    <ClCompile Include="src\ui\widgets\serial_shortcut_sidebar.cpp"><Filter>界面</Filter></ClCompile>
+    <ClCompile Include="src\ui\widgets\serial_keyword_highlighter.cpp"><Filter>界面</Filter></ClCompile>
     <ClCompile Include="src\ui\theme.cpp"><Filter>界面</Filter></ClCompile>
     <ClCompile Include="third_party\CSerialPort\src\SerialPort.cpp"><Filter>第三方依赖</Filter></ClCompile>
     <ClCompile Include="third_party\CSerialPort\src\SerialPortAsyncBase.cpp"><Filter>第三方依赖</Filter></ClCompile>
@@ -100,6 +104,8 @@
       <ClInclude Include="src\application\serial\serial_transport_service.h"><Filter>应用层\串口</Filter></ClInclude>
     <ClInclude Include="src\application\serial\serial_workspace_state.h"><Filter>应用层\串口</Filter></ClInclude>
     <ClInclude Include="src\application\serial\serial_terminal.h"><Filter>应用层\串口</Filter></ClInclude>
+    <ClInclude Include="src\application\serial\serial_recorder.h"><Filter>应用层\串口</Filter></ClInclude>
+    <ClInclude Include="src\application\serial\serial_receive_queue.h"><Filter>应用层\串口</Filter></ClInclude>
     <ClInclude Include="src\application\support\background_task_group.h"><Filter>应用层\通用</Filter></ClInclude>
     <ClInclude Include="src\adapters\adb\adb_transport.h"><Filter>适配器\ADB</Filter></ClInclude>
     <ClInclude Include="src\adapters\adb\process_runner.h"><Filter>适配器\ADB</Filter></ClInclude>
@@ -120,6 +126,8 @@
     <ClInclude Include="src\ui\widgets\file_icon_provider.h"><Filter>界面</Filter></ClInclude>
     <ClInclude Include="src\ui\widgets\file_pane.h"><Filter>界面</Filter></ClInclude>
     <ClInclude Include="src\ui\widgets\serial_connection_bar.h"><Filter>界面</Filter></ClInclude>
+    <ClInclude Include="src\ui\widgets\serial_shortcut_sidebar.h"><Filter>界面</Filter></ClInclude>
+    <ClInclude Include="src\ui\widgets\serial_keyword_highlighter.h"><Filter>界面</Filter></ClInclude>
     <ClInclude Include="src\ui\widgets\serial_receive_view.h"><Filter>界面</Filter></ClInclude>
     <ClInclude Include="src\ui\theme.h"><Filter>界面</Filter></ClInclude>
   </ItemGroup>

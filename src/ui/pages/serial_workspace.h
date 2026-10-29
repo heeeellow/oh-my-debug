@@ -3,6 +3,7 @@
 #include "application/agent/agent_service_status.h"
 #include "application/serial/at_command_library.h"
 #include "application/serial/serial_session.h"
+#include "application/serial/serial_receive_queue.h"
 #include "application/serial/serial_port_claims.h"
 #include "application/serial/serial_terminal.h"
 #include "application/serial/serial_workspace_state.h"
@@ -35,6 +36,9 @@ class QSplitter;
 class QSpinBox;
 class QTimer;
 class QWidget;
+class QResizeEvent;
+class SerialShortcutSidebar;
+class SerialKeywordHighlighter;
 
 // 串口工作区（支持单口/双口调试与独立交互终端模式，复用底层会话、占用锁与核验引擎）。
 class SerialWorkspace final : public QWidget {
@@ -59,6 +63,18 @@ class SerialWorkspace final : public QWidget {
     bool selectWorkspaceMode(const QString& modeName);
     QString currentWorkspaceMode() const;
     bool setWorkspaceModeForDiagnostics(const QString& modeName);
+    struct BackgroundTask {
+        enum class Kind { Recording, ScheduledSend, Stress };
+        Kind kind;
+        int channel = 0;
+        std::uint64_t token = 0;
+        QString title;
+        bool stoppable = true;
+    };
+    std::vector<BackgroundTask> activeTasks() const;
+    void stopTask(const BackgroundTask& task);
+    void stopRecordings();
+    bool hasPendingRecordings() const;
 
   signals:
     void prepareServiceRequested();
@@ -101,6 +117,18 @@ class SerialWorkspace final : public QWidget {
         QCheckBox* autoScrollCheck = nullptr;
         QPushButton* resetCounterButton = nullptr;
         QPushButton* saveLogButton = nullptr;
+        QPushButton* receiveMoreButton = nullptr;
+        QPushButton* recordButton = nullptr;
+        QPushButton* highlightButton = nullptr;
+        SerialKeywordHighlighter* highlighter = nullptr;
+        std::shared_ptr<testtools::SerialReceiveQueue> receiveQueue =
+            std::make_shared<testtools::SerialReceiveQueue>();
+        std::uint64_t displayDroppedBytes = 0;
+        std::uint64_t displayGeneration = 0;
+        QString recordAnnouncement;
+        bool receivingBatch = false;
+        testtools::SerialLogAppendResult receivedAppend;
+        std::array<QAction*, 3> displayActions{};
         QPushButton* clearReceiveButton = nullptr;
         QPushButton* clearSendButton = nullptr;
         QPushButton* searchButton = nullptr;
@@ -127,10 +155,10 @@ class SerialWorkspace final : public QWidget {
         QPushButton* toggleAtBarButton = nullptr;
         QWidget* manualSendArea = nullptr;
         QWidget* composerFrame = nullptr;
-        QWidget* atCommandArea = nullptr;
-        QComboBox* atCommandCombo = nullptr;
-        QPushButton* fillAtCommandButton = nullptr;
-        QPushButton* sendAtCommandButton = nullptr;
+        QWidget* serviceHint = nullptr;
+        QLabel* serviceHintLabel = nullptr;
+        QPushButton* serviceConnectButton = nullptr;
+        QWidget* logSendBody = nullptr;
 
         std::shared_ptr<testtools::SerialPortClaims::Claim> portClaim;
         testtools::SerialSession session;
@@ -161,6 +189,8 @@ class SerialWorkspace final : public QWidget {
     void setWorkspaceMode(WorkspaceMode mode);
     bool canSwitchWorkspaceMode(WorkspaceMode mode);
     void applyWorkspaceMode();
+    void resizeEvent(QResizeEvent* event) override;
+    void updateShortcutLayout();
     void refreshAgentPorts();
     void applyPorts(int index, bool preserveEditedEndpoint = true);
     void applyPreferencesToUi();
@@ -170,6 +200,10 @@ class SerialWorkspace final : public QWidget {
     void completeChannelDisconnect(int index, std::uint64_t generation, bool showClosedStatus);
     void disconnectAll();
     void attachSessionCallbacks(int index);
+    void drainReceived(int index);
+    void toggleRecording(int index);
+    void pollRecordings();
+    void updateTruncation(int index);
     void setChannelControlsEnabled(int index, bool enabled);
     void updateGlobalControls();
     void setChannelStatus(int index, const QString& message, bool error = false);
@@ -184,8 +218,8 @@ class SerialWorkspace final : public QWidget {
     serialdemo::ByteBuffer manualPayload(int index, bool& ok);
     bool sendBytes(int index, const serialdemo::ByteBuffer& data, bool echo = true);
     void sendManual(int index);
-    void sendAtCommand(int index);
-    void fillAtCommandToInput(int index);
+    void sendAtCommand(int index, int commandIndex);
+    void fillAtCommandToInput(int index, int commandIndex);
     void showAtCommandManager();
     void refreshAtCommandChoices();
     bool saveAtCommands();
@@ -236,11 +270,13 @@ class SerialWorkspace final : public QWidget {
     QFrame* linkBar_ = nullptr;
     QFrame* resultsPanel_ = nullptr;
     QSplitter* channelSplitter_ = nullptr;
+    QSplitter* shortcutSplitter_ = nullptr;
+    SerialShortcutSidebar* shortcutSidebar_ = nullptr;
+    bool updatingShortcutLayout_ = false;
+    bool forceShortcutOpen_ = false;
     QTimer* scheduleTimer_ = nullptr;
+    QTimer* recordingTimer_ = nullptr;
 
-    QWidget* serviceHint_ = nullptr;
-    QLabel* serviceHintLabel_ = nullptr;
-    QPushButton* serviceConnectButton_ = nullptr;
     testtools::AgentServiceState serviceState_ = testtools::AgentServiceState::Disconnected;
     QString serviceDetail_;
     bool serviceCleanupPending_ = false;

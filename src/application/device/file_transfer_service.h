@@ -20,6 +20,7 @@ struct FileTransferRecord {
     FileTransferResult result;
 };
 struct FileTransferSnapshot {
+    std::uint64_t id = 0;
     bool active = false;
     bool cancelling = false;
     std::string serial;
@@ -45,7 +46,7 @@ class FileTransferService {
     static std::string normalizeRemoteDirectory(const std::string& directory);
     bool prepare(FileTransferRequest request, std::string& error);
     void executePrepared();
-    void cancel() noexcept;
+    void cancel(std::uint64_t expectedId = 0) noexcept;
     FileTransferSnapshot snapshot() const;
 
   private:

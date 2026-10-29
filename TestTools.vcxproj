@@ -147,6 +147,8 @@
       <ClCompile Include="src\application\serial\serial_transport_service.cpp" />
     <ClCompile Include="src\application\serial\serial_workspace_state.cpp" />
     <ClCompile Include="src\application\serial\serial_terminal.cpp" />
+    <ClCompile Include="src\application\serial\serial_recorder.cpp" />
+    <ClCompile Include="src\application\serial\serial_receive_queue.cpp" />
     <ClCompile Include="src\application\support\background_task_group.cpp" />
     <ClCompile Include="src\adapters\adb\adb_transport.cpp" />
     <ClCompile Include="src\adapters\adb\process_runner.cpp" />
@@ -165,6 +167,8 @@
     <ClCompile Include="src\ui\widgets\file_icon_provider.cpp" />
     <ClCompile Include="src\ui\widgets\file_pane.cpp" />
     <ClCompile Include="src\ui\widgets\serial_connection_bar.cpp" />
+    <ClCompile Include="src\ui\widgets\serial_shortcut_sidebar.cpp" />
+    <ClCompile Include="src\ui\widgets\serial_keyword_highlighter.cpp" />
     <ClCompile Include="src\ui\theme.cpp" />
     <ClCompile Include="third_party\CSerialPort\src\SerialPort.cpp" />
     <ClCompile Include="third_party\CSerialPort\src\SerialPortAsyncBase.cpp" />
@@ -199,6 +203,8 @@
       <ClInclude Include="src\application\serial\serial_transport_service.h" />
     <ClInclude Include="src\application\serial\serial_workspace_state.h" />
     <ClInclude Include="src\application\serial\serial_terminal.h" />
+    <ClInclude Include="src\application\serial\serial_recorder.h" />
+    <ClInclude Include="src\application\serial\serial_receive_queue.h" />
     <ClInclude Include="src\application\support\background_task_group.h" />
     <ClInclude Include="src\adapters\adb\adb_transport.h" />
     <ClInclude Include="src\adapters\adb\process_runner.h" />
@@ -219,6 +225,8 @@
     <ClInclude Include="src\ui\widgets\file_icon_provider.h" />
     <ClInclude Include="src\ui\widgets\file_pane.h" />
     <ClInclude Include="src\ui\widgets\serial_connection_bar.h" />
+    <ClInclude Include="src\ui\widgets\serial_shortcut_sidebar.h" />
+    <ClInclude Include="src\ui\widgets\serial_keyword_highlighter.h" />
     <ClInclude Include="src\ui\widgets\serial_receive_view.h" />
     <ClInclude Include="src\ui\theme.h" />
   </ItemGroup>

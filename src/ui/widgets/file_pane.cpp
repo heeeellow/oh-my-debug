@@ -409,6 +409,7 @@ FilePane::FilePane(bool remote, QWidget* parent) : QFrame(parent), remote_(remot
     transfer_ =
         new QPushButton(remote ? QStringLiteral("下载所选") : QStringLiteral("上传所选"), this);
     transfer_->setObjectName(remote ? "fileDownloadButton" : "fileUploadButton");
+    transfer_->setProperty("buttonRole", QStringLiteral("primary"));
     transfer_->setIcon(style()->standardIcon(remote ? QStyle::SP_ArrowDown : QStyle::SP_ArrowUp));
     footer->addWidget(transfer_);
     layout->addLayout(footer);

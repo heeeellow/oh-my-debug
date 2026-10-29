@@ -3,6 +3,7 @@
 #include "core/serial/async_serial_sender.h"
 #include "core/serial/serial_test_engine.h"
 #include "core/serial/serial_transport.h"
+#include "application/serial/serial_recorder.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -20,6 +21,7 @@ struct ScheduledSendSnapshot {
     bool running = false;
     std::uint64_t attempts = 0;
     std::uint64_t submitted = 0;
+    std::uint64_t id = 0;
 };
 
 struct SerialSessionSnapshot {
@@ -82,6 +84,11 @@ class SerialSession {
     bool isActive() const;
     bool isOpen() const;
 
+    bool startRecording(const SerialRecordOptions& options, std::uint64_t expectedGeneration,
+                        std::string& error);
+    void stopRecording(const std::string& reason = "用户停止", std::uint64_t expectedId = 0);
+    SerialRecordSnapshot recordingSnapshot() const;
+
   private:
     bool isCurrentGeneration(std::uint64_t generation) const;
     void handleData(std::uint64_t generation, const serialdemo::ByteBuffer& data);
@@ -99,12 +106,15 @@ class SerialSession {
     serialdemo::PeriodicSendPlan scheduledSendPlan_;
     serialdemo::ByteBuffer scheduledSendPayload_;
     std::uint64_t scheduledSendTag_ = 0;
+    std::uint64_t scheduledSendId_ = 0;
     std::uint64_t generation_ = 0;
     SerialSessionState state_ = SerialSessionState::Disconnected;
     std::uint64_t receivedBytes_ = 0;
     std::uint64_t sentBytes_ = 0;
     bool closing_ = false;
     std::thread closeWorker_;
+    serialdemo::SerialConfig config_;
+    SerialRecorder recorder_;
 
     mutable std::mutex callbackMutex_;
     DataCallback dataCallback_;

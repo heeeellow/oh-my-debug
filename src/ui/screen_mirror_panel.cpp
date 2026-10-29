@@ -51,6 +51,7 @@ ScreenMirrorPanel::ScreenMirrorPanel(QWidget* parent,
     auto* session = new QHBoxLayout;
     start_ = new QPushButton(QStringLiteral("开始投屏"), this);
     start_->setObjectName(QStringLiteral("mirrorStartButton"));
+    start_->setProperty("buttonRole", QStringLiteral("primary"));
     stop_ = new QPushButton(QStringLiteral("停止投屏"), this);
     stop_->setObjectName(QStringLiteral("mirrorStopButton"));
     session->addWidget(start_);

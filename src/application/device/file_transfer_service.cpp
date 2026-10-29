@@ -152,7 +152,9 @@ bool FileTransferService::prepare(FileTransferRequest request, std::string& erro
     }
     request_ = std::move(request);
     cancel_ = false;
+    const auto nextId = state_.id + 1;
     state_ = {};
+    state_.id = nextId;
     state_.active = true;
     state_.serial = request_.device.serial;
     state_.direction = request_.direction;
@@ -235,12 +237,13 @@ void FileTransferService::executePrepared()
     state_.progress.clear();
 }
 
-void FileTransferService::cancel() noexcept
+void FileTransferService::cancel(std::uint64_t expectedId) noexcept
 {
-    cancel_ = true;
     std::lock_guard<std::mutex> lock(mutex_);
-    if (state_.active)
+    if (state_.active && (!expectedId || state_.id == expectedId)) {
+        cancel_ = true;
         state_.cancelling = true;
+    }
 }
 
 FileTransferSnapshot FileTransferService::snapshot() const

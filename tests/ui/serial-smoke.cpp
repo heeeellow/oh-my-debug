@@ -12,6 +12,7 @@
 #include "ui/pages/serial_workspace.h"
 #undef private
 #include "ui/main_window.h"
+#include "ui/widgets/serial_shortcut_sidebar.h"
 #include <atomic>
 #include <iostream>
 #include <mutex>
@@ -312,7 +313,9 @@ int main(int argc, char** argv)
         channel.searchButton->setChecked(false);
         serial->setWorkspaceModeForDiagnostics("single");
         pump();
-        require(channel.manualSendArea->isVisible() && channel.atCommandArea->isVisible(),
+        if (serial->shortcutSidebar_->isHidden()) channel.toggleAtBarButton->click();
+        pump();
+        require(channel.manualSendArea->isVisible() && serial->shortcutSidebar_->isVisible(),
                 "ordinary sender and shortcuts preserved");
         require(!channel.autoScrollCheck->isChecked(),
                 "terminal scrollback does not overwrite normal follow preference");
@@ -333,10 +336,61 @@ int main(int argc, char** argv)
                 "HEX bytes unchanged");
         channel.lineEndingCombo->setCurrentIndex(3);
         channel.sendHexCheck->setChecked(false);
-        channel.atCommandCombo->setCurrentIndex(0);
-        channel.sendAtCommandButton->click();
+        auto* shortcuts = serial->shortcutSidebar_->findChild<QListWidget*>("shortcutList");
+        shortcuts->setCurrentRow(1);
+        pump();
+        require(state->take().empty(), "selecting shortcut does not transmit");
+        serial->shortcutSidebar_->findChild<QPushButton*>("shortcutFill-0")->click();
+        require(channel.sendEdit->toPlainText() == "AT" && state->take().empty(), "fill is local and preserves no-send behavior");
+        serial->shortcutSidebar_->findChild<QPushButton*>("shortcutSend-0")->click();
         pump(150);
         require(state->take() == "AT\r\n", "shortcut uses same line ending");
+        const auto originalCommands = serial->atCommandLibrary_.commands();
+        std::string commandError;
+        require(serial->atCommandLibrary_.add({"用于检查窄侧栏省略的较长指令名称", "00 FF 41", true}, commandError),
+                "HEX shortcut fixture accepted");
+        serial->shortcutSidebar_->setCommands(serial->atCommandLibrary_.commands());
+        const auto hexRow = QString::number(static_cast<int>(originalCommands.size()));
+        serial->shortcutSidebar_->findChild<QPushButton*>("shortcutFill-" + hexRow)->click();
+        require(channel.sendHexCheck->isChecked() && channel.sendEdit->toPlainText() == "00 FF 41" &&
+                    channel.lineEndingCombo->currentIndex() == 3 && state->take().empty(),
+                "HEX fill changes input format without sending or changing shared ending");
+        serial->shortcutSidebar_->findChild<QPushButton*>("shortcutSend-" + hexRow)->click();
+        pump(150);
+        require(state->take() == std::string("\0\xff" "A", 3), "HEX shortcut sends exact bytes without CRLF");
+        window.grab().save(work + "/shortcut-long-name.png");
+        require(serial->atCommandLibrary_.replace(originalCommands, commandError), "restore shortcut fixtures");
+        serial->shortcutSidebar_->setCommands(serial->atCommandLibrary_.commands());
+
+        serial->shortcutSplitter_->setSizes({800, 300});
+        serial->shortcutSplitter_->splitterMoved(800, 1);
+        pump();
+        const int rememberedWidth = serial->preferences_.shortcutSidebarWidth;
+        window.resize(1120, 768);
+        pump();
+        require(serial->shortcutSidebar_->isHidden() && serial->preferences_.shortcutBarVisible &&
+                    serial->preferences_.shortcutSidebarWidth == rememberedWidth,
+                "narrow layout folds without changing saved preference or width");
+        window.grab().save(work + "/shortcut-narrow.png");
+        window.resize(1920, 1080);
+        pump();
+        require(serial->shortcutSidebar_->isVisible(), "wide layout restores preferred sidebar");
+        const int composerY = channel.manualSendArea->mapTo(serial, QPoint()).y();
+        serial->shortcutSidebar_->findChild<QToolButton*>("collapseShortcuts")->click();
+        pump();
+        require(serial->shortcutSidebar_->isHidden() && !serial->preferences_.shortcutBarVisible &&
+                    channel.manualSendArea->mapTo(serial, QPoint()).y() == composerY,
+                "explicit collapse is remembered without moving the composer vertically");
+        testtools::SerialWorkspacePreferences savedPreferences;
+        require(testtools::SerialPreferencesStore::load(serial->preferencesStorePath_, savedPreferences, commandError) &&
+                    !savedPreferences.shortcutBarVisible && savedPreferences.shortcutSidebarWidth == rememberedWidth,
+                "sidebar width and explicit collapse persist to isolated preferences");
+        window.resize(1366, 768);
+        pump();
+        require(serial->shortcutSidebar_->isHidden(), "resize preserves explicit collapsed preference");
+        channel.toggleAtBarButton->click();
+        pump();
+        require(serial->shortcutSidebar_->isVisible(), "toolbar reopens sidebar");
         serialdemo::PeriodicSendConfig plan;
         plan.interval = std::chrono::milliseconds(10);
         plan.targetCount = 3;

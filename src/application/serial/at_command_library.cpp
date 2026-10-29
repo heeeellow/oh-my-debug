@@ -451,6 +451,10 @@ bool SerialPreferencesStore::load(const std::filesystem::path& path,
     if (shortcutVisible) {
         candidate.shortcutBarVisible = shortcutVisible->boolValue();
     }
+    if (const auto* width = root.find("shortcut_sidebar_width"); width && width->isInt64() &&
+        width->int64Value() >= 220 && width->int64Value() <= 480) {
+        candidate.shortcutSidebarWidth = static_cast<int>(width->int64Value());
+    }
     if (const auto* key = root.find("terminal_backspace"); key && key->isInt64()
         && (key->int64Value() == 8 || key->int64Value() == 127)) {
         candidate.terminalBackspace = static_cast<int>(key->int64Value());
@@ -486,6 +490,8 @@ bool SerialPreferencesStore::load(const std::filesystem::path& path,
             dst.autoScroll = v->boolValue();
         if (const auto* v = item.find("send_hex"); v && v->isBool())
             dst.sendHex = v->boolValue();
+        if (const auto* v = item.find("highlight_keywords"); v && v->isBool())
+            dst.highlightKeywords = v->boolValue();
     }
     preferences = std::move(candidate);
     return true;
@@ -509,6 +515,7 @@ bool SerialPreferencesStore::save(const std::filesystem::path& path,
             {"parity", JsonValue::integer(ch.parity)},
             {"receive_hex", JsonValue::boolean(ch.receiveHex)},
             {"send_hex", JsonValue::boolean(ch.sendHex)},
+            {"highlight_keywords", JsonValue::boolean(ch.highlightKeywords)},
             {"stop_bits", JsonValue::integer(ch.stopBits)},
             {"timestamp", JsonValue::boolean(ch.timestamp)},
             {"use_agent", JsonValue::boolean(ch.useAgent)},
@@ -518,6 +525,7 @@ bool SerialPreferencesStore::save(const std::filesystem::path& path,
         {"channels", JsonValue::array(std::move(channelsArray))},
         {"schema_version", JsonValue::integer(1)},
         {"shortcut_bar_visible", JsonValue::boolean(preferences.shortcutBarVisible)},
+        {"shortcut_sidebar_width", JsonValue::integer(preferences.shortcutSidebarWidth)},
         {"terminal_line_ending", JsonValue::integer(preferences.terminalLineEnding)},
         {"terminal_backspace", JsonValue::integer(preferences.terminalBackspace)},
     });

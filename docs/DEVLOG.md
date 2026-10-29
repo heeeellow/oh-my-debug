@@ -431,3 +431,40 @@ Agent 留出稳定边界。
 上一轮路线图保留在 [ADR-0004](decisions/0004-serial-terminal-and-adb-integration.md)；其对应功能的当前行为与验证范围以上述功能契约和本页为准，不能继续把该路线图当作下一阶段的待办清单。
 
 当前构建与验证范围见上表。0.8.0 未改串口收发传输路径、Agent 或协议；真实硬件、压力和音频的未验证项不得由 UI、回环协议或假后端结果替代。
+
+
+## 2026-10-26：0.9.0 验证与架构收敛归档
+
+以下从 STATUS 的 0.9.0 基线记录迁入，保留当时的结果和未验证边界；不代表后续版本验收。
+
+各层结果分别记录，未验证项不能由其他层通过替代。
+
+| 范围 | 结果与边界 |
+| --- | --- |
+| 修改前 COM3 基线 | CH343、115200/8N1/无流控。原始串口与旧产品 UI 能回到 Shell、执行 printf、Ctrl+C 中断短暂 sleep；旧 UI TX 48/RX 452 字节。本次没有复现用户报告的偶发不回显。证据为 `baseline-com3-*`、`baseline-ui.*` |
+| Agent 当前实机 | RK3562 / Android 13，进程存在且真实 hello 返回 0.3.7；只读转发与握手通过，已清理本次临时转发。用户另已反馈该版部署验证通过，属于用户提供证据 |
+| 核心契约 | CTest 2/2 通过；新增同口登记/释放、COM 别名、按设备单会话和终端截断增量变化范围检查。记录位于 `build/tests/host/Testing/Temporary/LastTest.log` |
+| 原生界面与异常夹具 | CTest 5/5 通过：文件页、串口交互、文件后端、服务健康/失联、独立页面。覆盖偏好迁移、同口拒绝/释放、本地地址草稿、离线本地刷新及设备端口枚举不阻塞本地连接。10000 行缓冲加 30 次尾部更新的独立样本最大交付 27ms；这是本机夹具样本，不是性能保证。记录为 `native-tests/Testing/Temporary/LastTest.log`、`fixture-ui.stdout.log` |
+| 桌面构建与 Bundle | Release/Debug 最终构建通过；Bundle v2 三包文件、大小和 SHA-256 校验通过。Qt 部署提示缺少可选的 dxcompiler/dxil DLL，当前 Widgets 启动与快照正常。记录为 `build-release.log`、`build-debug.log` |
+| 真实 Debug 串口 | COM3、115200/8N1。逐字输入回显、命令执行、↑ 历史、Tab 补全、Ctrl+C 中断通过；中断样本 61ms。10500 行有界合成输出在 9.130s 收完，超过回看上限后仍能输入；页面独立、同口占用、断开后普通监视器接管及真实 RX 标记通过。记录为 `live-ui.stdout.log` 和 `live-*-rx.bin`；后者仅为保留片段，不是全程原始归档 |
+| 真实服务与 ADB | 本地 COM 保持打开时，Agent 连接、断开、重连和设备端口枚举通过。Agent PID 保持 1789；最终无新增 ADB 转发残留，见 `live-cleanup.json`。文件页只读进入根目录、浏览 `/sdcard`、切页刷新通过（16 项目录样本），见 `live-files.stdout.log`；未执行真实 push/pull |
+| 快照与运行依赖 | 单/双串口、终端、文件页，在 1366×768 / 1920×1080 逻辑尺寸及实际 DPR 1 / 1.25 / 1.5 共 24 张快照的尺寸元数据通过，并目检代表样本与实机界面。使用 Release 部署目录且移除开发 Qt PATH 后启动通过。见 `snapshot-matrix.json`、`snapshots/`、`terminal-live-*`、`service-live-1366.png` |
+| 文档与静态边界 | `check-project-docs.ps1`、`check-baseline.ps1` 与 `git diff --check` 通过；未暂存任何文件，新增模块与项目登记已核对 |
+| 0.9.0 后架构收敛与注释整理 | 在不改变 UI 样式与业务行为的前提下：1）`agent_bundle.cpp` 与 `agent_serial_transport.cpp` 统一复用 `core/protocol/json_value.*`，移除手写重复 JSON 解析器与正则提取；2）`agent_service_status.*` 新增 `parseAgentServiceSnapshot`，移除 `MainWindow` 对原始协议 JSON 的直接解析；3）`serial_test_engine.*` 下沉 `minimumStressIntervalMs`、`appendAndMatchFrame` 与 `evaluateStressDirection`，减轻 `SerialWorkspace` 算术与协议匹配负担；4）`ui/theme.h` 统一提供 `fromUtf8` / `toUtf8`；5）`src/` 全部源码英文注释统一替换为中文并补充关键模块说明。验证：Debug/Release 构建通过，主机无 Qt CTest 2/2 与 Agent CTest 1/1 通过，原生 UI CTest 5/5 通过；本轮重构的实机串口/ADB/板端与长时间压力 **未验证** |
+
+## 2026-10-29：0.10.0 / 阶段 1A 验证归档
+
+本节保留当时本地实现与验证，未提交；证据位于 `build/iteration-0.10.0/`，不能替代后续批次验证。
+
+### 当时验证
+
+以下仅记录 0.10.0 / 1A；历史基线见 DEVLOG。夹具与快照均使用隔离数据目录。
+
+| 范围 | 结果与证据 |
+| --- | --- |
+| 桌面构建与固定 Bundle | Debug/Release 通过；Bundle v2 三包文件、大小和 SHA-256 校验通过，见 `build-baseline.log`。Qt 部署仍提示缺少可选 dxcompiler/dxil DLL，当前 Widgets 启动与快照正常 |
+| 无 Qt 核心与 Agent 契约 | 主机 CTest 2/2、Agent 主机 CTest 1/1 通过；覆盖新增侧栏宽度往返与旧偏好缺字段时的默认值，见 `build-baseline.log` |
+| 原生界面与异常夹具 | CTest 5/5 通过。覆盖列表选择/填入不发送、文本共享行尾、HEX 精确字节、窄屏自动收起、宽度和显式折叠持久化、服务提示不挤动终端、刷新与设备框相邻，以及既有焦点/键盘/断线/独立页面与文件异常回归。见 `ui-tests.log`、`native-tests/evidence/` |
+| 尺寸与 DPI 快照 | 六个页面在 1366×768 / 1920×1080 逻辑尺寸及实际 DPR 1 / 1.25 / 1.5 共 36 张，页面标题、尺寸与 DPR 元数据通过；目检单/双串口、终端、设备信息、文件与远程页代表样本及服务失败、长指令、窄屏夹具。见 `snapshot-matrix.json`、`snapshots/` 与 `native-tests/evidence/` |
+| 文档、静态边界与差异 | `check-project-docs.ps1`、`check-baseline.ps1` 与 Git 差异检查通过；新增源码已登记，README 原有方案入口保持，未暂存文件 |
+| 实机、物理异常与长时压力 | 未验证；本批未执行真实串口发送、文件传输或设备维护 |

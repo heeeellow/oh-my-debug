@@ -97,6 +97,9 @@ int main()
         check(backend->paths[0] == "/data/local/tmp/a.log", "fixed absolute target");
         backend->serials.clear();
         check(service.prepare(request(), error), "prepare retry");
+        const auto retryId = service.snapshot().id;
+        service.cancel(state.id);
+        check(retryId != state.id && !service.snapshot().cancelling, "stale task action cannot cancel next batch");
         service.cancel();
         service.executePrepared();
         check(backend->serials.empty(), "cancel before worker sends nothing");

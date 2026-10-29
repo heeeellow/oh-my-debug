@@ -63,11 +63,13 @@ struct SerialChannelPreferences {
     bool timestamp = false;
     bool autoScroll = true;
     bool sendHex = false;
+    bool highlightKeywords = false;
 };
 
 struct SerialWorkspacePreferences {
     std::array<SerialChannelPreferences, 2> channels{};
     bool shortcutBarVisible = true;
+    int shortcutSidebarWidth = 240;
     int terminalLineEnding = 2;
     int terminalBackspace = 127;
     SerialWorkspacePreferences();

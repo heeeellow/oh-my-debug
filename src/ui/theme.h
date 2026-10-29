@@ -2,6 +2,7 @@
 
 #include <QtCore/QByteArray>
 #include <QtCore/QString>
+#include <QtGui/QIcon>
 
 #include <string>
 
@@ -9,6 +10,7 @@ namespace testtools::ui {
 
 // 全局界面样式表入口。
 QString applicationStyleSheet();
+QIcon navigationChevron(bool expanded, bool selected = false);
 
 // UTF-8 标准字符串与 Qt 字符串桥接转换工具（仅供 src/ui/ 层使用）。
 inline QString fromUtf8(const std::string& text)

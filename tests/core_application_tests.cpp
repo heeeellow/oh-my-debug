@@ -1021,6 +1021,7 @@ int main()
     prefs.terminalLineEnding = 1;
     prefs.terminalBackspace = 8;
     prefs.shortcutBarVisible = false;
+    prefs.shortcutSidebarWidth = 320;
     prefs.channels[1].useAgent = true;
     prefs.channels[1].endpoint = "/dev/ttyUSB2";
     prefs.channels[1].baudRate = 921600;
@@ -1028,6 +1029,7 @@ int main()
     prefs.channels[1].timestamp = true;
     prefs.channels[1].autoScroll = false;
     prefs.channels[1].sendHex = true;
+    prefs.channels[1].highlightKeywords = true;
     std::string prefError;
     const auto prefPath =
         std::filesystem::temp_directory_path() /
@@ -1037,15 +1039,24 @@ int main()
     testtools::SerialWorkspacePreferences loadedPrefs;
     if (!testtools::SerialPreferencesStore::save(prefPath, prefs, prefError) ||
         !testtools::SerialPreferencesStore::load(prefPath, loadedPrefs, prefError) ||
-        loadedPrefs.shortcutBarVisible != false || loadedPrefs.terminalLineEnding != 1
+        loadedPrefs.shortcutBarVisible != false || loadedPrefs.shortcutSidebarWidth != 320 || loadedPrefs.terminalLineEnding != 1
         || loadedPrefs.terminalBackspace != 8 || !loadedPrefs.channels[1].useAgent ||
         loadedPrefs.channels[1].endpoint != "/dev/ttyUSB2" ||
         loadedPrefs.channels[1].baudRate != 921600 || !loadedPrefs.channels[1].receiveHex ||
         !loadedPrefs.channels[1].timestamp || loadedPrefs.channels[1].autoScroll ||
-        !loadedPrefs.channels[1].sendHex) {
+        !loadedPrefs.channels[1].sendHex || !loadedPrefs.channels[1].highlightKeywords) {
         std::error_code cleanupError;
         std::filesystem::remove(prefPath, cleanupError);
         return fail("serial preferences store roundtrip");
+    }
+    {
+        std::ofstream legacy(prefPath, std::ios::binary | std::ios::trunc);
+        legacy << R"({"schema_version":1,"shortcut_bar_visible":true,"channels":[{},{}]})";
+    }
+    if (!testtools::SerialPreferencesStore::load(prefPath, loadedPrefs, prefError) ||
+        !loadedPrefs.shortcutBarVisible || loadedPrefs.shortcutSidebarWidth != 240 || loadedPrefs.channels[1].highlightKeywords) {
+        std::filesystem::remove(prefPath);
+        return fail("legacy serial preferences default sidebar width");
     }
     {
         std::error_code cleanupError;

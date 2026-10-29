@@ -23,6 +23,8 @@ class FileTransferWorkspace final : public QWidget {
     ~FileTransferWorkspace() override;
     void setDevice(const serialdemo::AdbDevice& device);
     void shutdown();
+    testtools::FileTransferSnapshot transferSnapshot() const;
+    void cancelTransfer(std::uint64_t expectedId);
 
   protected:
     void showEvent(QShowEvent* event) override;

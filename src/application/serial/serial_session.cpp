@@ -45,6 +45,7 @@ std::uint64_t SerialSession::open(std::unique_ptr<serialdemo::ISerialTransport> 
         std::lock_guard<std::mutex> lock(mutex_);
         currentGeneration = ++generation_;
         transport_ = sharedTransport;
+        config_ = config;
         state_ = SerialSessionState::Connecting;
         closing_ = false;
     }
@@ -88,6 +89,7 @@ std::uint64_t SerialSession::closeAsync(CloseCallback callback)
     std::uint64_t closeGeneration = 0;
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        recorder_.stop("串口断开");
         if (!transport_) {
             state_ = SerialSessionState::Disconnected;
             closing_ = false;
@@ -109,6 +111,7 @@ std::uint64_t SerialSession::closeAsync(CloseCallback callback)
                                 callback = std::move(callback)]() mutable {
         sender_.stop(false);
         transport->close();
+        recorder_.waitIdle();
         {
             std::lock_guard<std::mutex> lock(mutex_);
             if (generation_ == closeGeneration) {
@@ -125,6 +128,8 @@ std::uint64_t SerialSession::closeAsync(CloseCallback callback)
 
 void SerialSession::close()
 {
+    recorder_.stop("串口断开");
+    recorder_.waitIdle();
     if (closeWorker_.joinable()) {
         closeWorker_.join();
     }
@@ -220,6 +225,7 @@ bool SerialSession::startScheduledSend(serialdemo::ByteBuffer payload,
         return false;
     }
     scheduledSendPayload_ = std::move(payload);
+    ++scheduledSendId_;
     scheduledSendTag_ = tag;
     return true;
 }
@@ -229,7 +235,7 @@ ScheduledSendSnapshot SerialSession::stopScheduledSend()
     std::lock_guard<std::mutex> lock(mutex_);
     ScheduledSendSnapshot result{scheduledSendPlan_.isRunning(),
                                  scheduledSendPlan_.attempts(),
-                                 scheduledSendPlan_.successes()};
+                                 scheduledSendPlan_.successes(), scheduledSendId_};
     scheduledSendPlan_.stop();
     scheduledSendPayload_.clear();
     return result;
@@ -284,7 +290,7 @@ SerialSessionSnapshot SerialSession::snapshot() const
         result.sentBytes = sentBytes_;
         result.scheduledSend = {scheduledSendPlan_.isRunning(),
                                 scheduledSendPlan_.attempts(),
-                                scheduledSendPlan_.successes()};
+                                scheduledSendPlan_.successes(), scheduledSendId_};
     }
     result.open = transport && transport->isOpen();
     result.pendingWrites = sender_.pendingCount();
@@ -326,6 +332,25 @@ bool SerialSession::isCurrentGeneration(std::uint64_t generation) const
     return generation_ == generation;
 }
 
+bool SerialSession::startRecording(const SerialRecordOptions& options,
+                                   std::uint64_t expectedGeneration, std::string& error)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (generation_ != expectedGeneration || state_ != SerialSessionState::Connected ||
+        closing_ || !transport_ || !transport_->isOpen()) {
+        error = "串口连接已变化，未开始录制"; return false;
+    }
+    return recorder_.start(options, generation_, config_, error);
+}
+
+void SerialSession::stopRecording(const std::string& reason, std::uint64_t expectedId)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!expectedId || recorder_.snapshot().id == expectedId) recorder_.stop(reason);
+}
+
+SerialRecordSnapshot SerialSession::recordingSnapshot() const { return recorder_.snapshot(); }
+
 void SerialSession::handleData(std::uint64_t generation, const serialdemo::ByteBuffer& data)
 {
     {
@@ -334,6 +359,7 @@ void SerialSession::handleData(std::uint64_t generation, const serialdemo::ByteB
             return;
         }
         receivedBytes_ += data.size();
+        recorder_.push(generation, false, data);
     }
     DataCallback callback;
     {
@@ -357,6 +383,7 @@ void SerialSession::handleStatus(std::uint64_t generation,
         if (state == serialdemo::TransportState::Connected) {
             state_ = SerialSessionState::Connected;
         } else if (state != serialdemo::TransportState::Progress) {
+            recorder_.stop("串口断开");
             state_ = SerialSessionState::Disconnected;
             scheduledSendPlan_.stop();
             scheduledSendPayload_.clear();
@@ -385,6 +412,7 @@ void SerialSession::handleSendCompletion(std::uint64_t generation,
         }
         if (succeeded) {
             sentBytes_ += data.size();
+            recorder_.push(generation, true, data);
         } else {
             scheduledSendStopped = scheduledSendPlan_.isRunning();
             scheduledSendPlan_.stop();

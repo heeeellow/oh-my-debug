@@ -600,3 +600,11 @@ void FileTransferWorkspace::shutdown()
     service_->cancel();
     updateControls();
 }
+
+testtools::FileTransferSnapshot FileTransferWorkspace::transferSnapshot() const { return service_->snapshot(); }
+
+void FileTransferWorkspace::cancelTransfer(std::uint64_t expectedId)
+{
+    service_->cancel(expectedId);
+    updateControls();
+}

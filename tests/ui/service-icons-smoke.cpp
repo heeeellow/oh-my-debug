@@ -146,9 +146,19 @@ int main(int argc, char** argv)
         window.agentConnecting_ = true;
         window.deviceCombo_->currentIndexChanged(0);
         window.agentConnecting_ = false;
+        serial->channels_[1].sourceCombo->setCurrentIndex(0);
+        QTest::qWait(30);
+        const int logTop = serial->channels_[1].receiveEdit->mapTo(serial, QPoint()).y();
         serial->channels_[1].sourceCombo->setCurrentIndex(1);
         serial->channels_[1].portCombo->setEditText("/dev/ttyTEST");
-        check(serial->serviceHint_->isVisible() && !serial->channels_[1].connectButton->isEnabled(),
+        QTest::qWait(30);
+        check(serial->channels_[1].receiveEdit->mapTo(serial, QPoint()).y() == logTop,
+              "inline service hint preserves terminal vertical position");
+        const int refreshLeft = window.refreshButton_->mapTo(&window, QPoint()).x();
+        const int comboRight = window.deviceCombo_->mapTo(&window, QPoint()).x() + window.deviceCombo_->width();
+        check(refreshLeft >= comboRight && refreshLeft - comboRight <= 8,
+              "refresh action is immediately next to device selector");
+        check(serial->channels_[1].serviceHint->isVisible() && !serial->channels_[1].connectButton->isEnabled(),
               "missing board service explained next to connection");
         window.grab().save(testOutputPath("service-disconnected.png"));
         auto held = std::make_shared<HeldClient>();
@@ -164,9 +174,9 @@ int main(int argc, char** argv)
             serial->agentControlPort_ = server.port;
             serial->setWorkspaceModeForDiagnostics("terminal");
             serial->busyChanged(false); // Publish the injected ready fixture to both pages.
-            check(!serial->serviceHint_->isVisible() &&
-                      window.topServiceStatus_->text().contains(QStringLiteral("已连接")) &&
-                      window.topServiceButton_->text() == QStringLiteral("详情"),
+            check(!serial->channels_[1].serviceHint->isVisible() &&
+                      window.topServiceStatus_->text().contains(QStringLiteral("已就绪")) &&
+                      window.topServiceButton_->text() == QStringLiteral("服务详情"),
                   "service readiness visible separately from ADB");
             qunsetenv("TESTTOOLS_OFFLINE");
             QMetaObject::invokeMethod(window.serviceHealthTimer_, "timeout", Qt::DirectConnection);
@@ -184,15 +194,15 @@ int main(int argc, char** argv)
                          !window.agentCleanupPending_;
               }),
               "lost service invalidated and cleanup asynchronous");
-        check(held->closed && serial->agentControlPort_ == 0 && serial->serviceHint_->isVisible() &&
+        check(held->closed && serial->agentControlPort_ == 0 && serial->channels_[1].serviceHint->isVisible() &&
                   !serial->channels_[1].connectButton->isEnabled(),
               "stale control port cannot reopen a board serial");
         check(window.topServiceStatus_->text().contains(QStringLiteral("连接失败")) &&
-                  window.topServiceButton_->text() == QStringLiteral("重试"),
+                  window.topServiceButton_->text() == QStringLiteral("重试连接"),
               "loss reflected in top bar");
         window.grab().save(testOutputPath("service-failed.png"));
         serial->channels_[1].sourceCombo->setCurrentIndex(0);
-        check(!serial->serviceHint_->isVisible(), "local COM independent of service failure");
+        check(!serial->channels_[1].serviceHint->isVisible(), "local COM independent of service failure");
         window.close();
         check(await([&] { return !window.isVisible(); }), "window closes after health operations");
         std::cout << "Native icons and real loopback service checks passed.\n";

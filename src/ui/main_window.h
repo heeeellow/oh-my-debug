@@ -18,6 +18,7 @@ class QStackedWidget;
 class QTimer;
 class QWidget;
 class QToolButton;
+class QMenu;
 class SerialWorkspace;
 class FileTransferWorkspace;
 class ScreenMirrorPanel;
@@ -81,6 +82,8 @@ class MainWindow final : public QMainWindow {
     void showPage(int pageIndex);
     void setAdbStatus(const QString& text, StatusTone tone = StatusTone::Good);
     void setActivity(const QString& message);
+    void updateTasks(bool rebuildMenu = false);
+    bool recordingsPending() const;
     void updateDeviceControls();
 
     QComboBox* deviceCombo_ = nullptr;
@@ -100,6 +103,8 @@ class MainWindow final : public QMainWindow {
     QToolButton* serialExpandButton_ = nullptr;
     QWidget* adbChildren_ = nullptr;
     QToolButton* adbExpandButton_ = nullptr;
+    QWidget* serialGroupRow_ = nullptr;
+    QWidget* adbGroupRow_ = nullptr;
     int lastAdbPage_ = FileTransferPage;
     int lastSerialPage_ = SerialPage;
     bool closeRequested_ = false;
@@ -114,6 +119,9 @@ class MainWindow final : public QMainWindow {
     std::shared_ptr<testtools::SerialPortClaims> portClaims_ =
         std::make_shared<testtools::SerialPortClaims>();
     QLabel* activityLabel_ = nullptr;
+    QToolButton* taskButton_ = nullptr;
+    QMenu* taskMenu_ = nullptr;
+    QTimer* taskTimer_ = nullptr;
     QLabel* agentDeviceValue_ = nullptr;
     QPushButton* deployAgentButton_ = nullptr;
     QPushButton* disconnectAgentButton_ = nullptr;

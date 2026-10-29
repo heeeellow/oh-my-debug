@@ -187,7 +187,7 @@ int main(int argc, char** argv)
             check(window.topServiceButton_->isEnabled(), "local COM does not block service preparation");
             window.topServiceButton_->click();
             check(await([&] { return bool(window.agentClient_) && !window.agentConnecting_; }, 15000), "connect existing real Agent");
-            check(channel.session.isOpen() && window.topServiceButton_->text() == QStringLiteral("详情"), "real Agent independent of local COM");
+            check(channel.session.isOpen() && window.topServiceButton_->text() == QStringLiteral("服务详情"), "real Agent independent of local COM");
             check(await([&] { return !terminal->scanning_ && !terminal->agentPorts_.empty(); }, 10000), "device port enumeration available while local COM is open");
             window.topServiceButton_->click();
             window.grab().save(evidence + "/service-live-1366.png");
