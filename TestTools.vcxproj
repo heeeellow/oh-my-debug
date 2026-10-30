@@ -41,7 +41,7 @@
   </ImportGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
     <QtInstall>6.11.2_msvc2022_64</QtInstall>
-    <QtModules>core;gui;widgets</QtModules>
+    <QtModules>core;gui;widgets;svg</QtModules>
     <QtBuildConfig>debug</QtBuildConfig>
     <QtDeploy>true</QtDeploy>
     <QtDeployDebugRelease>debug</QtDeployDebugRelease>
@@ -51,7 +51,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
     <QtInstall>6.11.2_msvc2022_64</QtInstall>
-    <QtModules>core;gui;widgets</QtModules>
+    <QtModules>core;gui;widgets;svg</QtModules>
     <QtBuildConfig>release</QtBuildConfig>
     <QtDeploy>true</QtDeploy>
     <QtDeployDebugRelease>release</QtDeployDebugRelease>
@@ -172,6 +172,7 @@
     <ClCompile Include="src\ui\widgets\serial_shortcut_sidebar.cpp" />
     <ClCompile Include="src\ui\widgets\serial_keyword_highlighter.cpp" />
     <ClCompile Include="src\ui\theme.cpp" />
+    <ClCompile Include="src\ui\icons.cpp" />
     <ClCompile Include="third_party\CSerialPort\src\SerialPort.cpp" />
     <ClCompile Include="third_party\CSerialPort\src\SerialPortAsyncBase.cpp" />
     <ClCompile Include="third_party\CSerialPort\src\SerialPortBase.cpp" />
@@ -233,6 +234,10 @@
     <ClInclude Include="src\ui\widgets\serial_keyword_highlighter.h" />
     <ClInclude Include="src\ui\widgets\serial_receive_view.h" />
     <ClInclude Include="src\ui\theme.h" />
+    <ClInclude Include="src\ui\icons.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtRcc Include="src\ui\resources\icons.qrc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ItemGroup>
@@ -270,6 +275,11 @@
     <Copy SourceFiles="@(TestToolsAgentBundleFiles)"
           DestinationFiles="@(TestToolsAgentBundleFiles->'$(OutDir)agent-bundle\%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="CopyTestToolsIconLicense" AfterTargets="Build">
+    <MakeDir Directories="$(OutDir)licenses" />
+    <Copy SourceFiles="$(ProjectDir)third_party\phosphor-icons\LICENSE"
+          DestinationFiles="$(OutDir)licenses\Phosphor-Icons-LICENSE.txt" SkipUnchangedFiles="true" />
   </Target>
   <Target Name="WarnMissingTestToolsAgentBundle" AfterTargets="Build"
           Condition="'$(DesignTimeBuild)'!='true' AND !Exists('$(ProjectDir)build\agent-bundle\manifest.json')">

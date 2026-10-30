@@ -1,4 +1,5 @@
 #include "ui/screen_mirror_panel.h"
+#include "ui/icons.h"
 #include "ui/theme.h"
 
 #include <QtCore/QDateTime>
@@ -13,7 +14,6 @@
 #include <QtWidgets/QMenu>
 #include <QtWidgets/QPlainTextEdit>
 #include <QtWidgets/QPushButton>
-#include <QtWidgets/QStyle>
 #include <QtWidgets/QVBoxLayout>
 #include <exception>
 
@@ -77,7 +77,8 @@ ScreenMirrorPanel::ScreenMirrorPanel(QWidget* parent,
     });
     auto* capture = new QPushButton(QStringLiteral("保存截图…"), this);
     capture->setObjectName(QStringLiteral("mirrorScreenshotButton"));
-    capture->setIcon(style()->standardIcon(QStyle::SP_DialogSaveButton));
+    capture->setIcon(testtools::ui::appIcon(testtools::ui::Icon::Camera));
+    capture->setIconSize({20, 20});
     controlButtons_.push_back(capture);
     toolbar->addWidget(capture);
     connect(capture, &QPushButton::clicked, this, &ScreenMirrorPanel::saveScreenshot);
@@ -103,8 +104,10 @@ ScreenMirrorPanel::ScreenMirrorPanel(QWidget* parent,
     toolbar->addWidget(more);
     toolbar->addStretch();
     layout->addLayout(toolbar);
-    start_->setIcon(style()->standardIcon(QStyle::SP_MediaPlay));
-    stop_->setIcon(style()->standardIcon(QStyle::SP_MediaStop));
+    start_->setIcon(testtools::ui::appIcon(testtools::ui::Icon::Play, testtools::ui::IconTone::OnPrimary));
+    start_->setIconSize({20, 20});
+    stop_->setIcon(testtools::ui::appIcon(testtools::ui::Icon::Stop));
+    stop_->setIconSize({20, 20});
     auto* guide = new QFrame(this);
     guide->setObjectName(QStringLiteral("mirrorGuide"));
     auto* guideLayout = new QVBoxLayout(guide);

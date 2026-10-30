@@ -1,3 +1,4 @@
+#include "ui/icons.h"
 #include "main_window.h"
 
 #include "application/agent/adb_agent_deployment.h"
@@ -327,7 +328,8 @@ QWidget* MainWindow::buildTopBar()
     deviceActions->setSpacing(6);
     deviceActions->addWidget(deviceCombo_);
     refreshButton_->setText(QStringLiteral("刷新"));
-    refreshButton_->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
+    refreshButton_->setIcon(testtools::ui::appIcon(testtools::ui::Icon::Refresh));
+    refreshButton_->setIconSize({20, 20});
     refreshButton_->setToolTip(QStringLiteral("刷新设备列表"));
     refreshButton_->setCursor(Qt::PointingHandCursor);
     deviceActions->addWidget(refreshButton_);

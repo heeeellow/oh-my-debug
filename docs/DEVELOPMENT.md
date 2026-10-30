@@ -84,7 +84,8 @@ Android Agent 的 CMake/Ninja 也必须来自 PATH 或显式环境变量；例�
 
 如果 Qt 未注册为工程中的 `QtInstall` 版本，先在 Qt VS Tools 中注册与工程配置一致的 Qt 安装；
 不要把个人机器的 Qt 绝对路径写入工程或脚本。发布验收应在没有 Qt 环境变量的进程中直接启动上述
-输出目录中的程序，并确认同目录包含 `Qt6Core.dll`、`Qt6Gui.dll` 和 `Qt6Widgets.dll`。
+输出目录中的程序，并确认同目录包含 `Qt6Core.dll`、`Qt6Gui.dll`、`Qt6Widgets.dll`、`Qt6Svg.dll` 及 `imageformats/qsvg.dll`。
+操作图标 SVG 通过工程的 QtRcc 项编译进程序；图标许可由构建复制到 `licenses/`。
 
 如果 Developer PowerShell 中找不到 `msbuild`，应通过 Visual Studio Installer 或 `vswhere` 定位
 实际安装，不在项目文档中假定固定版本号和安装盘符。
@@ -350,7 +351,7 @@ ctest --test-dir build/tests/host -C Release --output-on-failure
 
 ## 原生 UI 与文件传输回归
 
-先构建 Release，再使用同版本 Qt 的 CMake 前缀配置 `tests/ui`（需要 Qt Test）：
+先构建 Release，再使用同版本 Qt 的 CMake 前缀配置 `tests/ui`（需要 Qt Test 和 Qt SVG）：
 
 ```powershell
 cmake -S tests/ui -B build/tests/ui -DCMAKE_PREFIX_PATH=<Qt安装目录>
@@ -359,6 +360,8 @@ ctest --test-dir build/tests/ui -C Release --output-on-failure
 ```
 
 这些测试链接当前产品的 Release 对象，覆盖真实 Widgets 交互、串口精确字节、Windows 原生图标、真实回环协议连接/失联与主机 ADB 异常夹具，默认不访问真实设备。
+`icon-style-ui` 检查内置 SVG 资源、缓存、16/20/24px 在 DPR 1/1.25/1.5/2 下的渲染，以及禁用、白色主动作和收藏状态。
+仅在需要图标样张时设置 `TESTTOOLS_ICON_SNAPSHOTS=1`，输出常规与高 DPI 图标板；实际页面仍按第 5.2 节选择代表样本。
 修改产品代码后必须先重建产品和此测试目标，不能以旧对象结果验收。测试证据默认写入该 CMake 构建目录的 `evidence/`，偏好写入 `fixture-data/`，避免覆盖旧迭代记录。可用 CMake 的 `TESTTOOLS_TEST_OUTPUT` 或手动运行时的同名环境变量指定其他证据目录。
 `directory-perf` 为独立目录元数据性能样本，不纳入默认 CTest。无参数时只在隔离主机目录生成本地样本；显式指定 `--live-read-only <设备序列号>` 时仅列举 `/`、`/proc`、`/sdcard/oem_log` 并记录耗时，`ADB_PATH` 选择实际 ADB，不创建或修改开发板文件。原生后端另检查批量格式与旧工具回退的元数据一致性。
 

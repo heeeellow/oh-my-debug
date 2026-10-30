@@ -73,6 +73,7 @@
     <ClCompile Include="src\ui\widgets\serial_shortcut_sidebar.cpp"><Filter>界面</Filter></ClCompile>
     <ClCompile Include="src\ui\widgets\serial_keyword_highlighter.cpp"><Filter>界面</Filter></ClCompile>
     <ClCompile Include="src\ui\theme.cpp"><Filter>界面</Filter></ClCompile>
+    <ClCompile Include="src\ui\icons.cpp"><Filter>界面</Filter></ClCompile>
     <ClCompile Include="third_party\CSerialPort\src\SerialPort.cpp"><Filter>第三方依赖</Filter></ClCompile>
     <ClCompile Include="third_party\CSerialPort\src\SerialPortAsyncBase.cpp"><Filter>第三方依赖</Filter></ClCompile>
     <ClCompile Include="third_party\CSerialPort\src\SerialPortBase.cpp"><Filter>第三方依赖</Filter></ClCompile>
@@ -134,5 +135,9 @@
     <ClInclude Include="src\ui\widgets\serial_keyword_highlighter.h"><Filter>界面</Filter></ClInclude>
     <ClInclude Include="src\ui\widgets\serial_receive_view.h"><Filter>界面</Filter></ClInclude>
     <ClInclude Include="src\ui\theme.h"><Filter>界面</Filter></ClInclude>
+    <ClInclude Include="src\ui\icons.h"><Filter>界面</Filter></ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <QtRcc Include="src\ui\resources\icons.qrc"><Filter>界面</Filter></QtRcc>
   </ItemGroup>
 </Project>

@@ -1,95 +1,19 @@
 #include "theme.h"
-
-#include <QtCore/QDir>
-#include <QtGui/QImage>
-#include <QtGui/QPainter>
-#include <QtGui/QPainterPath>
-#include <QtGui/QPen>
-#include <QtGui/QPixmap>
+#include "ui/icons.h"
 
 namespace testtools::ui {
 
-namespace {
-
-QString ensureChevronIconPath()
-{
-    const QString path = QDir::fromNativeSeparators(
-        QDir::temp().filePath(QStringLiteral("testtools-ui-chevron-v1.png")));
-    if (!QDir::temp().exists(QStringLiteral("testtools-ui-chevron-v1.png"))) {
-        QImage image(24, 24, QImage::Format_ARGB32_Premultiplied);
-        image.fill(Qt::transparent);
-        QPainter painter(&image);
-        painter.setRenderHint(QPainter::Antialiasing, true);
-        QPen pen(QColor(0x67, 0x61, 0x5c), 3.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
-        painter.setPen(pen);
-        QPainterPath chevron;
-        chevron.moveTo(5.5, 8.5);
-        chevron.lineTo(12.0, 15.0);
-        chevron.lineTo(18.5, 8.5);
-        painter.drawPath(chevron);
-        painter.end();
-        image.save(path, "PNG");
-    }
-    return path;
-}
-
-QString ensureCheckmarkIconPath(bool mixed = false)
-{
-    const QString fileName = mixed ? QStringLiteral("testtools-ui-mixed-v1.png")
-                                   : QStringLiteral("testtools-ui-check-v1.png");
-    const QString path = QDir::fromNativeSeparators(
-        QDir::temp().filePath(fileName));
-    if (!QDir::temp().exists(fileName)) {
-        QImage image(24, 24, QImage::Format_ARGB32_Premultiplied);
-        image.fill(Qt::transparent);
-        QPainter painter(&image);
-        painter.setRenderHint(QPainter::Antialiasing, true);
-        QPen pen(QColor(0xff, 0xff, 0xff), 3.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
-        painter.setPen(pen);
-        QPainterPath check;
-        if (mixed) {
-            check.moveTo(5.0, 12.0);
-            check.lineTo(19.0, 12.0);
-        } else {
-            check.moveTo(5.0, 12.5);
-            check.lineTo(10.0, 17.5);
-            check.lineTo(19.0, 6.5);
-        }
-        painter.drawPath(check);
-        painter.end();
-        image.save(path, "PNG");
-    }
-    return path;
-}
-
-} // namespace
-
 QIcon navigationChevron(bool expanded, bool selected)
 {
-    QIcon icon;
-    for (int scale : {1, 2, 3}) {
-        QPixmap pixmap(16 * scale, 16 * scale);
-        pixmap.setDevicePixelRatio(scale);
-        pixmap.fill(Qt::transparent);
-        QPainter painter(&pixmap);
-        painter.setRenderHint(QPainter::Antialiasing);
-        painter.setPen(QPen(QColor(selected ? "#754837" : "#67615c"), 1.6,
-                            Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        QPainterPath path;
-        if (expanded) { path.moveTo(4, 6); path.lineTo(8, 10); path.lineTo(12, 6); }
-        else { path.moveTo(6, 4); path.lineTo(10, 8); path.lineTo(6, 12); }
-        painter.drawPath(path);
-        painter.end();
-        icon.addPixmap(pixmap);
-    }
-    return icon;
+    return appIcon(expanded ? Icon::ChevronDown : Icon::ChevronRight,
+                   selected ? IconTone::Accent : IconTone::Normal);
 }
 
 QString applicationStyleSheet()
 {
-    const QString chevronPath = ensureChevronIconPath();
-    const QString checkPath = ensureCheckmarkIconPath();
-    const QString mixedPath = ensureCheckmarkIconPath(true);
+    const QString chevronPath = QStringLiteral(":/testtools/icons/controls/chevron.svg");
+    const QString checkPath = QStringLiteral(":/testtools/icons/controls/check.svg");
+    const QString mixedPath = QStringLiteral(":/testtools/icons/controls/mixed.svg");
 
     return QStringLiteral(R"(
         QWidget {

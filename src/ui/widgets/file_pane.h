@@ -30,7 +30,6 @@ class FileListModel final : public QAbstractTableModel {
 
   private:
     std::vector<testtools::FileEntry> entries_;
-    QIcon icons_[8];
     FileIconProvider* iconProvider_;
     QString directory_;
     bool remote_;

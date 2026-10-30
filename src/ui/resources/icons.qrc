@@ -1,0 +1,43 @@
+<RCC>
+  <qresource prefix="/testtools/icons">
+    <file alias="arrow-left-bold.svg">../../../third_party/phosphor-icons/icons/arrow-left-bold.svg</file>
+    <file alias="arrow-right-bold.svg">../../../third_party/phosphor-icons/icons/arrow-right-bold.svg</file>
+    <file alias="arrow-up-bold.svg">../../../third_party/phosphor-icons/icons/arrow-up-bold.svg</file>
+    <file alias="arrow-down-bold.svg">../../../third_party/phosphor-icons/icons/arrow-down-bold.svg</file>
+    <file alias="arrows-clockwise-bold.svg">../../../third_party/phosphor-icons/icons/arrows-clockwise-bold.svg</file>
+    <file alias="folder-open-bold.svg">../../../third_party/phosphor-icons/icons/folder-open-bold.svg</file>
+    <file alias="upload-simple-bold.svg">../../../third_party/phosphor-icons/icons/upload-simple-bold.svg</file>
+    <file alias="download-simple-bold.svg">../../../third_party/phosphor-icons/icons/download-simple-bold.svg</file>
+    <file alias="star-bold.svg">../../../third_party/phosphor-icons/icons/star-bold.svg</file>
+    <file alias="magnifying-glass-bold.svg">../../../third_party/phosphor-icons/icons/magnifying-glass-bold.svg</file>
+    <file alias="folder-simple-plus-bold.svg">../../../third_party/phosphor-icons/icons/folder-simple-plus-bold.svg</file>
+    <file alias="pencil-simple-bold.svg">../../../third_party/phosphor-icons/icons/pencil-simple-bold.svg</file>
+    <file alias="trash-bold.svg">../../../third_party/phosphor-icons/icons/trash-bold.svg</file>
+    <file alias="file-bold.svg">../../../third_party/phosphor-icons/icons/file-bold.svg</file>
+    <file alias="file-text-bold.svg">../../../third_party/phosphor-icons/icons/file-text-bold.svg</file>
+    <file alias="file-code-bold.svg">../../../third_party/phosphor-icons/icons/file-code-bold.svg</file>
+    <file alias="file-zip-bold.svg">../../../third_party/phosphor-icons/icons/file-zip-bold.svg</file>
+    <file alias="file-image-bold.svg">../../../third_party/phosphor-icons/icons/file-image-bold.svg</file>
+    <file alias="file-audio-bold.svg">../../../third_party/phosphor-icons/icons/file-audio-bold.svg</file>
+    <file alias="file-video-bold.svg">../../../third_party/phosphor-icons/icons/file-video-bold.svg</file>
+    <file alias="link-simple-bold.svg">../../../third_party/phosphor-icons/icons/link-simple-bold.svg</file>
+    <file alias="caret-down-bold.svg">../../../third_party/phosphor-icons/icons/caret-down-bold.svg</file>
+    <file alias="caret-right-bold.svg">../../../third_party/phosphor-icons/icons/caret-right-bold.svg</file>
+    <file alias="caret-left-bold.svg">../../../third_party/phosphor-icons/icons/caret-left-bold.svg</file>
+    <file alias="gear-six-bold.svg">../../../third_party/phosphor-icons/icons/gear-six-bold.svg</file>
+    <file alias="check-bold.svg">../../../third_party/phosphor-icons/icons/check-bold.svg</file>
+    <file alias="minus-bold.svg">../../../third_party/phosphor-icons/icons/minus-bold.svg</file>
+    <file alias="package-bold.svg">../../../third_party/phosphor-icons/icons/package-bold.svg</file>
+    <file alias="star-fill.svg">../../../third_party/phosphor-icons/icons/star-fill.svg</file>
+    <file alias="folder-simple-duotone.svg">../../../third_party/phosphor-icons/icons/folder-simple-duotone.svg</file>
+    <file alias="controls/chevron.svg">controls/chevron.svg</file>
+    <file alias="controls/check.svg">controls/check.svg</file>
+    <file alias="controls/mixed.svg">controls/mixed.svg</file>
+    <file alias="copy-bold.svg">../../../third_party/phosphor-icons/icons/copy-bold.svg</file>
+    <file alias="floppy-disk-bold.svg">../../../third_party/phosphor-icons/icons/floppy-disk-bold.svg</file>
+    <file alias="eraser-bold.svg">../../../third_party/phosphor-icons/icons/eraser-bold.svg</file>
+    <file alias="play-bold.svg">../../../third_party/phosphor-icons/icons/play-bold.svg</file>
+    <file alias="stop-bold.svg">../../../third_party/phosphor-icons/icons/stop-bold.svg</file>
+    <file alias="camera-bold.svg">../../../third_party/phosphor-icons/icons/camera-bold.svg</file>
+  </qresource>
+</RCC>

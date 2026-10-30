@@ -1,4 +1,5 @@
 #include "serial_workspace.h"
+#include "ui/icons.h"
 #include "ui/theme.h"
 #include "ui/widgets/serial_receive_view.h"
 #include "ui/widgets/serial_connection_bar.h"
@@ -702,7 +703,8 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     hintLayout->addWidget(channel.serviceConnectButton);
     channel.serviceHint->hide();
     connect(channel.serviceConnectButton, &QPushButton::clicked, this, &SerialWorkspace::prepareServiceRequested);
-    channel.refreshPortsButton->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
+    channel.refreshPortsButton->setIcon(testtools::ui::appIcon(testtools::ui::Icon::Refresh));
+    channel.refreshPortsButton->setIconSize({20, 20});
     actionsLayout->addWidget(channel.refreshPortsButton);
     actionsLayout->addWidget(channel.advancedSettingsButton);
     actionsLayout->addWidget(channel.serviceHint);
@@ -835,8 +837,10 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     receiveHeader->addWidget(channel.highlightButton);
     channel.searchButton = new QPushButton(QStringLiteral("搜索"), terminalHeader);
     channel.searchButton->setObjectName(QStringLiteral("clearButton"));
-    channel.saveLogButton->setIcon(style()->standardIcon(QStyle::SP_DialogSaveButton));
-    channel.clearReceiveButton->setIcon(style()->standardIcon(QStyle::SP_DialogDiscardButton));
+    channel.saveLogButton->setIcon(testtools::ui::appIcon(testtools::ui::Icon::Save));
+    channel.saveLogButton->setIconSize({20, 20});
+    channel.clearReceiveButton->setIcon(testtools::ui::appIcon(testtools::ui::Icon::Clear));
+    channel.clearReceiveButton->setIconSize({20, 20});
     channel.searchButton->setCheckable(true);
     channel.searchButton->setToolTip(QStringLiteral("搜索与过滤当前日志（Ctrl+F）"));
     receiveHeader->addWidget(channel.searchButton);

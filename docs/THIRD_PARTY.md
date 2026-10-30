@@ -12,6 +12,7 @@
 | tiny-process-library | <https://github.com/eidheim/tiny-process-library.git> | `4c4f1c68e90423e0b43091deeebcdb6c0fc02fb2` | `process_win.cpp` 为 Qt GUI 后台命令补齐有效 stdin，并使用 `CREATE_NO_WINDOW` |
 | Android SDK Platform-Tools（精简 Windows ADB） | [官方下载](https://dl.google.com/android/repository/platform-tools_r36.0.0-win.zip) · [上游说明](https://developer.android.com/tools/releases/platform-tools) | `36.0.0-13206524`，ADB 客户端版本 `1.0.41` | 无修改；仅保留 `adb.exe`、两个配套 DLL、`NOTICE.txt`、`source.properties` |
 | scrcpy（Windows x64） | [官方发布](https://github.com/Genymobile/scrcpy/releases/tag/v4.1) | `4.1` | 无修改；保留客户端、server、DLL 和图标，移除重复 ADB 与启动脚本，补齐依赖许可 |
+| Phosphor Icons（内置 SVG） | [上游](https://github.com/phosphor-icons/core) · [固定发行包](https://registry.npmjs.org/@phosphor-icons/core/-/core-2.1.1.tgz) | `@phosphor-icons/core@2.1.1`（MIT，按发行包固定） | 只保留使用的 Bold/Fill/Duotone 图标，图形路径不变；运行时统一填色，样式表控件派生仅替换填色 |
 
 ADB 固定归档 SHA-256：`12c2841f354e92a0eb2fd7bf6f0f9bf8538abce7bd6b060ac8349d6f6a61107c`。
 提取文件的摘要保存在 [`third_party/platform-tools/SHA256SUMS.txt`](../third_party/platform-tools/SHA256SUMS.txt)，
@@ -19,6 +20,10 @@ ADB 固定归档 SHA-256：`12c2841f354e92a0eb2fd7bf6f0f9bf8538abce7bd6b060ac834
 该目录是受控的预编译依赖，构建时直接复制，不自动升级；升级后更新版本、摘要并核对 ADB 枚举与终端启动。
 
 每个依赖的许可证文件保留在其对应目录中。
+Phosphor 的发行包 SHA-512 完整性、提取范围见 [版本记录](../third_party/phosphor-icons/VERSION.md)，
+文件摘要见 [SHA256SUMS](../third_party/phosphor-icons/SHA256SUMS.txt)，许可见 [LICENSE](../third_party/phosphor-icons/LICENSE)。
+SVG 通过 Qt Resource 编译进主程序，构建不需要 npm 或联网；许可证复制到输出目录的 `licenses/Phosphor-Icons-LICENSE.txt`。
+桌面增加 Qt SVG 模块用于按 DPR 渲染；Qt 依赖仍限于 UI 层。
 scrcpy 归档摘要、保留文件、依赖源码和补充许可见 [随包版本说明](../third_party/scrcpy/VERSION.md)，
 文件摘要见 [SHA256SUMS](../third_party/scrcpy/SHA256SUMS.txt)。构建仅复制固定工具，不下载或自动升级。
 

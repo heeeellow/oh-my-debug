@@ -487,3 +487,25 @@ Agent 留出稳定边界。
 | 代表界面 | 按本批影响选 5 个状态：单串口录制与搜索高亮、1120×768 窄窗、文件打开失败、双端、宽屏高 DPI 终端。常规为实际 DPR 1.25；高 DPI 为 1.5，受当前桌面工作区限制实际 1709×943（请求 1920×1080），按实际尺寸记录。五张均核对元数据并逐张目检；见 `recording-*.png/json`，未展开全页面组合 |
 | 文档、静态边界与差异 | 文档检查、Qt 依赖边界、项目登记与差异范围复核通过；原有 1A 修改保留，随本次 0.11.0 阶段提交归档。见 `static-checks.log` 与 `scope-check.json` |
 | 实机、物理异常与长时压力 | 未验证；假串口、模拟磁盘失败与短突发数据不能替代物理拔线、真实磁盘满或长时间高波特率录制 |
+
+
+## 2026-10-30：0.12.0 / 2A 文件管理与目录性能归档
+
+本地提交 `369def0`，未打标签、未推送。下列为当时从 STATUS 迁入的验证记录；当前图标版本与验收见 [STATUS](STATUS.md)。证据根目录为 `build/iteration-0.12.0/`。
+
+
+以下仅记录 0.12.0 / 2A；历史结果见 DEVLOG。设备侧变更仍使用假 ADB 或注入夹具，本地文件变更仅在隔离主机目录执行；本次另在当前 RK3568 Android 设备上只读列举目录并测量，没有修改开发板文件或服务。
+
+| 范围 | 结果与证据 |
+| --- | --- |
+| 桌面构建与固定 Bundle | Debug/Release 通过，既有 Bundle v2 三包大小与 SHA-256 校验通过；见 `browse-latency/Release-build.log`、`browse-latency/Debug-build.log`。Qt 部署仍有可选 dxcompiler/dxil DLL 提示，当前 Widgets 运行正常 |
+| 无 Qt 核心 | CTest 3/3 通过；文件检查新增单层名称、Windows UTF-16/设备字节限额、管理与传输互斥、固定设备/目录、逐项失败、未执行取消和本地操作独立于 ADB。初次 3/3 见 `core-tests.log`；本次权限输入、纯八进制门禁、特殊位和目录/链接边界的文件契约 1/1 见 `refinement-core.log` |
+| Agent 主机契约 | 1/1 通过，见 `build.log`；Agent 源码、程序版本与协议未变，未重建板端程序 |
+| 主机实际文件与假 ADB | 原生后端检查通过；在隔离目录执行 Unicode/引号/& 名称的新建、改名、删除与参数化权限命令及写后回读，核对同名不覆盖、内容保留、类型变化、保护目录、模拟挂载表和 Windows 目录链接不跟随目标。假 ADB 实际运行主机 Git Bash，不证明 Android/Linux 工具兼容或权限通过。Git Bash 未保留完整 POSIX 权限时，核对结果必须为失败，不能按退出码报告成功；原生实测与独立 stat 结果一致。见 `refinement-confirm-tests.log`、`native-tests/evidence/native data*` |
+| 原生界面与回归 | 受影响的 5 项 CTest 通过：文件页、文件后端、独立页面、录制、文件管理。覆盖收藏/历史/系统分组、偏好恢复、失败保留列表、首次任务展开、删除确认与上下文复核、任务互斥/取消/部分结果、结果摘要保留及本地改名；新增权限实际值读取、数字/勾选同步、混合值、读取失败、取消、手动应用与设备变化失效，核对地址栏直接收藏及空闲任务入口隐藏。见 `refinement-final-tests.log`（独立页面与录制）、`refinement-confirm-tests.log`（后端）及 `browse-latency/final-related-tests.log`（本次后端、文件页与文件管理 3/3；覆盖批量/旧工具回退元数据一致、NUL 名称、时间/链接格式及常用目录） |
+| 夹具调整 | 原文件页改用隔离偏好，避免新增的历史恢复使“首次根目录”用例读到上次目录；原录制夹具修正文件对话框尚未稳定时的路径选择，核对实际目标，连续三次通过，见 `recording-repeat.log`。未修改生产录制逻辑 |
+| 代表界面 | 初次 2A 已检查 5 个代表状态；本次仅复查目录下拉、权限编辑、多选混合权限、窄窗与高 DPI 权限弹窗共 5 个样本，分别核对元数据及目检；最新实际尺寸与 DPR 见 `refinement-snapshot-check.json`，未展开全页面组合；本次目录优化仅新增目检常用目录下拉、实机 `/proc` 和 OEM 日志目录 3 个样本，见 `browse-latency/snapshot-check.json` |
+| 目录读取性能 | 当前 RK3568 Android 只读对比：旧实现 `/` 1109 ms、`/proc` 9250 ms、`/sdcard/oem_log` 329 ms（各 1 次）；正式后端优化后各 3 次，分别为 161–178 ms、172–179 ms、137–144 ms。测量包含实际 ADB 请求与主机解析，未用目录内容缓存；`/proc` 条目数随进程变化。见 `browse-latency/baseline.json`、`performance-summary.json` 和 `after-*.jsonl` |
+| 实机只读界面 | 实际窗口的 `/proc` 和 `/sdcard/oem_log` 切换分别约 197 ms、167 ms；目录历史/下拉更新由约 150–159 ms 降到 5–12 ms，10 ms GUI 定时器观察到的最大间隔由约 0.3 s 降到 24 ms（此数值不是完整帧率验收）。根目录、`/sdcard` 与切页恢复也通过，未执行文件变更或 Agent 部署。见 `browse-latency/live-ui-final.log`、`ui-cost-before.log` |
+| 文档、静态边界与差异 | 文档入口/链接、无 Qt 边界、项目登记与差异范围检查通过，见 `browse-latency/static-checks.log`、`browse-latency/verification.json`；0.12.0 随本次本地提交归档 |
+| 实机写入、物理异常与长时压力 | 未验证；目录读取以外未做新的实机验收，未执行开发板文件变更、真实权限修改、真实挂载变化、SELinux/只读分区、物理拔线或大目录长时操作 |

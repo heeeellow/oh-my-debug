@@ -1,6 +1,7 @@
 #include "ui/widgets/file_pane.h"
 #include "application/device/file_transfer_service.h"
 #include "ui/theme.h"
+#include "ui/icons.h"
 #include "ui/widgets/file_icon_provider.h"
 #include <QtCore/QCollator>
 #include <QtCore/QDateTime>
@@ -157,22 +158,14 @@ class FileView final : public QTreeView {
 };
 } // namespace
 FileListModel::FileListModel(QObject* parent, bool remote)
-    : QAbstractTableModel(parent), iconProvider_(new FileIconProvider(this)), remote_(remote)
+    : QAbstractTableModel(parent), iconProvider_(remote ? nullptr : new FileIconProvider(this)),
+      remote_(remote)
 {
-    const QStyle::StandardPixmap symbols[] = {QStyle::SP_FileIcon,
-                                              QStyle::SP_DirIcon,
-                                              QStyle::SP_DirLinkIcon,
-                                              QStyle::SP_FileLinkIcon,
-                                              QStyle::SP_MediaVolume,
-                                              QStyle::SP_FileDialogContentsView,
-                                              QStyle::SP_FileDialogDetailedView,
-                                              QStyle::SP_ComputerIcon};
-    for (int i = 0; i < 8; ++i)
-        icons_[i] = QApplication::style()->standardIcon(symbols[i]);
-    iconProvider_->changed = [this] {
-        if (rowCount())
-            emit dataChanged(index(0, 0), index(rowCount() - 1, 0), {Qt::DecorationRole});
-    };
+    if (iconProvider_)
+        iconProvider_->changed = [this] {
+            if (rowCount())
+                emit dataChanged(index(0, 0), index(rowCount() - 1, 0), {Qt::DecorationRole});
+        };
 }
 int FileListModel::rowCount(const QModelIndex& p) const
 {
@@ -216,59 +209,43 @@ QVariant FileListModel::data(const QModelIndex& i, int role) const
                                      : QStringLiteral("\n链接到：") + text(e.linkTarget)) +
                (e.metadataError.empty() ? QString() : "\n" + text(e.metadataError));
     if (role == Qt::DecorationRole && i.column() == 0) {
-        int icon = 0;
-        if (e.kind == testtools::FileKind::Symlink)
-            icon = e.browsable() ? 2 : 3;
-        else if (e.browsable())
-            icon = 1;
-        else {
-            const auto category = type(e);
-            if (category == QStringLiteral("音频文件"))
-                icon = 4;
-            else if (category == QStringLiteral("图像文件"))
-                icon = 5;
-            else if (category == QStringLiteral("文本文档") ||
-                     category == QStringLiteral("日志文件") ||
-                     category == QStringLiteral("配置文件"))
-                icon = 6;
-            else if (category == QStringLiteral("Android 安装包"))
-                icon = 7;
-        }
-        const auto name = text(e.name);
-        auto extension = QFileInfo(name).suffix().toLower();
-        QString requestPath = QDir(directory_).filePath(name);
-        bool byAttributes = remote_;
+        using testtools::ui::Icon;
+        auto glyph = Icon::File;
         const bool link = e.kind == testtools::FileKind::Symlink;
-        if (remote_) {
-            // 远端条目不下载或嗅探文件内容，直接按扩展名映射常见系统 Shell 文件类型图标。
-            if (icon == 4)
-                extension = "wav";
-            else if (icon == 5)
-                extension = "png";
-            else if (icon == 6)
-                extension = "txt";
-            else if (type(e) == QStringLiteral("脚本文件"))
-                extension = "bat";
-            else if (type(e) == QStringLiteral("库文件"))
-                extension = "dll";
-            else if (type(e) == QStringLiteral("视频文件"))
-                extension = "mp4";
-            else if (extension == "apk")
-                extension = "exe";
-            else if (type(e) == QStringLiteral("压缩文件"))
-                extension = "zip";
+        const auto category = type(e);
+        if (link)
+            glyph = e.browsable() ? Icon::FolderLink : Icon::FileLink;
+        else if (e.browsable())
+            glyph = Icon::Folder;
+        else if (category == QStringLiteral("日志文件") || category == QStringLiteral("文本文档"))
+            glyph = Icon::Log;
+        else if (category == QStringLiteral("配置文件"))
+            glyph = Icon::Config;
+        else if (category == QStringLiteral("脚本文件") || category == QStringLiteral("库文件"))
+            glyph = Icon::Code;
+        else if (category == QStringLiteral("图像文件"))
+            glyph = Icon::Image;
+        else if (category == QStringLiteral("音频文件"))
+            glyph = Icon::Audio;
+        else if (category == QStringLiteral("视频文件"))
+            glyph = Icon::Video;
+        else if (category == QStringLiteral("压缩文件"))
+            glyph = Icon::Archive;
+        else if (category == QStringLiteral("Android 安装包"))
+            glyph = Icon::Package;
+        const auto fallback = testtools::ui::appIcon(glyph);
+        if (remote_ || e.browsable() || link)
+            return fallback;
+        // 本地普通文件继续异步读取 Windows 关联图标，保留 EXE/LNK 等自有图标。
+        const auto name = text(e.name);
+        const auto extension = QFileInfo(name).suffix().toLower();
+        QString requestPath = QDir(directory_).filePath(name);
+        const bool byAttributes = extension != "exe" && extension != "lnk" && extension != "ico";
+        if (byAttributes)
             requestPath = "file." + extension;
-        } else if (!e.browsable() && !link && extension != "exe" && extension != "lnk" &&
-                   extension != "ico") {
-            byAttributes = true;
-            requestPath = "file." + extension;
-        }
-        const auto key = (remote_ ? "remote:" : "local:") +
-                         (byAttributes ? (e.browsable() ? QStringLiteral("folder") : extension)
-                                       : requestPath + ":" + text(e.modified)) +
-                         (link ? ":link" : "");
-        return iconProvider_->icon(
-            key, requestPath, byAttributes, e.browsable(), link, icons_[icon]);
+        const auto key = QStringLiteral("local:") +
+                         (byAttributes ? extension : requestPath + ":" + text(e.modified));
+        return iconProvider_->icon(key, requestPath, byAttributes, false, false, fallback);
     }
     if (role == Qt::TextAlignmentRole && i.column() == 1)
         return int(Qt::AlignRight | Qt::AlignVCenter);
@@ -318,9 +295,10 @@ FilePane::FilePane(bool remote, QWidget* parent) : QFrame(parent), remote_(remot
     layout->addLayout(heading);
     auto* bar = new QHBoxLayout;
     bar->setSpacing(4);
-    auto tool = [&](QStyle::StandardPixmap icon, const QString& name, auto callback) {
+    auto tool = [&](testtools::ui::Icon icon, const QString& name, auto callback) {
         auto* b = new QToolButton(this);
-        b->setIcon(style()->standardIcon(icon));
+        b->setIcon(testtools::ui::appIcon(icon));
+        b->setIconSize({20, 20});
         b->setToolTip(name);
         b->setAccessibleName(name);
         b->setAutoRaise(true);
@@ -330,24 +308,24 @@ FilePane::FilePane(bool remote, QWidget* parent) : QFrame(parent), remote_(remot
         connect(b, &QToolButton::clicked, this, callback);
         return b;
     };
-    tool(QStyle::SP_ArrowBack, QStringLiteral("后退 · Alt+Left"), [this] {
+    tool(testtools::ui::Icon::ChevronLeft, QStringLiteral("后退 · Alt+Left"), [this] {
         if (historyIndex_ > 0) {
             pendingHistory_ = historyIndex_ - 1;
             navigate(history_[pendingHistory_]);
         }
     });
-    tool(QStyle::SP_ArrowForward, QStringLiteral("前进 · Alt+Right"), [this] {
+    tool(testtools::ui::Icon::ChevronRight, QStringLiteral("前进 · Alt+Right"), [this] {
         if (historyIndex_ + 1 < history_.size()) {
             pendingHistory_ = historyIndex_ + 1;
             navigate(history_[pendingHistory_]);
         }
     });
-    tool(QStyle::SP_FileDialogToParent, QStringLiteral("上一级 · Backspace"), [this] {
+    tool(testtools::ui::Icon::Up, QStringLiteral("上一级 · Backspace"), [this] {
         navigate(remote_ ? text(testtools::FileTransferService::normalizeRemoteDirectory(
                                pathEdit()->text().toUtf8().toStdString() + "/.."))
                          : QDir::cleanPath(pathEdit()->text() + "/.."));
     });
-    tool(QStyle::SP_BrowserReload, QStringLiteral("刷新 · F5"), [this] {
+    tool(testtools::ui::Icon::Refresh, QStringLiteral("刷新 · F5"), [this] {
         if (openRequested)
             openRequested();
     });
@@ -363,17 +341,24 @@ FilePane::FilePane(bool remote, QWidget* parent) : QFrame(parent), remote_(remot
     navigation_.push_back(address_);
     bar->addWidget(address_, 1);
     if (remote_) {
-        locationIcon_ = style()->standardIcon(QStyle::SP_DirIcon);
+        locationIcon_ = testtools::ui::appIcon(testtools::ui::Icon::Folder);
         bookmark_ = new QToolButton(this);
         bookmark_->setObjectName("fileBookmarks");
-        bookmark_->setCheckable(true); bookmark_->setAutoRaise(true);
+        bookmark_->setCheckable(true);
+        bookmark_->setAutoRaise(true);
         bookmark_->setText(QStringLiteral("收藏"));
-        bookmark_->setMinimumWidth(fontMetrics().horizontalAdvance(QStringLiteral("已收藏")) + 14);
-        bookmark_->setStyleSheet(QStringLiteral("QToolButton:checked { color: #754837; background: #eee0d7; border-color: #c9b0a1; }"));
+        bookmark_->setIcon(testtools::ui::appIcon(testtools::ui::Icon::Favorite));
+        bookmark_->setIconSize({20, 20});
+        bookmark_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        bookmark_->setMinimumWidth(fontMetrics().horizontalAdvance(QStringLiteral("已收藏")) + 40);
+        bookmark_->setStyleSheet(QStringLiteral(
+            "QToolButton:checked { color: #754837; background: #eee0d7; border-color: #c9b0a1; }"));
         bookmark_->setAccessibleName(QStringLiteral("收藏当前目录"));
-        bar->addWidget(bookmark_); navigation_.push_back(bookmark_);
+        bar->addWidget(bookmark_);
+        navigation_.push_back(bookmark_);
         connect(bookmark_, &QToolButton::clicked, this, [this] {
-            if (managementAvailable_ && !loadedPath_.isEmpty() && favoriteRequested) favoriteRequested(loadedPath_);
+            if (managementAvailable_ && !loadedPath_.isEmpty() && favoriteRequested)
+                favoriteRequested(loadedPath_);
             refreshLocations();
         });
         address_->view()->setObjectName("fileLocationsPopup");
@@ -385,7 +370,7 @@ FilePane::FilePane(bool remote, QWidget* parent) : QFrame(parent), remote_(remot
             "QAbstractItemView::item:hover { background: #f4eee9; }"
             "QAbstractItemView::item:selected { background: #edddd2; color: #694d3f; }"));
     }
-    tool(remote ? QStyle::SP_DialogOpenButton : QStyle::SP_DirOpenIcon,
+    tool(testtools::ui::Icon::OpenFolder,
          remote ? QStringLiteral("打开目录") : QStringLiteral("选择本地目录"),
          [this] {
              if (remote_) {
@@ -451,7 +436,8 @@ FilePane::FilePane(bool remote, QWidget* parent) : QFrame(parent), remote_(remot
         new QPushButton(remote ? QStringLiteral("下载所选") : QStringLiteral("上传所选"), this);
     transfer_->setObjectName(remote ? "fileDownloadButton" : "fileUploadButton");
     transfer_->setProperty("buttonRole", QStringLiteral("primary"));
-    transfer_->setIcon(style()->standardIcon(remote ? QStyle::SP_ArrowDown : QStyle::SP_ArrowUp));
+    transfer_->setIcon(testtools::ui::appIcon(remote ? testtools::ui::Icon::Download : testtools::ui::Icon::Upload, testtools::ui::IconTone::OnPrimary));
+    transfer_->setIconSize({20, 20});
     footer->addWidget(transfer_);
     layout->addLayout(footer);
     connect(filter_, &QLineEdit::textChanged, this, [this](const QString& value) {
@@ -532,7 +518,7 @@ FilePane::FilePane(bool remote, QWidget* parent) : QFrame(parent), remote_(remot
         QMenu menu;
         addManagementActions(menu);
         menu.addSeparator();
-        auto* copy = menu.addAction(style()->standardIcon(QStyle::SP_FileDialogContentsView),
+        auto* copy = menu.addAction(testtools::ui::appIcon(testtools::ui::Icon::Copy),
                                     QStringLiteral("复制完整路径"));
         copy->setEnabled(!selectedEntries().empty());
         if (menu.exec(view_->viewport()->mapToGlobal(p)) == copy) {
@@ -692,7 +678,8 @@ void FilePane::addManagementActions(QMenu& menu)
     using O = testtools::FileOperation;
     const auto selected = selectedEntries();
     const auto add = [this, &menu](const QString& label, O operation, bool enabled) {
-        auto* action = menu.addAction(label); action->setEnabled(managementAvailable_ && enabled);
+        const auto icon = operation == O::CreateFolder ? testtools::ui::Icon::NewFolder : operation == O::Rename ? testtools::ui::Icon::Rename : operation == O::Remove ? testtools::ui::Icon::Delete : testtools::ui::Icon::Config;
+        auto* action = menu.addAction(testtools::ui::appIcon(icon), label); action->setEnabled(managementAvailable_ && enabled);
         connect(action, &QAction::triggered, this, [this, operation] { if (changeRequested) changeRequested(operation); });
     };
     add(QStringLiteral("新建文件夹…"), O::CreateFolder, true);

@@ -1,4 +1,5 @@
 #include "ui/pages/file_transfer_workspace.h"
+#include "ui/icons.h"
 #include "ui/theme.h"
 #include "ui/widgets/file_pane.h"
 #include "ui/widgets/file_permissions_dialog.h"
@@ -115,7 +116,8 @@ FileTransferWorkspace::FileTransferWorkspace(
     retry_ = new QPushButton(QStringLiteral("重试失败项"), this);
     retry_->setObjectName(QStringLiteral("fileRetryButton"));
     retry_->setToolTip(QStringLiteral("仅重试当前批次的失败项，沿用原设备、目录和同名处理选择"));
-    retry_->setIcon(style()->standardIcon(QStyle::SP_DialogRetryButton));
+    retry_->setIcon(testtools::ui::appIcon(testtools::ui::Icon::Refresh));
+    retry_->setIconSize({20, 20});
     recordHeader->addWidget(retry_);
     recordHeader->addWidget(cancel_);
     connect(retry_, &QPushButton::clicked, this, &FileTransferWorkspace::retryFailed);

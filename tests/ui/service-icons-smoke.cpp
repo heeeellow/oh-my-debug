@@ -103,8 +103,8 @@ int main(int argc, char** argv)
         app.setStyle("Fusion");
         app.setFont(QFont("Microsoft YaHei UI", 10));
         qputenv("TESTTOOLS_OFFLINE", "1");
-        // Real Windows Shell icon loading, no board or file content download.
-        FileListModel model(nullptr, true);
+        // Local files retain asynchronous Windows associations; device categories use embedded SVG.
+        FileListModel model(nullptr, false);
         model.replace({{"log.txt", testtools::FileKind::Regular},
                        {"bundle.zip", testtools::FileKind::Regular},
                        {"photo.png", testtools::FileKind::Regular},
@@ -113,6 +113,15 @@ int main(int argc, char** argv)
                        {"tool.sh", testtools::FileKind::Regular},
                        {"lib.so", testtools::FileKind::Regular},
                        {"client.apk", testtools::FileKind::Regular}});
+        FileListModel remoteModel(nullptr, true);
+        std::vector<testtools::FileEntry> remoteEntries;
+        for (int row = 0; row < model.rowCount(); ++row)
+            remoteEntries.push_back(model.entry(row));
+        remoteModel.replace(std::move(remoteEntries));
+        QSignalSpy remoteChanges(&remoteModel, &QAbstractItemModel::dataChanged);
+        const auto remoteKey =
+            qvariant_cast<QIcon>(remoteModel.data(remoteModel.index(0, 0), Qt::DecorationRole))
+                .cacheKey();
         QSignalSpy changes(&model, &QAbstractItemModel::dataChanged);
         const auto placeholder =
             qvariant_cast<QIcon>(model.data(model.index(1, 0), Qt::DecorationRole)).cacheKey();
@@ -123,8 +132,13 @@ int main(int argc, char** argv)
         check(qvariant_cast<QIcon>(model.data(model.index(1, 0), Qt::DecorationRole)).cacheKey() !=
                   placeholder,
               "native archive icon replaces fallback");
+        check(remoteChanges.count() == 0 &&
+                  remoteKey == qvariant_cast<QIcon>(
+                                   remoteModel.data(remoteModel.index(0, 0), Qt::DecorationRole))
+                                   .cacheKey(),
+              "device SVG categories stay stable without background Shell replacement");
         QTreeView types;
-        types.setModel(&model);
+        types.setModel(&remoteModel);
         types.setRootIsDecorated(false);
         types.resize(750, 360);
         types.show();
