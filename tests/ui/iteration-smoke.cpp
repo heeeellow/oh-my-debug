@@ -45,6 +45,9 @@ class FixtureTransport final : public serialdemo::ISerialTransport {
 };
 class Files final : public testtools::IFileTransferBackend {
   public:
+    testtools::FileTransferResult change(const testtools::FileChange&, const std::atomic<bool>&) override
+    { return {testtools::TransferOutcome::Failed, "fixture change unsupported"}; }
+
     testtools::FileListing list(const std::string&, const std::string& directory,
                                 const std::atomic<bool>&) override
     { return {directory, {}, {}}; }

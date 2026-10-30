@@ -12,7 +12,15 @@ void check(bool condition, const char* message)
 }
 class Backend final : public IFileTransferBackend {
   public:
-    std::vector<std::string> serials, paths;
+    testtools::FileTransferResult change(const testtools::FileChange& request, const std::atomic<bool>&) override
+    {
+        serials.push_back(request.serial); paths.push_back(request.parent + '/' + request.entry.name);
+        permissions.push_back(request.permissions);
+        if (cancelAfterOne) service->cancel();
+        return {request.entry.name == "bad.log" ? TransferOutcome::Failed : TransferOutcome::Completed, "change fixture"};
+    }
+
+    std::vector<std::string> serials, paths, permissions;
     FileTransferService* service = nullptr;
     bool cancelAfterOne = false;
     FileListing
@@ -114,6 +122,60 @@ int main()
               "cancel preserves completed item");
         auto local = FileTransferService::listLocal(std::filesystem::temp_directory_path(), cancel);
         check(local.error.empty() && !local.path.empty(), "local directory listing");
+        check(!FileTransferService::validChangeName("../escape", true) &&
+              !FileTransferService::validChangeName("back\\slash", true) &&
+              !FileTransferService::validChangeName("line\nname", true) &&
+              !FileTransferService::validChangeName("NUL.txt", false) &&
+              !FileTransferService::validChangeName("end.", false) &&
+              FileTransferService::validChangeName("中文 & 'file", false) &&
+              FileTransferService::validChangeName("key:value", true), "change name boundaries");
+        check(FileTransferService::validChangeName("COM10.log", false) && FileTransferService::validChangeName(u8"COM测试.log", false) &&
+              !FileTransferService::validChangeName("COM1.log", false) && !FileTransferService::validChangeName(u8"LPT¹.txt", false),
+              "device reserved names do not reject ordinary COM-prefixed logs");
+#ifdef _WIN32
+        std::string chineseName;
+        for (int i = 0; i < 100; ++i) chineseName += u8"中";
+        check(FileTransferService::validChangeName(chineseName, false) && !FileTransferService::validChangeName(chineseName, true),
+              "Windows UTF16 and remote byte name limits differ");
+#endif
+        backend->cancelAfterOne = false; backend->serials.clear(); backend->paths.clear();
+        FileManagementRequest change;
+        change.operation = FileOperation::Remove; change.remote = true; change.device = {"fixed-device", "device", ""};
+        change.parent = "/tmp/work"; change.entries = {{"a.log", FileKind::Regular}, {"bad.log", FileKind::Regular}};
+        check(service.prepareChange(change, error), "prepare file changes");
+        check(!service.prepare(request(), error) && !service.prepareChange(change, error), "shared transfer/change gate");
+        change.device.serial = "other-device"; change.parent = "/other";
+        service.executePrepared(); state = service.snapshot();
+        check(!state.active && state.operation == FileOperation::Remove && state.serial == "fixed-device" &&
+              state.records.size() == 2 && state.records[0].result.outcome == TransferOutcome::Completed &&
+              state.records[1].result.outcome == TransferOutcome::Failed && backend->serials[1] == "fixed-device" &&
+              backend->paths[1] == "/tmp/work/bad.log", "fixed change target and per-item outcomes");
+        check(service.prepareChange(change, error), "prepare cancellation");
+        service.cancel(); service.executePrepared();
+        check(service.snapshot().records[0].result.outcome == TransferOutcome::Cancelled, "cancel unstarted mutations");
+        check(FileTransferService::normalizePermissions("644") == "0644" &&
+            FileTransferService::normalizePermissions("2750") == "2750" &&
+            FileTransferService::normalizePermissions("0000") == "0000", "octal permission values preserve special bits and zero");
+        for (const auto& bad : {"", "64", "888", "10000", "755;id", "u+rwx", " 644", "0644\n"})
+            check(FileTransferService::normalizePermissions(bad).empty(), "reject non-octal permission input");
+        change.operation = FileOperation::SetPermissions; change.permissions = "640";
+        change.entries = {{"folder", FileKind::Directory}, {"ok.log", FileKind::Regular}};
+        check(service.prepareChange(change, error), "prepare explicit non-recursive directory/file permission batch");
+        service.executePrepared();
+        check(backend->permissions.back() == "0640", "forward canonical permissions rather than fixed 755");
+        change.permissions = "777; id";
+        check(!service.prepareChange(change, error), "permission commands cannot be injected");
+        change.permissions = "644"; change.entries = {{"link", FileKind::Symlink}};
+        check(!service.prepareChange(change, error), "permission changes never follow symlinks");
+        change.entries = {{"ok.log", FileKind::Regular}};
+        change.remote = false; change.parent = std::filesystem::temp_directory_path().u8string();
+        change.device = {}; change.operation = FileOperation::SetPermissions;
+        check(!service.prepareChange(change, error), "local chmod not available");
+        change.operation = FileOperation::Rename; change.newName = "../outside";
+        check(!service.prepareChange(change, error), "rename must be one valid entry");
+        change.entries.resize(1); change.newName = "renamed.log";
+        check(service.prepareChange(change, error), "local changes independent of ADB");
+        service.cancel(); service.executePrepared();
         std::cout << "file transfer contracts passed\n";
         return 0;
     } catch (const std::exception& e) {

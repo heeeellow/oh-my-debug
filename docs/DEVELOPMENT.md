@@ -241,6 +241,9 @@ ctest --test-dir build/tests/host -C Release --output-on-failure
 主机 CTest 包含 `core-application-contract`、`file-transfer-contract` 和 `serial-recording-contract`；Agent 主机契约由 `src/agent/` 的独立 CMake 工程验证。
 录制检查覆盖精确字节、UTF-8、成功 TX、停止/断线/退出、目标覆盖保护、注入的慢写与文件失败，以及有界显示投递；不访问串口设备。
 原生 `serial-recording-ui` 使用离线串口和文件夹具检查录制对话框、工具栏/全局停止、显示截断、搜索/高亮/ANSI、偏好和窗口退出。
+`file-management-ui` 用隔离偏好和目录检查分组路径、收藏/历史、确认与上下文门禁、任务状态；`native-file-backend` 另执行本地主机目录与假 ADB 下的固定管理命令，检查同名失败、链接不跟随和注入挂载表，不能作为实机 Linux/Android 验收。
+权限修改检查另覆盖实际值读取、数字/勾选同步、多选不一致、取消和设备变化、非法八进制参数及写后回读；Windows Git Bash 不保留完整 POSIX 权限，夹具须把实际值不一致记为失败，不能据此宣称 Linux/Android chmod 验收通过。
+文件管理代表图可按需设置 `TESTTOOLS_FILE_SNAPSHOTS=1` 留下，普通回归不默认抓图。自动文件对话框需等待可见，在实际文件名控件中提交路径并核对录制快照目标，避免目录模型加载时序造成夹具读错文件。
 按需设置 `TESTTOOLS_RECORDING_SNAPSHOTS=1` 留下代表状态及实际尺寸/DPR 元数据，常规交互回归不必重新留图。
 主机测试和离线快照均不要求开发板。`--offline` 跳过 ADB 发现、连接和设备退出清理；
 与设备冒烟或 `--self-test` 同时使用时返回 2，不执行设备命令。
@@ -357,7 +360,7 @@ ctest --test-dir build/tests/ui -C Release --output-on-failure
 
 这些测试链接当前产品的 Release 对象，覆盖真实 Widgets 交互、串口精确字节、Windows 原生图标、真实回环协议连接/失联与主机 ADB 异常夹具，默认不访问真实设备。
 修改产品代码后必须先重建产品和此测试目标，不能以旧对象结果验收。测试证据默认写入该 CMake 构建目录的 `evidence/`，偏好写入 `fixture-data/`，避免覆盖旧迭代记录。可用 CMake 的 `TESTTOOLS_TEST_OUTPUT` 或手动运行时的同名环境变量指定其他证据目录。
-`directory-perf` 为独立本地目录元数据性能样本，不纳入默认 CTest。
+`directory-perf` 为独立目录元数据性能样本，不纳入默认 CTest。无参数时只在隔离主机目录生成本地样本；显式指定 `--live-read-only <设备序列号>` 时仅列举 `/`、`/proc`、`/sdcard/oem_log` 并记录耗时，`ADB_PATH` 选择实际 ADB，不创建或修改开发板文件。原生后端另检查批量格式与旧工具回退的元数据一致性。
 
 `device-smoke <adb.exe绝对路径> <设备序列号>` 会在明确选择的设备 `/data/local/tmp/testtools-file-qa-<数字>` 下创建、修改并清理自有夹具，
 测试文件收发、目录链接与权限错误；需要明确的实机验收授权，不能把它当只读检查。

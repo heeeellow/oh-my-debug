@@ -138,6 +138,7 @@
     <ClCompile Include="src\application\device\screen_mirror_service.cpp" />
     <ClCompile Include="src\application\device\file_transfer_service.cpp" />
     <ClCompile Include="src\adapters\device\adb_file_transfer_backend.cpp" />
+    <ClCompile Include="src\adapters\device\file_management.cpp" />
     <ClCompile Include="src\ui\pages\file_transfer_workspace.cpp" />
     <ClCompile Include="src\adapters\device\scrcpy_backend.cpp" />
     <ClCompile Include="src\ui\screen_mirror_panel.cpp" />
@@ -166,6 +167,7 @@
     <ClCompile Include="src\ui\pages\serial_workspace.cpp" />
     <ClCompile Include="src\ui\widgets\file_icon_provider.cpp" />
     <ClCompile Include="src\ui\widgets\file_pane.cpp" />
+    <ClCompile Include="src\ui\widgets\file_permissions_dialog.cpp" />
     <ClCompile Include="src\ui\widgets\serial_connection_bar.cpp" />
     <ClCompile Include="src\ui\widgets\serial_shortcut_sidebar.cpp" />
     <ClCompile Include="src\ui\widgets\serial_keyword_highlighter.cpp" />
@@ -195,6 +197,7 @@
     <ClInclude Include="src\application\device\screen_mirror_service.h" />
     <ClInclude Include="src\application\device\file_transfer_service.h" />
     <ClInclude Include="src\core\device\file_transfer.h" />
+    <ClInclude Include="src\adapters\device\file_management.h" />
     <ClInclude Include="src\adapters\device\scrcpy_backend.h" />
     <ClInclude Include="src\core\device\screen_mirror.h" />
       <ClInclude Include="src\application\serial\serial_session.h" />
@@ -224,6 +227,7 @@
     <ClInclude Include="src\diagnostics\self_test.h" />
     <ClInclude Include="src\ui\widgets\file_icon_provider.h" />
     <ClInclude Include="src\ui\widgets\file_pane.h" />
+    <ClInclude Include="src\ui\widgets\file_permissions_dialog.h" />
     <ClInclude Include="src\ui\widgets\serial_connection_bar.h" />
     <ClInclude Include="src\ui\widgets\serial_shortcut_sidebar.h" />
     <ClInclude Include="src\ui\widgets\serial_keyword_highlighter.h" />

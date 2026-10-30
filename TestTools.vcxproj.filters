@@ -39,6 +39,7 @@
     <ClCompile Include="src\application\device\screen_mirror_service.cpp"><Filter>应用层\设备</Filter></ClCompile>
     <ClCompile Include="src\application\device\file_transfer_service.cpp"><Filter>应用层\设备</Filter></ClCompile>
     <ClCompile Include="src\adapters\device\adb_file_transfer_backend.cpp"><Filter>适配器\ADB</Filter></ClCompile>
+    <ClCompile Include="src\adapters\device\file_management.cpp"><Filter>适配器\ADB</Filter></ClCompile>
     <ClCompile Include="src\ui\pages\file_transfer_workspace.cpp"><Filter>界面</Filter></ClCompile>
     <ClCompile Include="src\adapters\device\scrcpy_backend.cpp"><Filter>适配器</Filter></ClCompile>
     <ClCompile Include="src\ui\screen_mirror_panel.cpp"><Filter>界面</Filter></ClCompile>
@@ -67,6 +68,7 @@
     <ClCompile Include="src\ui\pages\serial_workspace.cpp"><Filter>界面</Filter></ClCompile>
     <ClCompile Include="src\ui\widgets\file_icon_provider.cpp"><Filter>界面</Filter></ClCompile>
     <ClCompile Include="src\ui\widgets\file_pane.cpp"><Filter>界面</Filter></ClCompile>
+    <ClCompile Include="src\ui\widgets\file_permissions_dialog.cpp"><Filter>界面</Filter></ClCompile>
     <ClCompile Include="src\ui\widgets\serial_connection_bar.cpp"><Filter>界面</Filter></ClCompile>
     <ClCompile Include="src\ui\widgets\serial_shortcut_sidebar.cpp"><Filter>界面</Filter></ClCompile>
     <ClCompile Include="src\ui\widgets\serial_keyword_highlighter.cpp"><Filter>界面</Filter></ClCompile>
@@ -96,6 +98,7 @@
     <ClInclude Include="src\application\device\screen_mirror_service.h"><Filter>应用层\设备</Filter></ClInclude>
     <ClInclude Include="src\application\device\file_transfer_service.h"><Filter>应用层\设备</Filter></ClInclude>
     <ClInclude Include="src\core\device\file_transfer.h"><Filter>核心层</Filter></ClInclude>
+    <ClInclude Include="src\adapters\device\file_management.h"><Filter>适配器\ADB</Filter></ClInclude>
     <ClInclude Include="src\adapters\device\scrcpy_backend.h"><Filter>适配器</Filter></ClInclude>
     <ClInclude Include="src\core\device\screen_mirror.h"><Filter>核心层</Filter></ClInclude>
       <ClInclude Include="src\application\serial\serial_session.h"><Filter>应用层\串口</Filter></ClInclude>
@@ -125,6 +128,7 @@
     <ClInclude Include="src\diagnostics\self_test.h"><Filter>诊断</Filter></ClInclude>
     <ClInclude Include="src\ui\widgets\file_icon_provider.h"><Filter>界面</Filter></ClInclude>
     <ClInclude Include="src\ui\widgets\file_pane.h"><Filter>界面</Filter></ClInclude>
+    <ClInclude Include="src\ui\widgets\file_permissions_dialog.h"><Filter>界面</Filter></ClInclude>
     <ClInclude Include="src\ui\widgets\serial_connection_bar.h"><Filter>界面</Filter></ClInclude>
     <ClInclude Include="src\ui\widgets\serial_shortcut_sidebar.h"><Filter>界面</Filter></ClInclude>
     <ClInclude Include="src\ui\widgets\serial_keyword_highlighter.h"><Filter>界面</Filter></ClInclude>

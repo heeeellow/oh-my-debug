@@ -1,5 +1,6 @@
 #include "adapters/adb/adb_transport.h"
 #include "application/device/file_transfer_service.h"
+#include "adapters/device/file_management.h"
 
 #include <algorithm>
 #include <cctype>
@@ -8,6 +9,7 @@
 #include <random>
 #include <set>
 #include <stdexcept>
+#include <unordered_map>
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -33,21 +35,7 @@ std::string token()
 
 bool windowsName(const std::string& name)
 {
-    if (!FileTransferService::validName(name) || name.back() == '.' || name.back() == ' ' ||
-        name.find_first_of("\\:<>\"|?*") != std::string::npos ||
-        std::any_of(name.begin(), name.end(), [](unsigned char c) { return c < 32; }))
-        return false;
-    auto base = name.substr(0, name.find('.'));
-    std::transform(base.begin(), base.end(), base.begin(), [](unsigned char c) {
-        return char(std::toupper(c));
-    });
-    if (base == "CON" || base == "PRN" || base == "AUX" || base == "NUL" || base == "CLOCK$")
-        return false;
-    if (base.size() >= 4 && (base.substr(0, 3) == "COM" || base.substr(0, 3) == "LPT") &&
-        (std::isdigit(static_cast<unsigned char>(base[3])) ||
-         static_cast<unsigned char>(base[3]) >= 128))
-        return false;
-    return true;
+    return FileTransferService::validChangeName(name, false);
 }
 
 bool linkOrReparse(const std::filesystem::path& path)
@@ -107,6 +95,20 @@ struct WindowsPathLess {
 
 class AdbFileTransferBackend final : public IFileTransferBackend {
   public:
+    FileTransferResult change(const FileChange& request, const std::atomic<bool>& cancel) override
+    {
+        if (cancel) return {TransferOutcome::Cancelled, "尚未执行，已取消"};
+        if (!request.remote) return changeLocalFile(request, cancel);
+        const auto command = run(request.serial, {"shell", "-T", deviceFileChangeScript(request)}, cancel, {}, std::chrono::seconds(30));
+        std::string error;
+        if (!success(command, error)) {
+            auto result = failure(command);
+            result.message += "（已执行部分可能生效，请刷新复核；取消不会恢复）";
+            return result;
+        }
+        return {TransferOutcome::Completed, request.operation == FileOperation::Rename ? "已重命名为：" + request.newName :
+            request.operation == FileOperation::SetPermissions ? "权限已核对为：" + request.permissions : "操作完成"};
+    }
     FileListing list(const std::string& serial,
                      const std::string& directory,
                      const std::atomic<bool>& cancel) override
@@ -114,8 +116,23 @@ class AdbFileTransferBackend final : public IFileTransferBackend {
         FileListing result;
         result.path = directory;
         // 使用 NUL 分隔字段，完整保留远端文件名中可能包含的空格与换行符。
-        const std::string script = "cd " + quote(directory) + R"( || exit 1
+        const std::string script = "cd " + quote(directory) + R"TTFS( || exit 1
 [ -r . ] && [ -x . ] || { printf 'Permission denied: directory is not readable\n' >&2; exit 1; }
+platform=unknown
+if command -v getprop >/dev/null 2>&1 && [ -n "$(getprop ro.build.version.sdk 2>/dev/null)" ]; then platform=android
+elif [ -r /proc/device-tree/compatible ] && grep -q rockchip /proc/device-tree/compatible; then platform=rockchip_linux
+elif [ -d /proc ] && [ -d /sys ]; then platform=linux; fi
+# find 在单个进程中读取目录元数据，避免逐项启动 stat/readlink。
+# 老固件不支持所需格式时回退到原有读取路径；所有字段仍以 NUL 分隔。
+if find -H . -maxdepth 0 -printf '%f\0%M\0%s\0%T@\0%l\0%m\0' >/dev/null 2>&1; then
+  printf 'testtools-files-v3\000%s\000' "$platform"
+  find . -mindepth 1 -maxdepth 1 -printf '%f\0%M\0%s\0%T@\0%l\0%m\0' || exit 1
+  printf '\000'
+  # 只对链接批量读取目标类型，不进入目标目录。失效/无权限链接保留链接自身。
+  find . -mindepth 1 -maxdepth 1 -type l -exec sh -c 'find -H "$@" -maxdepth 0 -printf "%f\0%M\0"' _ '{}' + 2>/dev/null || :
+  exit 0
+fi
+printf 'testtools-files-v2\000%s\000' "$platform"
 for f in * .[!.]* ..?*; do
   [ -e "$f" ] || [ -L "$f" ] || continue
   target=; tk=o; warning=
@@ -123,10 +140,10 @@ for f in * .[!.]* ..?*; do
     k=l; target=$(readlink -- "$f" 2>/dev/null)
     if [ -d "$f" ]; then tk=d; elif [ -f "$f" ]; then tk=f; fi
   elif [ -d "$f" ]; then k=d; elif [ -f "$f" ]; then k=f; else k=o; fi
-  if info=$(stat -c '%s:%Y' -- "$f" 2>/dev/null); then :; else info=0:0; warning='无法读取属性'; fi
-  s=${info%%:*}; m=${info#*:}
-  printf '%s\000%s\000%s\000%s\000%s\000%s\000%s\000' "$f" "$k" "$s" "$m" "$tk" "$target" "$warning"
-done)";
+  if info=$(stat -c '%s:%Y:%a' -- "$f" 2>/dev/null); then :; else info=0:0:; warning='无法读取属性'; fi
+  s=${info%%:*}; rest=${info#*:}; m=${rest%%:*}; mode=${rest#*:}
+  printf '%s\000%s\000%s\000%s\000%s\000%s\000%s\000%s\000' "$f" "$k" "$s" "$m" "$tk" "$target" "$warning" "$mode"
+done)TTFS";
         const auto command =
             run(serial, {"shell", "-T", script}, cancel, {}, std::chrono::seconds(10));
         if (!success(command, result.error))
@@ -142,26 +159,65 @@ done)";
             return value;
         };
         try {
+            const auto version = field();
+            const bool batched = version == "testtools-files-v3";
+            if (!batched && version != "testtools-files-v2") throw std::runtime_error("设备目录响应版本不正确");
+            result.platform = field();
+            if (result.platform != "unknown" && result.platform != "android" && result.platform != "linux" && result.platform != "rockchip_linux")
+                throw std::runtime_error("设备平台字段无效");
+            bool linksSection = false;
             while (pos < output.size()) {
                 FileEntry item;
                 item.name = field();
-                const auto kind = field();
+                if (batched && item.name.empty()) { linksSection = true; break; }
+                const auto kind = field(); // 旧格式为 d/f/l；批量格式为 ls 风格的完整类型/权限。
                 const auto size = field();
                 item.modified = field();
-                const auto targetKind = field();
-                item.linkTarget = field();
-                item.metadataError = field();
-                item.linkTargetKind = targetKind == "d" ? FileKind::Directory :
-                                      targetKind == "f" ? FileKind::Regular : FileKind::Other;
+                if (batched) {
+                    item.linkTarget = field();
+                    const auto fraction = item.modified.find('.');
+                    if (fraction != std::string::npos) item.modified.resize(fraction);
+                    std::size_t used = 0;
+                    const auto seconds = std::stoll(item.modified, &used);
+                    if (used != item.modified.size()) throw std::runtime_error("设备修改时间字段无效");
+                    item.modified = std::to_string(seconds);
+                } else {
+                    const auto targetKind = field();
+                    item.linkTargetKind = targetKind == "d" ? FileKind::Directory :
+                                          targetKind == "f" ? FileKind::Regular : FileKind::Other;
+                    item.linkTarget = field(); item.metadataError = field();
+                }
+                const auto mode = field();
+                if (!mode.empty()) {
+                    if (mode.size() > 4 || mode.find_first_not_of("01234567") != std::string::npos)
+                        throw std::runtime_error("设备权限字段无效");
+                    item.permissions = std::string(4 - mode.size(), '0') + mode;
+                }
                 if (!FileTransferService::validName(item.name) || result.entries.size() >= 20000 ||
                     size.empty() || size.find_first_not_of("0123456789") != std::string::npos)
                     throw std::runtime_error("设备目录项目超限或格式不正确");
-                item.kind = kind == "d"   ? FileKind::Directory
-                            : kind == "f" ? FileKind::Regular
-                            : kind == "l" ? FileKind::Symlink
+                item.kind = !kind.empty() && kind[0] == 'd' ? FileKind::Directory
+                            : !kind.empty() && (kind[0] == 'f' || (batched && kind[0] == '-')) ? FileKind::Regular
+                            : !kind.empty() && kind[0] == 'l' ? FileKind::Symlink
                                           : FileKind::Other;
                 item.size = std::stoull(size);
                 result.entries.push_back(std::move(item));
+            }
+            if (batched) {
+                if (!linksSection) throw std::runtime_error("批量目录响应缺少结束标记");
+                std::unordered_map<std::string, FileEntry*> links;
+                for (auto& item : result.entries) if (item.kind == FileKind::Symlink) links.emplace(item.name, &item);
+                while (pos < output.size()) {
+                    auto name = field(); const auto kind = field();
+                    // 部分 Toybox 的 %f 对命令行参数返回 ./name，GNU find 返回 name。
+                    if (name.rfind("./", 0) == 0) name.erase(0, 2);
+                    const auto link = links.find(name);
+                    if (link == links.end()) continue;
+                    link->second->linkTargetKind = !kind.empty() && kind[0] == 'd' ? FileKind::Directory :
+                        !kind.empty() && kind[0] == '-' ? FileKind::Regular : FileKind::Other;
+                }
+                for (const auto& pair : links) if (pair.second->linkTargetKind == FileKind::Other)
+                    pair.second->metadataError = "链接目标不可达或未读取";
             }
         } catch (const std::exception& e) {
             result.error = e.what();

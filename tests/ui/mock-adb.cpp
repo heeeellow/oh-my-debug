@@ -73,22 +73,45 @@ int wmain(int argc, wchar_t** argv)
         return 2;
     }
     if (args[2] == "shell" && args.size() == 5 && args[3] == "-T") {
+        if (args[4].find("# TestTools fixed file operation v1") == 0) {
+            const wchar_t* mountFile = _wgetenv(L"TESTTOOLS_FILE_MOUNTINFO");
+            if (!mountFile) { std::cerr << "missing isolated mount fixture\n"; return 2; }
+            const auto marker = args[4].find("mount_info=/proc/self/mountinfo");
+            if (marker == std::string::npos) return 2;
+            std::string quoted = "'";
+            for (char c : utf8(mountFile)) quoted += c == '\'' ? "'\\''" : std::string(1, c);
+            quoted += '\'';
+            args[4].replace(marker, std::string("mount_info=/proc/self/mountinfo").size(), "mount_info=" + quoted);
+        }
         if (args[4].find("noaccess") != std::string::npos) {
             std::cerr << "Permission denied\n";
             return 1;
         }
         if (args[4].find("cd ") == 0 && args[4].find("invalid-name") != std::string::npos) {
+            constexpr char header[] = "testtools-files-v2\0unknown\0";
+            std::cout.write(header, sizeof(header) - 1);
             for (const auto& value :
-                 std::vector<std::string>{"bad:name", "f", "1", "0", "o", "", ""})
+                 std::vector<std::string>{"bad:name", "f", "1", "0", "o", "", "", "644"})
                 std::cout.write(value.c_str(), value.size() + 1);
             return 0;
         }
         if (args[4].find("cd ") == 0 && args[4].find("case-clash") != std::string::npos) {
+            constexpr char header[] = "testtools-files-v2\0unknown\0";
+            std::cout.write(header, sizeof(header) - 1);
             for (const auto& name : std::vector<std::string>{"a.txt", "A.txt"})
-                for (const auto& field : std::vector<std::string>{name, "f", "1", "0", "o", "", ""})
+                for (const auto& field : std::vector<std::string>{name, "f", "1", "0", "o", "", "", "644"})
                     std::cout.write(field.c_str(), field.size() + 1);
             return 0;
         }
+        if (args[4].find("cd ") == 0 && args[4].find("batched-format") != std::string::npos) {
+            for (const auto& value : std::vector<std::string>{"testtools-files-v3", "android",
+                    "report\npart ' &.log", "-rw-r-----", "42", "1700000000.25", "", "640",
+                    "linked-dir", "lrwxrwxrwx", "8", "1700000000.0", "target", "777", "",
+                    "./linked-dir", "drwxr-xr-x"})
+                std::cout.write(value.c_str(), value.size() + 1);
+            return 0;
+        }
+        if (_wgetenv(L"TESTTOOLS_FILE_LEGACY_LISTING")) args[4] = "find() { return 1; }\n" + args[4];
         auto result = serialdemo::ProcessRunner::run(
             "C:/Program Files/Git/bin/bash.exe", {"-c", args[4]}, std::chrono::seconds(15));
         std::cout.write(result.standardOutput.data(), result.standardOutput.size());

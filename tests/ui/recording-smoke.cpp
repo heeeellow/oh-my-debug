@@ -64,10 +64,14 @@ int highlightCount(QPlainTextEdit* edit, const QColor& background)
 QByteArray read(const std::filesystem::path& path)
 {
     QFile file(QString::fromStdWString(path.wstring()));
-    check(file.open(QIODevice::ReadOnly), "read recording"); return file.readAll();
+    if (!file.open(QIODevice::ReadOnly)) throw std::runtime_error((QStringLiteral("read recording: ") + file.fileName() + QStringLiteral(" / ") + file.errorString()).toUtf8().toStdString());
+    return file.readAll();
 }
 class Files final : public testtools::IFileTransferBackend {
   public:
+    testtools::FileTransferResult change(const testtools::FileChange&, const std::atomic<bool>&) override
+    { return {testtools::TransferOutcome::Failed, "fixture change unsupported"}; }
+
     testtools::FileListing list(const std::string&, const std::string& directory, const std::atomic<bool>&) override
     { return {directory, {}, {}}; }
     testtools::FileTransferResult transfer(testtools::TransferDirection, const std::string&, const std::filesystem::path&,
@@ -98,16 +102,26 @@ int main(int argc, char** argv)
         check(await([&] { return channel.recordButton->isEnabled(); }), "record enabled after connection");
         const auto rawPath = std::filesystem::path(storage.path().toStdWString()) / L"连续录制.bin";
         bool selectedDialog = false;
-        QTimer::singleShot(50, [&] {
+        QTimer dialogTimer;
+        dialogTimer.setInterval(20);
+        QObject::connect(&dialogTimer, &QTimer::timeout, [&] {
             for (auto* widget : QApplication::topLevelWidgets()) if (auto* dialog = qobject_cast<QFileDialog*>(widget)) {
+                if (!dialog->isVisible()) continue;
                 dialog->selectNameFilter(QStringLiteral("原始 RX 字节 (*.bin)"));
-                dialog->selectFile(QString::fromStdWString(rawPath.wstring()));
-                selectedDialog = true; QMetaObject::invokeMethod(dialog, "accept", Qt::QueuedConnection);
+                auto* filename = dialog->findChild<QLineEdit*>(QStringLiteral("fileNameEdit"));
+                if (!filename) continue;
+                filename->setText(QString::fromStdWString(rawPath.wstring()));
+                selectedDialog = true; dialogTimer.stop();
+                QMetaObject::invokeMethod(dialog, "accept", Qt::DirectConnection);
             }
         });
+        dialogTimer.start();
         channel.recordButton->click();
+        dialogTimer.stop();
         check(selectedDialog && await([&] { return channel.session.recordingSnapshot().state == testtools::SerialRecordState::Recording; }),
               "record button opens format/path dialog and starts");
+        if (channel.session.recordingSnapshot().path != rawPath)
+            throw std::runtime_error("unexpected dialog path: " + channel.session.recordingSnapshot().path.u8string());
         const std::string initial = "Board boot complete\nERROR sensor init failed\nWARN temperature high\npanic trace saved\n";
         transport->receive(initial);
         check(await([&] { return channel.receiveEdit->toPlainText().contains("ERROR"); }), "render received text");

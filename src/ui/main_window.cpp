@@ -275,6 +275,7 @@ void MainWindow::buildUi()
     taskButton_ = new QToolButton(activity);
     taskButton_->setObjectName(QStringLiteral("backgroundTasksButton"));
     taskButton_->setText(QStringLiteral("无后台任务"));
+    taskButton_->hide();
     taskButton_->setPopupMode(QToolButton::InstantPopup);
     taskMenu_ = new QMenu(taskButton_);
     taskButton_->setMenu(taskMenu_);
@@ -1473,17 +1474,19 @@ void MainWindow::updateTasks(bool rebuildMenu)
         const auto state = fileWorkspace_->transferSnapshot();
         if (state.active) {
             ++count;
-            const auto text = QStringLiteral("文件传输 · %1 · %2/%3%4").arg(fromUtf8(state.serial))
+            const bool transfer = state.operation == testtools::FileOperation::Transfer;
+            const auto text = QStringLiteral("%1 · %2 · %3/%4%5").arg(transfer ? QStringLiteral("文件传输") : QStringLiteral("文件操作"), state.remote ? fromUtf8(state.serial) : QStringLiteral("本地"))
                 .arg(state.records.size()).arg(state.total).arg(state.cancelling ? QStringLiteral(" · 取消中") : QString());
             descriptions.push_back(text);
             if (rebuildMenu) {
-                auto* action = taskMenu_->addAction(text + QStringLiteral("  ·  取消传输"));
+                auto* action = taskMenu_->addAction(text + (transfer ? QStringLiteral("  ·  取消传输") : QStringLiteral("  ·  停止文件操作")));
                 action->setEnabled(!state.cancelling);
                 connect(action, &QAction::triggered, this, [this, id = state.id] { fileWorkspace_->cancelTransfer(id); updateTasks(); });
             }
         }
     }
     taskButton_->setText(count ? QStringLiteral("后台任务 %1").arg(count) : QStringLiteral("无后台任务"));
+    taskButton_->setVisible(count > 0);
     taskButton_->setToolTip(descriptions.join(QLatin1Char('\n')));
     taskButton_->setEnabled(count > 0 && !closeRequested_);
 }

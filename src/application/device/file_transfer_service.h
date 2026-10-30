@@ -19,6 +19,15 @@ struct FileTransferRecord {
     std::string remote;
     FileTransferResult result;
 };
+struct FileManagementRequest {
+    FileOperation operation = FileOperation::CreateFolder;
+    bool remote = false;
+    serialdemo::AdbDevice device;
+    std::string parent;
+    std::vector<FileEntry> entries;
+    std::string newName;
+    std::string permissions;
+};
 struct FileTransferSnapshot {
     std::uint64_t id = 0;
     bool active = false;
@@ -30,6 +39,9 @@ struct FileTransferSnapshot {
     std::string progress;
     std::string summary;
     std::vector<FileTransferRecord> records;
+    FileOperation operation = FileOperation::Transfer;
+    bool remote = true;
+    std::string parent;
 };
 
 // 同步传输与目录列表操作均在界面层持有的后台线程中运行；
@@ -43,8 +55,11 @@ class FileTransferService {
     static FileListing listLocal(const std::filesystem::path& directory,
                                  const std::atomic<bool>& cancel);
     static bool validName(const std::string& name);
+    static bool validChangeName(const std::string& name, bool remote);
+    static std::string normalizePermissions(const std::string& value);
     static std::string normalizeRemoteDirectory(const std::string& directory);
     bool prepare(FileTransferRequest request, std::string& error);
+    bool prepareChange(FileManagementRequest request, std::string& error);
     void executePrepared();
     void cancel(std::uint64_t expectedId = 0) noexcept;
     FileTransferSnapshot snapshot() const;
@@ -54,6 +69,7 @@ class FileTransferService {
     std::atomic<bool> cancel_{false};
     mutable std::mutex mutex_;
     FileTransferRequest request_;
+    FileManagementRequest change_;
     FileTransferSnapshot state_;
 };
 

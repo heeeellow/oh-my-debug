@@ -11,6 +11,10 @@
 #include <QtGui/QDrag>
 #include <QtGui/QDragEnterEvent>
 #include <QtGui/QShortcut>
+#include <QtGui/QPainter>
+#include <QtGui/QStandardItemModel>
+#include <QtCore/QSignalBlocker>
+#include <QtCore/QSet>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QFileDialog>
@@ -27,6 +31,15 @@
 #include <algorithm>
 
 namespace {
+class PathHint final : public QLabel {
+  public:
+    explicit PathHint(QWidget* parent) : QLabel(parent) { setMinimumWidth(0); setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred); }
+  protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter painter(this); painter.setPen(palette().color(QPalette::WindowText));
+        painter.drawText(contentsRect(), Qt::AlignVCenter | Qt::AlignLeft, fontMetrics().elidedText(text(), Qt::ElideMiddle, contentsRect().width()));
+    }
+};
 QString text(const std::string& s)
 {
     return testtools::ui::fromUtf8(s);
@@ -349,6 +362,29 @@ FilePane::FilePane(bool remote, QWidget* parent) : QFrame(parent), remote_(remot
                                                     : QStringLiteral("本地保存目录"));
     navigation_.push_back(address_);
     bar->addWidget(address_, 1);
+    if (remote_) {
+        locationIcon_ = style()->standardIcon(QStyle::SP_DirIcon);
+        bookmark_ = new QToolButton(this);
+        bookmark_->setObjectName("fileBookmarks");
+        bookmark_->setCheckable(true); bookmark_->setAutoRaise(true);
+        bookmark_->setText(QStringLiteral("收藏"));
+        bookmark_->setMinimumWidth(fontMetrics().horizontalAdvance(QStringLiteral("已收藏")) + 14);
+        bookmark_->setStyleSheet(QStringLiteral("QToolButton:checked { color: #754837; background: #eee0d7; border-color: #c9b0a1; }"));
+        bookmark_->setAccessibleName(QStringLiteral("收藏当前目录"));
+        bar->addWidget(bookmark_); navigation_.push_back(bookmark_);
+        connect(bookmark_, &QToolButton::clicked, this, [this] {
+            if (managementAvailable_ && !loadedPath_.isEmpty() && favoriteRequested) favoriteRequested(loadedPath_);
+            refreshLocations();
+        });
+        address_->view()->setObjectName("fileLocationsPopup");
+        address_->setMaxVisibleItems(14);
+        address_->view()->setTextElideMode(Qt::ElideMiddle);
+        address_->view()->setStyleSheet(QStringLiteral(
+            "QAbstractItemView { padding: 6px; background: #ffffff; border: 1px solid #cfc9c2; border-radius: 7px; }"
+            "QAbstractItemView::item { min-height: 30px; padding: 3px 10px; border-radius: 4px; }"
+            "QAbstractItemView::item:hover { background: #f4eee9; }"
+            "QAbstractItemView::item:selected { background: #edddd2; color: #694d3f; }"));
+    }
     tool(remote ? QStyle::SP_DialogOpenButton : QStyle::SP_DirOpenIcon,
          remote ? QStringLiteral("打开目录") : QStringLiteral("选择本地目录"),
          [this] {
@@ -365,6 +401,7 @@ FilePane::FilePane(bool remote, QWidget* parent) : QFrame(parent), remote_(remot
     layout->addLayout(bar);
     message_ = new QLabel(this);
     message_->setObjectName("filePaneMessage");
+    message_->setTextFormat(Qt::PlainText);
     message_->setWordWrap(true);
     message_->setTextInteractionFlags(Qt::TextSelectableByMouse);
     message_->hide();
@@ -405,7 +442,11 @@ FilePane::FilePane(bool remote, QWidget* parent) : QFrame(parent), remote_(remot
     auto* footer = new QHBoxLayout;
     summary_ = new QLabel(this);
     summary_->setObjectName("mutedLabel");
-    footer->addWidget(summary_, 1);
+    footer->addWidget(summary_);
+    target_ = new PathHint(this);
+    target_->setObjectName("mutedLabel");
+    target_->setWordWrap(false);
+    footer->addWidget(target_, 1);
     transfer_ =
         new QPushButton(remote ? QStringLiteral("下载所选") : QStringLiteral("上传所选"), this);
     transfer_->setObjectName(remote ? "fileDownloadButton" : "fileUploadButton");
@@ -413,11 +454,6 @@ FilePane::FilePane(bool remote, QWidget* parent) : QFrame(parent), remote_(remot
     transfer_->setIcon(style()->standardIcon(remote ? QStyle::SP_ArrowDown : QStyle::SP_ArrowUp));
     footer->addWidget(transfer_);
     layout->addLayout(footer);
-    target_ = new QLabel(this);
-    target_->setObjectName("mutedLabel");
-    target_->setWordWrap(true);
-    target_->setMinimumWidth(0);
-    layout->addWidget(target_);
     connect(filter_, &QLineEdit::textChanged, this, [this](const QString& value) {
         proxy_->setFilterFixedString(value);
         updateSummary();
@@ -429,6 +465,9 @@ FilePane::FilePane(bool remote, QWidget* parent) : QFrame(parent), remote_(remot
             openRequested();
     });
     connect(address_, &QComboBox::textActivated, this, [this](const QString&) {
+        if (remote_ && !address_->currentData().toString().isEmpty()) {
+            navigate(address_->currentData().toString()); return;
+        }
         if (openRequested)
             openRequested();
     });
@@ -473,12 +512,26 @@ FilePane::FilePane(bool remote, QWidget* parent) : QFrame(parent), remote_(remot
             navigate(history_[pendingHistory_]);
         }
     });
+    const auto managementShortcut = [this, &shortcut](const QKeySequence& key, testtools::FileOperation operation) {
+        shortcut(key, [this, operation] {
+            if (view_->hasFocus() && managementAvailable_ && changeRequested) changeRequested(operation);
+        });
+    };
+    managementShortcut(QKeySequence(Qt::Key_F2), testtools::FileOperation::Rename);
+    managementShortcut(QKeySequence(Qt::Key_Delete), testtools::FileOperation::Remove);
+    managementShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_N), testtools::FileOperation::CreateFolder);
     auto* enter = new QShortcut(QKeySequence(Qt::Key_Return), view_);
     enter->setContext(Qt::WidgetShortcut);
     connect(enter, &QShortcut::activated, this, [this] { openEntry(view_->currentIndex()); });
     view_->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(view_, &QTreeView::customContextMenuRequested, this, [this](const QPoint& p) {
+        const auto target = view_->indexAt(p);
+        if (!target.isValid()) view_->clearSelection();
+        else if (!view_->selectionModel()->isSelected(target))
+            view_->selectionModel()->select(target, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
         QMenu menu;
+        addManagementActions(menu);
+        menu.addSeparator();
         auto* copy = menu.addAction(style()->standardIcon(QStyle::SP_FileDialogContentsView),
                                     QStringLiteral("复制完整路径"));
         copy->setEnabled(!selectedEntries().empty());
@@ -534,6 +587,10 @@ void FilePane::updateSummary()
 }
 void FilePane::applyListing(const testtools::FileListing& result, const QString& requested)
 {
+    if (!result.error.empty()) {
+        message_->setText(text(result.error)); message_->setProperty("error", true); message_->show();
+        pendingHistory_ = -1; updateSummary(); return;
+    }
     const bool same =
         QDir::fromNativeSeparators(loadedPath_) == QDir::fromNativeSeparators(text(result.path));
     QStringList names;
@@ -564,9 +621,10 @@ void FilePane::applyListing(const testtools::FileListing& result, const QString&
         auto recent = history_;
         recent.removeDuplicates();
         std::reverse(recent.begin(), recent.end());
-        address_->addItems(recent);
+        if (!remote_) address_->addItems(recent);
         address_->setEditText(edit);
         address_->blockSignals(false);
+        if (remote_) refreshLocations();
         if (same) {
             selectNames(names);
             view_->verticalScrollBar()->setValue(scroll);
@@ -579,6 +637,69 @@ void FilePane::applyListing(const testtools::FileListing& result, const QString&
     message_->setVisible(!message_->text().isEmpty());
     message_->setProperty("error", !result.error.empty());
     updateSummary();
+    if (result.error.empty() && directoryVisited) directoryVisited(loadedPath_);
+}
+
+void FilePane::setLocations(QStringList presets, QStringList recent, QStringList favorites)
+{
+    presets_ = std::move(presets); recent_ = std::move(recent); favorites_ = std::move(favorites);
+    refreshLocations();
+}
+
+void FilePane::refreshLocations()
+{
+    if (!remote_) return;
+    const auto draft = pathEdit()->text();
+    const QSignalBlocker block(address_);
+    const QSignalBlocker editBlock(pathEdit());
+    address_->clear();
+    QSet<QString> listed;
+    const auto group = [this, &listed](const QString& title, const QStringList& paths) {
+        QStringList unique;
+        for (const auto& p : paths) if (!listed.contains(p)) { unique.append(p); listed.insert(p); }
+        if (unique.isEmpty()) return;
+        const int heading = address_->count(); address_->addItem(title);
+        if (auto* model = qobject_cast<QStandardItemModel*>(address_->model())) {
+            auto* item = model->item(heading); item->setEnabled(false);
+            auto font = item->font(); font.setBold(true); item->setFont(font);
+            item->setBackground(QColor("#f5f2ee")); item->setSizeHint(QSize(0, 30));
+        }
+        for (const auto& p : unique) {
+            address_->addItem(locationIcon_, p, p);
+            address_->setItemData(address_->count() - 1, p, Qt::ToolTipRole);
+        }
+    };
+    group(QStringLiteral("收藏目录"), favorites_);
+    group(QStringLiteral("常用目录"), presets_);
+    group(QStringLiteral("最近访问"), recent_);
+    address_->setCurrentIndex(address_->findData(loadedPath_));
+    const bool saved = favorites_.contains(loadedPath_);
+    bookmark_->setChecked(saved);
+    bookmark_->setText(saved ? QStringLiteral("已收藏") : QStringLiteral("收藏"));
+    bookmark_->setToolTip(saved ? QStringLiteral("取消收藏当前目录") : QStringLiteral("收藏当前目录"));
+    bookmark_->setAccessibleName(bookmark_->toolTip());
+    address_->setEditText(draft);
+}
+
+void FilePane::setManagementAvailable(bool available)
+{
+    managementAvailable_ = available;
+    if (bookmark_) bookmark_->setEnabled(available && !loadedPath_.isEmpty());
+}
+
+void FilePane::addManagementActions(QMenu& menu)
+{
+    using O = testtools::FileOperation;
+    const auto selected = selectedEntries();
+    const auto add = [this, &menu](const QString& label, O operation, bool enabled) {
+        auto* action = menu.addAction(label); action->setEnabled(managementAvailable_ && enabled);
+        connect(action, &QAction::triggered, this, [this, operation] { if (changeRequested) changeRequested(operation); });
+    };
+    add(QStringLiteral("新建文件夹…"), O::CreateFolder, true);
+    add(QStringLiteral("重命名…"), O::Rename, selected.size() == 1);
+    add(QStringLiteral("删除所选…"), O::Remove, !selected.empty());
+    if (remote_) add(QStringLiteral("修改权限…"), O::SetPermissions, !selected.empty() &&
+        std::all_of(selected.begin(), selected.end(), [](const auto& e) { return e.kind == testtools::FileKind::Regular || e.kind == testtools::FileKind::Directory; }));
 }
 void FilePane::setAvailable(bool enabled, bool loading)
 {

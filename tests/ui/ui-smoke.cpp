@@ -4,6 +4,8 @@
 #include "ui/widgets/file_pane.h"
 #include "test_paths.h"
 #include <QtTest/QTest>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
 #include <QtWidgets>
 #define private public
 #include "ui/main_window.h"
@@ -32,6 +34,9 @@ bool await(const std::function<bool()>& p, int ms = 6000)
 }
 class Files final : public testtools::IFileTransferBackend {
   public:
+    testtools::FileTransferResult change(const testtools::FileChange&, const std::atomic<bool>&) override
+    { return {testtools::TransferOutcome::Failed, "fixture change unsupported"}; }
+
     std::atomic<int> transfers{0}, listings{0};
     bool failOnce = false;
     std::vector<std::string> serials, targets;
@@ -124,6 +129,9 @@ int main(int argc, char** argv)
         QApplication app(argc, argv);
         app.setStyle("Fusion");
         app.setFont(QFont("Microsoft YaHei UI", 10));
+        QTemporaryDir preferences;
+        check(preferences.isValid(), "isolated file preferences");
+        qputenv("TESTTOOLS_DATA_DIR", preferences.path().toUtf8());
         qputenv("TESTTOOLS_OFFLINE", "1");
         if (argc == 4 && std::string(argv[1]) == "--live-files")
             qputenv("ADB_PATH", argv[3]);
@@ -161,7 +169,36 @@ int main(int argc, char** argv)
                       },
                       12000),
                   "live reentry refreshes sdcard");
-            QTest::qWait(400);
+            const auto visited = f->remotePane_->directoryVisited;
+            f->remotePane_->directoryVisited = [visited](const QString& directory) {
+                QElapsedTimer timer; timer.start(); visited(directory);
+                std::cout << "{\"location_refresh_ms\":" << timer.elapsed() << "}\n";
+            };
+            qint64 maxEventGap = 0;
+            for (const auto& directory : {QStringLiteral("/proc"), QStringLiteral("/sdcard/oem_log")}) {
+                QElapsedTimer elapsed; elapsed.start(); qint64 lastTick = 0;
+                QTimer heartbeat;
+                QObject::connect(&heartbeat, &QTimer::timeout, w, [&] {
+                    const auto now = elapsed.elapsed(); maxEventGap = qMax(maxEventGap, now - lastTick); lastTick = now;
+                });
+                heartbeat.start(10); f->remotePane_->navigate(directory);
+                check(await([&] { return !f->remoteLoading_ && QString::fromStdString(f->remote_.path) == directory; }, 12000),
+                      "live proc and OEM log browsing");
+                maxEventGap = qMax(maxEventGap, elapsed.elapsed() - lastTick);
+                heartbeat.stop();
+                std::cout << "{\"ui_path\":\"" << directory.toStdString() << "\",\"milliseconds\":" << elapsed.elapsed()
+                          << ",\"entries\":" << f->remote_.entries.size() << "}\n";
+                QTest::qWait(50); // 计时结束后再等待布局稳定，快照不包含读取提示的过渡几何。
+                const auto name = directory == "/proc" ? QStringLiteral("files-live-proc") : QStringLiteral("files-live-oem-log");
+                const auto pix = w->grab(); check(pix.save(testOutputPath(name + ".png")), "save live directory snapshot");
+                QFile metadata(testOutputPath(name + ".json"));
+                check(metadata.open(QIODevice::WriteOnly), "live snapshot metadata");
+                metadata.write(QJsonDocument(QJsonObject{{"read_only_live", true}, {"path", directory},
+                    {"logical_width", w->width()}, {"logical_height", w->height()}, {"pixel_width", pix.width()},
+                    {"pixel_height", pix.height()}, {"device_pixel_ratio", pix.devicePixelRatio()}}).toJson());
+            }
+            std::cout << "{\"ui_timer_max_gap_ms\":" << maxEventGap << "}\n";
+            QTest::qWait(100);
             w->grab().save(testOutputPath("files-live-device.png"));
             std::cout << "Read-only live file entry, sdcard and reentry refresh passed; entries="
                       << f->remote_.entries.size() << std::endl;

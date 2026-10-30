@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <exception>
 #include <set>
 
@@ -16,6 +17,28 @@ bool FileTransferService::validName(const std::string& name)
 {
     return !name.empty() && name != "." && name != ".." && name.size() <= 4096 &&
            name.find('/') == std::string::npos && name.find('\0') == std::string::npos;
+}
+
+bool FileTransferService::validChangeName(const std::string& name, bool remote)
+{
+    if (!validName(name) || (remote && name.size() > 255) || name.find('\\') != std::string::npos ||
+        std::any_of(name.begin(), name.end(), [](unsigned char c) { return c < 32 || c == 127; })) return false;
+    if (remote) return true;
+#ifdef _WIN32
+    try { if (std::filesystem::u8path(name).native().size() > 255) return false; }
+    catch (...) { return false; }
+#else
+    if (name.size() > 255) return false;
+#endif
+    if (name.back() == '.' || name.back() == ' ' || name.find_first_of(":<>\"|?*") != std::string::npos) return false;
+    auto base = name.substr(0, name.find('.'));
+    std::transform(base.begin(), base.end(), base.begin(), [](unsigned char c) { return char(std::toupper(c)); });
+    if (base == "CON" || base == "PRN" || base == "AUX" || base == "NUL" || base == "CLOCK$" || base == "CONIN$" || base == "CONOUT$") return false;
+    if (base.size() > 3 && (base.substr(0, 3) == "COM" || base.substr(0, 3) == "LPT")) {
+        const auto suffix = base.substr(3);
+        if ((suffix.size() == 1 && suffix[0] >= '0' && suffix[0] <= '9') || suffix == u8"¹" || suffix == u8"²" || suffix == u8"³") return false;
+    }
+    return true;
 }
 
 std::string FileTransferService::normalizeRemoteDirectory(const std::string& directory)
@@ -159,20 +182,101 @@ bool FileTransferService::prepare(FileTransferRequest request, std::string& erro
     state_.serial = request_.device.serial;
     state_.direction = request_.direction;
     state_.total = request_.entries.size();
+    state_.parent = request_.remoteDirectory;
     state_.summary = "准备传输";
+    return true;
+}
+
+std::string FileTransferService::normalizePermissions(const std::string& value)
+{
+    if ((value.size() != 3 && value.size() != 4) ||
+        value.find_first_not_of("01234567") != std::string::npos) return {};
+    return value.size() == 3 ? "0" + value : value;
+}
+
+bool FileTransferService::prepareChange(FileManagementRequest request, std::string& error)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    error.clear();
+    if (state_.active) { error = "已有文件任务正在进行"; return false; }
+    if (request.operation == FileOperation::Transfer ||
+        (request.operation != FileOperation::CreateFolder && request.operation != FileOperation::Rename &&
+         request.operation != FileOperation::Remove && request.operation != FileOperation::SetPermissions)) {
+        error = "文件操作无效"; return false;
+    }
+    if (request.remote) {
+        request.parent = normalizeRemoteDirectory(request.parent);
+        if (request.device.serial.empty() || request.device.state != "device") {
+            error = "请先选择在线且已授权的 ADB 设备"; return false;
+        }
+    } else {
+        try {
+            if (request.parent.size() > 4096 || std::any_of(request.parent.begin(), request.parent.end(), [](unsigned char c) { return c < 32 || c == 127; }) ||
+                !std::filesystem::u8path(request.parent).is_absolute()) request.parent.clear();
+        } catch (...) { request.parent.clear(); }
+    }
+    if (request.parent.empty() || request.entries.empty() || request.entries.size() > 256 ||
+        ((request.operation == FileOperation::CreateFolder || request.operation == FileOperation::Rename) && request.entries.size() != 1)) {
+        error = "请先打开目录并选择有效项目"; return false;
+    }
+    if (request.operation == FileOperation::SetPermissions) {
+        request.permissions = normalizePermissions(request.permissions);
+        if (!request.remote || request.permissions.empty() ||
+            std::any_of(request.entries.begin(), request.entries.end(), [](const auto& e) {
+                return e.kind != FileKind::Regular && e.kind != FileKind::Directory;
+            })) {
+            error = "仅设备普通文件和文件夹可修改权限，请输入 3 或 4 位八进制数（0–7）"; return false;
+        }
+    }
+    std::set<std::string> names;
+    for (const auto& entry : request.entries) {
+        if (!validChangeName(entry.name, request.remote) || !names.insert(entry.name).second) {
+            error = "名称无效、重复或包含路径/控制字符"; return false;
+        }
+    }
+    if (request.operation == FileOperation::Rename &&
+        (!validChangeName(request.newName, request.remote) || request.newName == request.entries.front().name)) {
+        error = "请输入有效且不同的新名称"; return false;
+    }
+    change_ = std::move(request);
+    cancel_ = false;
+    const auto id = state_.id + 1;
+    state_ = {}; state_.id = id; state_.active = true;
+    state_.operation = change_.operation; state_.remote = change_.remote;
+    state_.serial = change_.remote ? change_.device.serial : std::string{};
+    state_.parent = change_.parent; state_.total = change_.entries.size(); state_.summary = "准备文件操作";
     return true;
 }
 
 void FileTransferService::executePrepared()
 {
     FileTransferRequest request;
+    FileManagementRequest change;
+    bool management = false;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!state_.active)
             return;
         request = request_;
+        management = state_.operation != FileOperation::Transfer;
+        if (management) change = change_;
     }
-    for (const auto& entry : request.entries) {
+    if (management) {
+        for (const auto& entry : change.entries) {
+            { std::lock_guard<std::mutex> lock(mutex_); state_.current = entry.name; }
+            const auto full = change.remote ? (change.parent == "/" ? "/" : change.parent + '/') + entry.name
+                : (std::filesystem::u8path(change.parent) / std::filesystem::u8path(entry.name)).u8string();
+            FileTransferResult result;
+            try {
+                result = cancel_ ? FileTransferResult{TransferOutcome::Cancelled, "尚未执行，已取消"}
+                    : backend_->change({change.operation, change.remote, change.device.serial, change.parent, entry, change.newName, change.permissions}, cancel_);
+            } catch (const std::exception& e) { result = {TransferOutcome::Failed, e.what()}; }
+              catch (...) { result = {TransferOutcome::Failed, "文件操作发生未知错误"}; }
+            std::lock_guard<std::mutex> lock(mutex_);
+            state_.records.push_back({entry.name, change.remote ? std::string{} : full, change.remote ? full : std::string{}, std::move(result)});
+        }
+    }
+    else for (const auto& entry : request.entries) {
         std::filesystem::path local;
         const auto remote =
             (request.remoteDirectory == "/" ? "/" : request.remoteDirectory + '/') + entry.name;

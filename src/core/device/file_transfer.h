@@ -20,6 +20,7 @@ struct FileEntry {
     FileKind linkTargetKind = FileKind::Other;
     std::string linkTarget;
     std::string metadataError;
+    std::string permissions; // 设备 stat 读到的四位八进制权限；未知时为空。
     bool browsable() const noexcept
     {
         return kind == FileKind::Directory ||
@@ -30,6 +31,7 @@ struct FileListing {
     std::string path;
     std::vector<FileEntry> entries;
     std::string error;
+    std::string platform;
 };
 enum class TransferDirection { Download, Upload };
 enum class TransferOutcome { Completed, Skipped, Failed, Cancelled };
@@ -39,9 +41,20 @@ struct FileTransferResult {
 };
 using FileProgress = std::function<void(const std::string&)>;
 
+enum class FileOperation { Transfer, CreateFolder, Rename, Remove, SetPermissions };
+struct FileChange {
+    FileOperation operation = FileOperation::CreateFolder;
+    bool remote = false;
+    std::string serial, parent;
+    FileEntry entry;
+    std::string newName;
+    std::string permissions;
+};
+
 class IFileTransferBackend {
   public:
     virtual ~IFileTransferBackend() = default;
+    virtual FileTransferResult change(const FileChange& request, const std::atomic<bool>& cancel) = 0;
     virtual FileListing list(const std::string& serial,
                              const std::string& directory,
                              const std::atomic<bool>& cancel) = 0;

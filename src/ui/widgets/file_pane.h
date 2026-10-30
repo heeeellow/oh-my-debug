@@ -14,6 +14,8 @@ class QTreeView;
 class QLabel;
 class QPushButton;
 class QMimeData;
+class QMenu;
+class QToolButton;
 
 // 纯 UI 文件列表模型：持有稳定条目快照，不在 data() 中发起任何文件系统或 ADB 调用。
 class FileListModel final : public QAbstractTableModel {
@@ -57,6 +59,8 @@ class FilePane final : public QFrame {
     void setAvailable(bool enabled, bool loading);
     void clear(const QString& message);
     void navigate(const QString& directory);
+    void setLocations(QStringList presets, QStringList recent, QStringList favorites);
+    void setManagementAvailable(bool available);
     QString loadedPath() const
     {
         return loadedPath_;
@@ -64,10 +68,14 @@ class FilePane final : public QFrame {
     std::function<void()> openRequested, selectionChanged, transferRequested;
     std::function<QMimeData*()> dragData;
     std::function<bool(const QMimeData*)> dropData;
+    std::function<void(testtools::FileOperation)> changeRequested;
+    std::function<void(const QString&)> directoryVisited, favoriteRequested;
 
   private:
     void openEntry(const QModelIndex& index);
     void updateSummary();
+    void refreshLocations();
+    void addManagementActions(QMenu& menu);
     bool remote_;
     FileListModel* model_;
     QSortFilterProxyModel* proxy_;
@@ -80,4 +88,8 @@ class FilePane final : public QFrame {
     QStringList history_;
     int historyIndex_ = -1, pendingHistory_ = -1;
     std::vector<QWidget*> navigation_;
+    QStringList presets_, recent_, favorites_;
+    QIcon locationIcon_;
+    QToolButton* bookmark_ = nullptr;
+    bool managementAvailable_ = false;
 };

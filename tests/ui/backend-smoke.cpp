@@ -5,6 +5,7 @@
 #include <iostream>
 #include <thread>
 #include <windows.h>
+#include <algorithm>
 
 using namespace testtools;
 namespace fs = std::filesystem;
@@ -51,6 +52,21 @@ int wmain(int argc, wchar_t** argv)
         auto listed = service->listRemote({"device-A", "device", ""}, posix(remote), cancel);
         check(listed.error.empty(), "remote NUL listing: " + listed.error);
         check(listed.entries.size() == 6, "remote entries");
+        _wputenv_s(L"TESTTOOLS_FILE_LEGACY_LISTING", L"1");
+        const auto legacy = service->listRemote({"device-A", "device", ""}, posix(remote), cancel);
+        _wputenv_s(L"TESTTOOLS_FILE_LEGACY_LISTING", L"");
+        check(legacy.error.empty() && legacy.entries.size() == listed.entries.size(), "older find falls back to the legacy listing");
+        for (const auto& item : listed.entries) {
+            const auto found = std::find_if(legacy.entries.begin(), legacy.entries.end(), [&](const auto& old) { return old.name == item.name; });
+            check(found != legacy.entries.end() && found->kind == item.kind && found->size == item.size &&
+                found->modified == item.modified && found->permissions == item.permissions,
+                "batch and fallback metadata agree: " + item.name);
+        }
+        const auto batched = service->listRemote({"device-A", "device", ""}, posix(remote / "batched-format"), cancel);
+        check(batched.error.empty() && batched.entries.size() == 2 &&
+            batched.entries[0].name == "report\npart ' &.log" && batched.entries[0].modified == "1700000000" &&
+            batched.entries[0].permissions == "0640" && batched.entries[1].browsable() && batched.entries[1].linkTarget == "target",
+            "batched NUL names, fractional times, permissions and Toybox link prefixes");
         FileTransferRequest request;
         request.device = {"device-A", "device", ""};
         request.localDirectory = local;
@@ -176,6 +192,88 @@ int wmain(int argc, wchar_t** argv)
         managed = serialdemo::ProcessRunner::runManaged(
             fs::path(argv[1]).u8string(), {"flood"}, std::chrono::seconds(5), cancel);
         check(managed.outputTruncated, "bounded command output");
+
+        const auto mountInfo = root / "mounts.txt";
+        const auto baseMounts = std::string("1 0 0:1 / / rw - tmpfs tmpfs rw\n");
+        put(mountInfo, baseMounts);
+        _wputenv_s(L"TESTTOOLS_FILE_MOUNTINFO", fs::u8path(posix(mountInfo)).c_str());
+        const auto change = [&](bool remoteSide, FileOperation operation, const fs::path& parent,
+                                const std::string& name, FileKind kind, const std::string& renamed = {}) {
+            FileManagementRequest task; task.operation = operation; task.remote = remoteSide;
+            task.device = {"device-A", "device", ""}; task.parent = remoteSide ? posix(parent) : fs::absolute(parent).u8string();
+            task.entries = {{name, kind}}; task.newName = renamed;
+            if (operation == FileOperation::SetPermissions) task.permissions = renamed.empty() ? "755" : renamed;
+            check(service->prepareChange(task, error), error); service->executePrepared();
+            return service->snapshot().records.front().result;
+        };
+        const auto newDirectory = u8"新目录 & '测试";
+        auto changed = change(true, FileOperation::CreateFolder, remote, newDirectory, FileKind::Directory);
+        check(changed.outcome == TransferOutcome::Completed && fs::is_directory(remote / fs::u8path(newDirectory)), "remote mkdir quoted: " + changed.message);
+        changed = change(true, FileOperation::CreateFolder, remote, newDirectory, FileKind::Directory);
+        check(changed.outcome == TransferOutcome::Failed, "mkdir never overwrites existing target");
+        put(remote / "old.log", "old-data"); put(remote / "exists.log", "existing-data");
+        changed = change(true, FileOperation::Rename, remote, "old.log", FileKind::Regular, "exists.log");
+        check(changed.outcome == TransferOutcome::Failed && get(remote / "exists.log") == "existing-data" && fs::exists(remote / "old.log"), "remote rename collision preserves both");
+        changed = change(true, FileOperation::Rename, remote, "old.log", FileKind::Regular, u8"已更名 ' &.log");
+        check(changed.outcome == TransferOutcome::Completed && get(remote / fs::u8path(u8"已更名 ' &.log")) == "old-data", "remote rename exact target: " + changed.message);
+        changed = change(true, FileOperation::SetPermissions, remote, u8"已更名 ' &.log", FileKind::Regular);
+        const auto observedMode = serialdemo::ProcessRunner::run("C:/Program Files/Git/bin/bash.exe",
+            {"-c", "stat -c '%a' -- \"$1\"", "_", posix(remote / fs::u8path(u8"已更名 ' &.log"))}, std::chrono::seconds(5));
+        check(observedMode.exitCode == 0, "independent host permission read");
+        const bool actually755 = std::stoul(observedMode.standardOutput, nullptr, 8) == 0755;
+        check(changed.outcome == (actually755 ? TransferOutcome::Completed : TransferOutcome::Failed) &&
+            (actually755 || changed.message.find("权限与请求不一致") != std::string::npos) &&
+            get(remote / fs::u8path(u8"已更名 ' &.log")) == "old-data", "permission result must agree with independently observed host mode: " + changed.message);
+        changed = change(true, FileOperation::SetPermissions, remote, u8"已更名 ' &.log", FileKind::Regular, "644");
+        check(changed.outcome == TransferOutcome::Completed, "explicit mode passes only after matching readback: " + changed.message);
+        FileManagementRequest staleMode;
+        staleMode.operation = FileOperation::SetPermissions; staleMode.remote = true; staleMode.device = {"device-A", "device", ""};
+        staleMode.parent = posix(remote); staleMode.permissions = "644";
+        staleMode.entries = {{u8"已更名 ' &.log", FileKind::Regular}}; staleMode.entries[0].permissions = "0600";
+        check(service->prepareChange(staleMode, error), error); service->executePrepared();
+        check(service->snapshot().records[0].result.outcome == TransferOutcome::Failed &&
+            service->snapshot().records[0].result.message.find("权限在确认后已变化") != std::string::npos, "stale observed permission refuses mutation");
+        changed = change(true, FileOperation::SetPermissions, remote, newDirectory, FileKind::Directory, "755");
+        check(changed.outcome == TransferOutcome::Completed, "directory permissions are non-recursive and read back: " + changed.message);
+        fs::create_directories(remote / "protected" / "mounted");
+        put(remote / "protected" / "keep.log", "keep");
+        auto encoded = posix(remote / "protected" / "mounted");
+        std::string escaped;
+        for (char c : encoded) escaped += c == ' ' ? "\\040" : c == '\\' ? "\\134" : std::string(1, c);
+        put(mountInfo, baseMounts + "2 1 0:2 / " + escaped + " rw - tmpfs tmpfs rw\n");
+        changed = change(true, FileOperation::Remove, remote, "protected", FileKind::Directory);
+        check(changed.outcome == TransferOutcome::Failed && get(remote / "protected" / "keep.log") == "keep", "nested mount blocks entire delete");
+        put(mountInfo, "malformed mount metadata\n");
+        changed = change(true, FileOperation::Remove, remote, "protected", FileKind::Directory);
+        check(changed.outcome == TransferOutcome::Failed && fs::exists(remote / "protected"), "unreadable mount evidence refuses mutation");
+        put(mountInfo, baseMounts);
+        changed = change(true, FileOperation::Remove, remote, "protected", FileKind::Directory);
+        check(changed.outcome == TransferOutcome::Completed && !fs::exists(remote / "protected"), "remote directory remove: " + changed.message);
+        auto guarded = FileManagementRequest{FileOperation::Remove, true, {"device-A", "device", ""}, "/", {{"system", FileKind::Directory}}, {}};
+        check(service->prepareChange(guarded, error), error); service->executePrepared();
+        check(service->snapshot().records[0].result.outcome == TransferOutcome::Failed, "protected remote root refuses deletion");
+        guarded.operation = FileOperation::CreateFolder; guarded.parent = "/proc"; guarded.entries = {{"testtools-never-created", FileKind::Directory}};
+        check(service->prepareChange(guarded, error), error); service->executePrepared();
+        check(service->snapshot().records[0].result.outcome == TransferOutcome::Failed, "virtual directories remain read only");
+
+        changed = change(false, FileOperation::CreateFolder, local, newDirectory, FileKind::Directory);
+        check(changed.outcome == TransferOutcome::Completed && fs::is_directory(local / fs::u8path(newDirectory)), "local mkdir unicode");
+        put(local / "rename-source", "source"); put(local / "rename-target", "target");
+        changed = change(false, FileOperation::Rename, local, "rename-source", FileKind::Regular, "rename-target");
+        check(changed.outcome == TransferOutcome::Failed && get(local / "rename-target") == "target", "local atomic rename no replace");
+        changed = change(false, FileOperation::Rename, local, "rename-source", FileKind::Regular, "renamed");
+        check(changed.outcome == TransferOutcome::Completed && get(local / "renamed") == "source", "local same-parent rename");
+        const auto outside = root / "outside", tree = local / "delete-tree";
+        fs::create_directories(outside); fs::create_directories(tree);
+        put(outside / "protected.log", "do-not-follow");
+        const auto junction = tree / "junction";
+        const auto linked = serialdemo::ProcessRunner::run("cmd.exe", {"/c", "mklink", "/J", junction.u8string(), fs::absolute(outside).u8string()}, std::chrono::seconds(5));
+        check(linked.exitCode == 0 && (GetFileAttributesW(junction.c_str()) & FILE_ATTRIBUTE_REPARSE_POINT), "isolated junction fixture");
+        changed = change(false, FileOperation::Remove, local, "delete-tree", FileKind::Directory);
+        check(changed.outcome == TransferOutcome::Completed && !fs::exists(tree) && get(outside / "protected.log") == "do-not-follow", "recursive remove unlinks junction without traversing target: " + changed.message);
+        changed = change(true, FileOperation::Remove, remote, newDirectory, FileKind::Directory);
+        check(changed.outcome == TransferOutcome::Completed, "remote selected directory cleanup");
+        std::cout << "File management passed: isolated local/remote mkdir/rename/delete/permissions/readback, collisions, canonical parent, mount table and junction protection.\n";
         std::cout << "Native file backend checks passed: NUL names, Unicode/quotes/& paths, binary "
                      "files, recursive/empty folders, overwrite metadata, conflicts, "
                      "failed/cancelled staging, timeout, output bound.\n";
