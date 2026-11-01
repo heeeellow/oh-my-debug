@@ -12,7 +12,7 @@ if(NOT EXISTS "${ROOT}/build/intermediate/desktop/x64/Release/main_window.obj")
 endif()
 file(GLOB HOST_OBJECTS "${ROOT}/build/intermediate/desktop/x64/Release/*.obj")
 list(FILTER HOST_OBJECTS EXCLUDE REGEX "/main\\.obj$")
-foreach(target mock-adb backend-smoke ui-smoke file-management-smoke icon-style-smoke serial-smoke service-icons-smoke iteration-smoke recording-smoke device-smoke directory-perf mirror-host-probe)
+foreach(target mock-adb backend-smoke ui-smoke file-management-smoke icon-style-smoke serial-smoke service-icons-smoke iteration-smoke recording-smoke device-smoke directory-perf mirror-host-probe maintenance-mock-adb maintenance-backend-smoke maintenance-ui-smoke)
     add_executable(${target} ${target}.cpp ${HOST_OBJECTS})
     target_include_directories(${target} PRIVATE ${ROOT}/src ${ROOT}/third_party/asio/include)
     target_compile_features(${target} PRIVATE cxx_std_17)
@@ -30,7 +30,9 @@ add_test(NAME serial-independent-pages COMMAND iteration-smoke)
 add_test(NAME serial-recording-ui COMMAND recording-smoke)
 add_test(NAME file-management-ui COMMAND file-management-smoke)
 add_test(NAME icon-style-ui COMMAND icon-style-smoke)
-set_tests_properties(file-workspace-ui serial-workspace-ui native-file-backend service-icons-ui serial-independent-pages serial-recording-ui file-management-ui icon-style-ui PROPERTIES
+add_test(NAME native-device-maintenance COMMAND maintenance-backend-smoke $<TARGET_FILE:maintenance-mock-adb>)
+add_test(NAME device-maintenance-ui COMMAND maintenance-ui-smoke)
+set_tests_properties(file-workspace-ui serial-workspace-ui native-file-backend service-icons-ui serial-independent-pages serial-recording-ui file-management-ui icon-style-ui native-device-maintenance device-maintenance-ui PROPERTIES
     WORKING_DIRECTORY "${ROOT}"
     RUN_SERIAL TRUE
     TIMEOUT 60

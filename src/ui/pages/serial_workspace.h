@@ -60,6 +60,8 @@ class SerialWorkspace final : public QWidget {
     void prepareForShutdown();
     bool hasActiveConnections() const;
     bool hasActiveAgentConnection() const;
+    bool hasActiveAgentConnection(const std::string& serial) const;
+    void setDeviceMaintenance(bool blocked);
     bool selectWorkspaceMode(const QString& modeName);
     QString currentWorkspaceMode() const;
     bool setWorkspaceModeForDiagnostics(const QString& modeName);
@@ -278,6 +280,7 @@ class SerialWorkspace final : public QWidget {
     QTimer* recordingTimer_ = nullptr;
 
     testtools::AgentServiceState serviceState_ = testtools::AgentServiceState::Disconnected;
+    bool maintenanceBlocked_ = false;
     QString serviceDetail_;
     bool serviceCleanupPending_ = false;
     QLabel* pageTitle_ = nullptr;

@@ -19,6 +19,8 @@ public:
         std::shared_ptr<testtools::ScreenMirrorService> service = {}, bool embedded = false);
     ~ScreenMirrorPanel() override;
     void setDevice(const serialdemo::AdbDevice& device);
+    void setMaintenanceDevice(const std::string& serial);
+    bool busyForDevice(const std::string& serial) const;
     void startCurrentDevice();
     void shutdown();
     void reject() override;
@@ -45,4 +47,5 @@ private:
     bool busy_ = false;
     bool polling_ = false;
     bool shuttingDown_ = false;
+    std::string maintenanceSerial_;
 };

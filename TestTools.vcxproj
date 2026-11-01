@@ -285,4 +285,13 @@
           Condition="'$(DesignTimeBuild)'!='true' AND !Exists('$(ProjectDir)build\agent-bundle\manifest.json')">
     <Warning Text="Agent Bundle not found; TestTools can reconnect to an existing Agent but cannot install or upgrade one. Run scripts\build-agent-matrix.ps1 to build all Android and Linux Agent targets." />
   </Target>
+  <ItemGroup>
+    <ClCompile Include="src\application\device\device_maintenance_service.cpp" />
+    <ClCompile Include="src\adapters\device\adb_device_maintenance.cpp" />
+    <ClCompile Include="src\ui\widgets\device_maintenance_panel.cpp" />
+    <ClInclude Include="src\core\device\device_maintenance.h" />
+    <ClInclude Include="src\application\device\device_maintenance_service.h" />
+    <ClInclude Include="src\adapters\device\adb_device_maintenance.h" />
+    <QtMoc Include="src\ui\widgets\device_maintenance_panel.h" />
+  </ItemGroup>
 </Project>

@@ -509,3 +509,21 @@ Agent 留出稳定边界。
 | 实机只读界面 | 实际窗口的 `/proc` 和 `/sdcard/oem_log` 切换分别约 197 ms、167 ms；目录历史/下拉更新由约 150–159 ms 降到 5–12 ms，10 ms GUI 定时器观察到的最大间隔由约 0.3 s 降到 24 ms（此数值不是完整帧率验收）。根目录、`/sdcard` 与切页恢复也通过，未执行文件变更或 Agent 部署。见 `browse-latency/live-ui-final.log`、`ui-cost-before.log` |
 | 文档、静态边界与差异 | 文档入口/链接、无 Qt 边界、项目登记与差异范围检查通过，见 `browse-latency/static-checks.log`、`browse-latency/verification.json`；0.12.0 随本次本地提交归档 |
 | 实机写入、物理异常与长时压力 | 未验证；目录读取以外未做新的实机验收，未执行开发板文件变更、真实权限修改、真实挂载变化、SELinux/只读分区、物理拔线或大目录长时操作 |
+
+
+## 2026-10-30：0.12.1 清晰线性图标归档
+
+本地提交 `bd9da5f`，未打标签、未推送。以下从当时 STATUS 迁入，证据根目录为 `build/iteration-0.12.1/`；当前状态以 [STATUS](STATUS.md) 为准。
+
+
+以下仅记录 0.12.1 的图标改动。0.12.0 / 2A 的构建、核心、实机目录性能和文件管理证据已迁入 [开发日志](DEVLOG.md)。本轮使用离线界面与隔离主机夹具，没有访问开发板。
+
+| 范围 | 结果与证据 |
+| --- | --- |
+| 桌面构建与固定 Bundle | Debug / Release 通过；Qt SVG 和图像插件已部署，既有 Bundle v2 三包的大小与 SHA-256 校验通过。见 `release-build.log`、`debug-build.log`；仍有可选 dxcompiler/dxil 提示，Widgets 快照正常 |
+| 图标资源与缩放 | Phosphor 36 个 SVG 内置于 Qt Resource；`icon-style-ui` 检查缓存句柄、16/20/24px 在 DPR 1/1.25/1.5/2 下的大小和可见像素，核对禁用、主按钮及收藏状态。见 `related-tests.log` 与 `native-tests/evidence/icons-clear-linear*.json` |
+| 原生界面与回归 | 6/6 通过：图标、文件页、文件管理、服务/图标、独立串口页、串口录制；覆盖本地 Windows 图标异步替换、设备 SVG 不发生 Shell 替换、收藏/目录与权限弹窗、任务互斥/异常及现有串口页面和录制交互。见 `related-tests.log`；文件管理在实际 DPR 1.5 下另通过，见 `highdpi-ui.log` |
+| 代表界面目检 | 对照选定的第三组样图与实际资源图标板，目检文件页常规/窄窗/高 DPI、权限勾选、设备文件类别，以及串口和投屏页。尺寸、实际 DPR、样本与允许差异见 [图标设计核对](reviews/icon-style-design-qa.md)；未展开全页面组合 |
+| 输出目录独立运行 | 去除 Qt 路径和插件环境变量后，直接启动 Release 输出中的文件、串口与远程调试页，3/3 退出码为 0，保存 1366×768、实际 DPR 1.25 的快照及控件元数据。见 `deployed-runtime.json`、`deployed-*.png.json`；输出保留图标许可 |
+| 文档、静态边界与差异 | 文档入口/相对链接、无 Qt 边界、项目登记、资源路径与差异检查通过，见 `static-checks.log`、`verification.json`；Git 交付状态以本页第 1 节为准 |
+| 无 Qt 核心与实机 | 本轮未修改无 Qt 层、Agent 或协议，未重跑核心/后端/板端构建与实机验收；未重新测量目录耗时、未执行真实文件变更、权限修改或串口发送，不能将图标替换视为这些场景的新增验收 |

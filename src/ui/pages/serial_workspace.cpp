@@ -1398,7 +1398,7 @@ bool SerialWorkspace::channelUsesAgent(int index) const
 
 bool SerialWorkspace::selectedAgentIsOnline() const
 {
-    return currentAdbDevice_.state == "device" && !currentAdbDevice_.serial.empty() &&
+    return !maintenanceBlocked_ && currentAdbDevice_.state == "device" && !currentAdbDevice_.serial.empty() &&
            agentControlPort_ != 0 && agentAdbSerial_ == currentAdbDevice_.serial;
 }
 
@@ -2097,7 +2097,7 @@ void SerialWorkspace::updateGlobalControls()
         channel.serviceHint->setVisible(needsService);
         channel.statusLabel->setVisible(!needsService);
         channel.connectButton->setVisible(!needsService);
-        channel.serviceHintLabel->setText(connecting ? QStringLiteral("正在启动服务…")
+        channel.serviceHintLabel->setText(maintenanceBlocked_ ? QStringLiteral("设备维护中…") : connecting ? QStringLiteral("正在启动服务…")
             : serviceState_ == testtools::AgentServiceState::Failed ? QStringLiteral("服务连接失败")
             : QStringLiteral("需连接板端服务"));
         channel.serviceHintLabel->setToolTip(currentAdbDevice_.state != "device"
@@ -2105,7 +2105,7 @@ void SerialWorkspace::updateGlobalControls()
         channel.serviceConnectButton->setText(serviceState_ == testtools::AgentServiceState::Failed
             ? QStringLiteral("重试连接") : QStringLiteral("连接服务"));
         channel.serviceConnectButton->setEnabled(currentAdbDevice_.state == "device" && !connecting &&
-            !serviceCleanupPending_ && !hasActiveAgentConnection());
+            !maintenanceBlocked_ && !serviceCleanupPending_ && !hasActiveAgentConnection());
     }
 
     const auto firstSnapshot = channels_[0].session.snapshot();
@@ -2139,7 +2139,7 @@ void SerialWorkspace::updateGlobalControls()
         const auto session = channels_[index].session.snapshot();
         const bool open = session.open;
         if (channels_[index].refreshPortsButton) {
-            channels_[index].refreshPortsButton->setEnabled(!scanning_ && !anyActive);
+            channels_[index].refreshPortsButton->setEnabled(!scanning_ && !anyActive && (!maintenanceBlocked_ || !channelUsesAgent(index)));
         }
         if (channels_[index].disconnectPending ||
             session.state == testtools::SerialSessionState::Disconnecting) {
@@ -3336,4 +3336,16 @@ QString SerialWorkspace::stressDirectionSummary(const StressDirection &direction
         .arg(report.corruptedFrames)
         .arg(report.framingErrors)
         .arg(QString::number(report.bitErrorRate, 'g', 4));
+}
+
+bool SerialWorkspace::hasActiveAgentConnection(const std::string& serial) const
+{
+    return !serial.empty() && agentAdbSerial_==serial && hasActiveAgentConnection();
+}
+void SerialWorkspace::setDeviceMaintenance(bool blocked)
+{
+    if(maintenanceBlocked_==blocked) return;
+    maintenanceBlocked_=blocked;
+    if(blocked) { ++agentPortGeneration_; scanning_=false; }
+    updateGlobalControls();
 }

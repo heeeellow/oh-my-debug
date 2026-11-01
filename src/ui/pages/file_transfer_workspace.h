@@ -29,6 +29,7 @@ class FileTransferWorkspace final : public QWidget {
     void shutdown();
     testtools::FileTransferSnapshot transferSnapshot() const;
     void cancelTransfer(std::uint64_t expectedId);
+    void setDeviceMaintenance(bool blocked);
 
   protected:
     void showEvent(QShowEvent* event) override;
@@ -62,6 +63,7 @@ class FileTransferWorkspace final : public QWidget {
     std::uint64_t localGeneration_ = 0, remoteGeneration_ = 0;
     bool localLoading_ = false, remoteLoading_ = false, closing_ = false, wasActive_ = false;
     bool entryRefreshPending_ = false;
+    bool maintenanceBlocked_ = false;
     std::unordered_map<std::string, std::string> remoteDirectories_;
     std::size_t shownRecords_ = 0;
     std::size_t batchRowOffset_ = 0;

@@ -2,6 +2,7 @@
 
 #include "application/agent/agent_service_status.h"
 #include "application/device/device_discovery.h"
+#include "application/device/device_maintenance_service.h"
 #include "application/support/background_task_group.h"
 #include "application/serial/serial_port_claims.h"
 
@@ -22,6 +23,7 @@ class QMenu;
 class SerialWorkspace;
 class FileTransferWorkspace;
 class ScreenMirrorPanel;
+class DeviceMaintenancePanel;
 namespace testtools {
 class IAgentConnection;
 }
@@ -32,7 +34,8 @@ class MainWindow final : public QMainWindow {
     Q_OBJECT
 
   public:
-    explicit MainWindow(QWidget* parent = nullptr);
+    explicit MainWindow(QWidget* parent = nullptr,
+        std::shared_ptr<testtools::DeviceMaintenanceService> maintenance = {});
     ~MainWindow() override;
     bool navigateTo(const QString& pageName);
     bool setSerialModeForDiagnostics(const QString& modeName);
@@ -85,6 +88,8 @@ class MainWindow final : public QMainWindow {
     void updateTasks(bool rebuildMenu = false);
     bool recordingsPending() const;
     void updateDeviceControls();
+    void updateMaintenanceState();
+    testtools::MaintenanceConflicts maintenanceConflicts(const serialdemo::AdbDevice&) const;
 
     QComboBox* deviceCombo_ = nullptr;
     QLabel* adbStatusLabel_ = nullptr;
@@ -112,6 +117,9 @@ class MainWindow final : public QMainWindow {
     FileTransferWorkspace* fileWorkspace_ = nullptr;
     ScreenMirrorPanel* screenMirrorPanel_ = nullptr;
     bool mirrorShutdownComplete_ = false;
+    bool maintenanceShutdownComplete_ = false, maintenanceBlocking_ = false;
+    std::shared_ptr<testtools::DeviceMaintenanceService> maintenanceService_;
+    DeviceMaintenancePanel* maintenancePanel_ = nullptr;
     QTimer* deviceRefreshTimer_ = nullptr;
     QStackedWidget* pages_ = nullptr;
     SerialWorkspace* serialWorkspace_ = nullptr;

@@ -8,6 +8,7 @@
 #include "ui/pages/serial_workspace.h"
 #include "ui/pages/file_transfer_workspace.h"
 #include "ui/screen_mirror_panel.h"
+#include "ui/widgets/device_maintenance_panel.h"
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QTimer>
@@ -86,14 +87,15 @@ QString deviceScanSignature(const testtools::DeviceScanResult& result)
 
 } // namespace
 
-MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
+MainWindow::MainWindow(QWidget* parent, std::shared_ptr<testtools::DeviceMaintenanceService> maintenance)
+    : QMainWindow(parent), maintenanceService_(maintenance ? std::move(maintenance) : testtools::createDeviceMaintenanceService())
 {
     buildUi();
     taskTimer_ = new QTimer(this);
     taskTimer_->setInterval(250);
     connect(taskTimer_, &QTimer::timeout, this, [this] {
         updateTasks();
-        if (closeRequested_ && fileShutdownComplete_ && mirrorShutdownComplete_ && !recordingsPending()) close();
+        if (closeRequested_ && fileShutdownComplete_ && mirrorShutdownComplete_ && maintenanceShutdownComplete_ && !recordingsPending()) close();
     });
     taskTimer_->start();
     connect(QCoreApplication::instance(),
@@ -131,7 +133,7 @@ MainWindow::~MainWindow()
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
-    if (!shuttingDown_ && (!mirrorShutdownComplete_ || !fileShutdownComplete_ || recordingsPending())) {
+    if (!shuttingDown_ && (!mirrorShutdownComplete_ || !fileShutdownComplete_ || !maintenanceShutdownComplete_ || recordingsPending())) {
         event->ignore();
         closeRequested_ = true;
         if (serviceHealthTimer_)
@@ -149,6 +151,8 @@ void MainWindow::closeEvent(QCloseEvent* event)
         else fileShutdownComplete_ = true;
         if (screenMirrorPanel_) screenMirrorPanel_->shutdown();
         else mirrorShutdownComplete_ = true;
+        if (maintenancePanel_) maintenancePanel_->shutdown();
+        else maintenanceShutdownComplete_ = true;
         return;
     }
     QMainWindow::closeEvent(event);
@@ -165,6 +169,7 @@ void MainWindow::prepareForShutdown()
         serviceHealthTimer_->stop();
     if (fileWorkspace_) fileWorkspace_->shutdown();
     if (screenMirrorPanel_) screenMirrorPanel_->shutdown();
+    if (maintenancePanel_) maintenancePanel_->shutdown();
     updateAdbTerminalControls();
     const std::string selectedSerial = selectedDevice().serial;
     if (serialWorkspace_) {
@@ -446,42 +451,62 @@ QWidget* MainWindow::buildFileTransferPage()
     return wrapAdbPage(QStringLiteral("文件传输"), fileWorkspace_);
 }
 
+namespace {
+class RemoteColumns final : public QWidget {
+    QBoxLayout* columns_;
+  public:
+    RemoteColumns(QWidget* left, QWidget* right, QWidget* parent) : QWidget(parent)
+    {
+        setObjectName("remoteDebugColumns");
+        columns_ = new QBoxLayout(QBoxLayout::LeftToRight,this);
+        columns_->setContentsMargins(0,0,0,0); columns_->setSpacing(16);
+        columns_->addWidget(left,1); columns_->addWidget(right,1);
+        columns_->setAlignment(left,Qt::AlignTop); columns_->setAlignment(right,Qt::AlignTop);
+        columns_->setSizeConstraint(QLayout::SetMinimumSize);
+    }
+    void resizeEvent(QResizeEvent* event) override
+    {
+        columns_->setDirection(width()>=980 ? QBoxLayout::LeftToRight : QBoxLayout::TopToBottom);
+        setProperty("columnCount", width()>=980 ? 2 : 1);
+        QWidget::resizeEvent(event);
+    }
+};
+}
 QWidget* MainWindow::buildMirrorPage()
 {
-    auto* content = new QWidget(this);
-    auto* layout = new QVBoxLayout(content); layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(12);
-    auto* shell = new QFrame(content);
-    shell->setObjectName(QStringLiteral("featureCard"));
-    auto* shellLayout = new QHBoxLayout(shell);
-    shellLayout->setContentsMargins(16, 12, 16, 12);
-    auto* shellText = new QVBoxLayout;
-    auto* shellTitle = new QLabel(QStringLiteral("ADB Shell"), shell);
-    shellTitle->setObjectName(QStringLiteral("sectionLabel"));
-    auto* shellHint =
-        new QLabel(QStringLiteral("在独立系统终端中操作当前设备；不需要连接板端服务。"), shell);
-    shellHint->setObjectName(QStringLiteral("mutedLabel"));
-    shellHint->setWordWrap(true);
-    shellText->addWidget(shellTitle);
-    shellText->addWidget(shellHint);
-    shellLayout->addLayout(shellText, 1);
-    adbTerminalButton_ = new QPushButton(QStringLiteral("打开 ADB 终端 ↗"), shell);
+    auto* left = new QWidget(this);
+    auto* layout = new QVBoxLayout(left); layout->setContentsMargins(0,0,0,0); layout->setSpacing(12);
+    auto* shell = new QFrame(left); shell->setObjectName(QStringLiteral("featureCard"));
+    auto* shellLayout = new QVBoxLayout(shell); shellLayout->setContentsMargins(16,14,16,14); shellLayout->setSpacing(10);
+    auto* shellTitle = new QLabel(QStringLiteral("ADB Shell"),shell); shellTitle->setObjectName(QStringLiteral("sectionLabel"));
+    shellLayout->addWidget(shellTitle);
+    auto* shellHint = new QLabel(QStringLiteral("在系统终端中操作当前设备，无需连接板端服务。"),shell);
+    shellHint->setObjectName(QStringLiteral("mutedLabel")); shellHint->setWordWrap(true); shellLayout->addWidget(shellHint);
+    adbTerminalButton_ = new QPushButton(QStringLiteral("打开 ADB 终端 ↗"),shell);
     adbTerminalButton_->setObjectName(QStringLiteral("adbTerminalButton"));
-    adbTerminalButton_->setProperty("diagnosticObjectName", "adbTerminalButton");
+    adbTerminalButton_->setProperty("diagnosticObjectName","adbTerminalButton");
     terminalButtons_.push_back(adbTerminalButton_);
-    connect(adbTerminalButton_, &QPushButton::clicked, this, &MainWindow::openAdbTerminal);
-    shellLayout->addWidget(adbTerminalButton_);
-    layout->addWidget(shell);
-    auto* mirrorTitle = new QLabel(QStringLiteral("Android 投屏"), content);
-    mirrorTitle->setObjectName(QStringLiteral("sectionLabel"));
-    layout->addWidget(mirrorTitle);
-    screenMirrorPanel_ = new ScreenMirrorPanel(content, {}, true);
-    screenMirrorPanel_->setMaximumWidth(700); layout->addWidget(screenMirrorPanel_); layout->addStretch();
-    connect(screenMirrorPanel_, &ScreenMirrorPanel::activityChanged, this, &MainWindow::setActivity);
-    connect(screenMirrorPanel_, &ScreenMirrorPanel::shutdownFinished, this, [this] {
-        mirrorShutdownComplete_ = true; if (closeRequested_ && fileShutdownComplete_) close();
-    });
-    return wrapAdbPage(QStringLiteral("远程调试"), content);
+    connect(adbTerminalButton_,&QPushButton::clicked,this,&MainWindow::openAdbTerminal);
+    shellLayout->addWidget(adbTerminalButton_,0,Qt::AlignLeft); layout->addWidget(shell);
+    maintenancePanel_ = new DeviceMaintenancePanel(left,maintenanceService_);
+    maintenancePanel_->conflicts = [this](const serialdemo::AdbDevice& device){return maintenanceConflicts(device);};
+    connect(maintenancePanel_,&DeviceMaintenancePanel::activityChanged,this,&MainWindow::setActivity);
+    connect(maintenancePanel_,&DeviceMaintenancePanel::taskChanged,this,&MainWindow::updateMaintenanceState);
+    connect(maintenancePanel_,&DeviceMaintenancePanel::shutdownFinished,this,[this]{maintenanceShutdownComplete_=true;});
+    layout->addWidget(maintenancePanel_); layout->addStretch();
+    auto* right = new QFrame(this); right->setObjectName(QStringLiteral("featureCard"));
+    auto* mirrorLayout = new QVBoxLayout(right); mirrorLayout->setContentsMargins(16,14,16,14); mirrorLayout->setSpacing(10);
+    auto* mirrorTitle = new QLabel(QStringLiteral("Android 投屏"),right); mirrorTitle->setObjectName(QStringLiteral("sectionLabel")); mirrorLayout->addWidget(mirrorTitle);
+    screenMirrorPanel_ = new ScreenMirrorPanel(right,{},true); mirrorLayout->addWidget(screenMirrorPanel_);
+    connect(screenMirrorPanel_,&ScreenMirrorPanel::activityChanged,this,&MainWindow::setActivity);
+    connect(screenMirrorPanel_,&ScreenMirrorPanel::shutdownFinished,this,[this]{mirrorShutdownComplete_=true;});
+    auto* scroll = new QScrollArea(this); scroll->setObjectName("remoteDebugScroll"); scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame); scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setStyleSheet(QStringLiteral("QScrollArea#remoteDebugScroll { background: transparent; }"));
+    scroll->viewport()->setAutoFillBackground(false);
+    scroll->setWidget(new RemoteColumns(left,right,scroll));
+    scroll->widget()->setAutoFillBackground(false);
+    return wrapAdbPage(QStringLiteral("远程调试"),scroll);
 }
 
 QPushButton* MainWindow::addNavigationButton(const QString& text, int pageIndex, const QString& serialMode)
@@ -683,7 +708,7 @@ void MainWindow::deploySelectedAgent()
 void MainWindow::connectSelectedAgent(bool allowDeploy)
 {
     if (qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE")) return;
-    if (agentConnecting_ || agentCleanupPending_ || agentClient_ || shuttingDown_ ||
+    if (maintenanceBlocking_ || agentConnecting_ || agentCleanupPending_ || agentClient_ || shuttingDown_ ||
         closeRequested_) {
         return;
     }
@@ -902,7 +927,7 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
 
 void MainWindow::stopSelectedAgent()
 {
-    if (agentConnecting_ || shuttingDown_) {
+    if (maintenanceBlocking_ || agentConnecting_ || shuttingDown_) {
         return;
     }
     std::string serial = agentAdbSerial_;
@@ -1062,7 +1087,7 @@ void MainWindow::updateServicePresentation()
             ? QStringLiteral("设备串口需要板端服务；文件传输、终端和投屏可独立使用。")
             : serviceDetail_);
     topServiceButton_->setEnabled(
-        !shuttingDown_ && !closeRequested_ && !agentConnecting_ && !agentCleanupPending_ &&
+        !shuttingDown_ && !closeRequested_ && !maintenanceBlocking_ && !agentConnecting_ && !agentCleanupPending_ &&
         (agentClient_ || (!agentSerialBusy() && selectedDevice().state == "device")) &&
         !qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE"));
     if (topServiceButton_->property("serviceState").toString() != tone) {
@@ -1131,10 +1156,10 @@ void MainWindow::updateAgentControls()
     const auto device = selectedDevice();
     deviceCombo_->setToolTip(deviceCombo_->currentText());
     const bool online = !device.serial.empty() && device.state == "device";
-    deployAgentButton_->setEnabled(online && !agentConnecting_ && !agentCleanupPending_ &&
+    deployAgentButton_->setEnabled(online && !maintenanceBlocking_ && !agentConnecting_ && !agentCleanupPending_ &&
                                     !connected && !agentSerialBusy());
     disconnectAgentButton_->setEnabled(connected && !agentSerialBusy());
-    stopAgentButton_->setEnabled(online && !agentConnecting_ && !agentSerialBusy());
+    stopAgentButton_->setEnabled(online && !maintenanceBlocking_ && !agentConnecting_ && !agentSerialBusy());
     updateServicePresentation();
     deployAgentButton_->setText(agentConnecting_ ? QStringLiteral("正在连接…")
                                                  : QStringLiteral("连接板端服务"));
@@ -1155,7 +1180,7 @@ void MainWindow::refreshDevices()
 void MainWindow::openAdbTerminal()
 {
     const auto device = selectedDevice();
-    if (shuttingDown_ || terminalLaunching_ || qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE") ||
+    if (shuttingDown_ || maintenanceBlocking_ || terminalLaunching_ || qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE") ||
         device.serial.empty() || device.state != "device") {
         return;
     }
@@ -1188,7 +1213,7 @@ void MainWindow::updateAdbTerminalControls()
     const auto device = selectedDevice();
     const bool online = !device.serial.empty() && device.state == "device";
     for (auto* button : terminalButtons_) {
-        button->setEnabled(online && !terminalLaunching_ && !shuttingDown_ && !closeRequested_ &&
+        button->setEnabled(online && !maintenanceBlocking_ && !terminalLaunching_ && !shuttingDown_ && !closeRequested_ &&
                            !qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE"));
         button->setText(terminalLaunching_ ? QStringLiteral("正在打开…")
                                            : QStringLiteral("打开 ADB 终端 ↗"));
@@ -1201,7 +1226,7 @@ void MainWindow::updateAdbTerminalControls()
 void MainWindow::startDeviceScan(bool automatic)
 {
     if (qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE")) return;
-    if (shuttingDown_ || scanning_ || serialBusy_ || agentConnecting_) {
+    if (shuttingDown_ || maintenanceBlocking_ || scanning_ || serialBusy_ || agentConnecting_) {
         return;
     }
     scanning_ = true;
@@ -1232,7 +1257,7 @@ void MainWindow::applyDeviceScan(testtools::DeviceScanResult result, bool automa
     if (shuttingDown_) {
         return;
     }
-    if (serialBusy_ || agentConnecting_) {
+    if (serialBusy_ || agentConnecting_ || maintenanceBlocking_) {
         scanning_ = false;
         updateDeviceControls();
         return;
@@ -1355,6 +1380,7 @@ void MainWindow::applySelectedDevice()
                          : QStringLiteral("ADB · %1").arg(deviceStateText(device.state)),
                      StatusTone::Neutral);
     if (screenMirrorPanel_) screenMirrorPanel_->setDevice(device);
+    if (maintenancePanel_) maintenancePanel_->setDevice(device);
     if (fileWorkspace_) fileWorkspace_->setDevice(device);
     if (!agentAdbSerial_.empty() &&
         (agentAdbSerial_ != device.serial || device.state != "device")) {
@@ -1364,7 +1390,7 @@ void MainWindow::applySelectedDevice()
     if (terminalWorkspace_)
         terminalWorkspace_->setAdbDevice(device);
     updateAgentControls();
-    if (!agentClient_ && !agentConnecting_ && device.state == "device" && !device.serial.empty()) {
+    if (!maintenanceBlocking_ && !agentClient_ && !agentConnecting_ && device.state == "device" && !device.serial.empty()) {
         connectSelectedAgent(false);
     }
 }
@@ -1487,6 +1513,19 @@ void MainWindow::updateTasks(bool rebuildMenu)
             }
         }
     }
+    if (maintenancePanel_) {
+        const auto state=maintenancePanel_->snapshot();
+        if(state.active) {
+            ++count;
+            const auto label=QStringLiteral("诊断与维护 · %1 · %2").arg(fromUtf8(state.request.device.serial),fromUtf8(state.progress.message));
+            descriptions.push_back(label);
+            if(rebuildMenu) {
+                auto* action=taskMenu_->addAction(label+QStringLiteral(" · 停止任务"));
+                action->setEnabled(!state.cancelling);
+                connect(action,&QAction::triggered,this,[this,id=state.id]{maintenancePanel_->cancelTask(id);updateTasks();});
+            }
+        }
+    }
     taskButton_->setText(count ? QStringLiteral("后台任务 %1").arg(count) : QStringLiteral("无后台任务"));
     taskButton_->setVisible(count > 0);
     taskButton_->setToolTip(descriptions.join(QLatin1Char('\n')));
@@ -1498,7 +1537,7 @@ void MainWindow::updateDeviceControls()
     updateServicePresentation();
     updateAdbTerminalControls();
     const bool enabled = !qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE") && !scanning_ &&
-                         !serialBusy_ && !agentConnecting_;
+                         !serialBusy_ && !agentConnecting_ && !maintenanceBlocking_;
     refreshButton_->setEnabled(enabled);
     bool hasDevice = false;
     for (int index = 0; index < deviceCombo_->count(); ++index) {
@@ -1508,4 +1547,31 @@ void MainWindow::updateDeviceControls()
         }
     }
     deviceCombo_->setEnabled(enabled && hasDevice);
+}
+
+testtools::MaintenanceConflicts MainWindow::maintenanceConflicts(const serialdemo::AdbDevice& device) const
+{
+    testtools::MaintenanceConflicts result;
+    if(fileWorkspace_) {
+        const auto state=fileWorkspace_->transferSnapshot();
+        result.files=state.active && state.remote && state.serial==device.serial;
+    }
+    result.serial=(serialWorkspace_ && serialWorkspace_->hasActiveAgentConnection(device.serial)) ||
+                  (terminalWorkspace_ && terminalWorkspace_->hasActiveAgentConnection(device.serial));
+    result.mirror=screenMirrorPanel_ && screenMirrorPanel_->busyForDevice(device.serial);
+    result.preparingService=(agentConnecting_ || agentCleanupPending_ || terminalLaunching_ || scanning_) && selectedDevice().serial==device.serial;
+    return result;
+}
+void MainWindow::updateMaintenanceState()
+{
+    const auto state=maintenanceService_->snapshot();
+    const bool blocked=state.active && testtools::disruptive(state.request.action);
+    const bool previous=maintenanceBlocking_;
+    maintenanceBlocking_=blocked;
+    if(blocked && !previous) disconnectAgent(QStringLiteral("设备维护中；完成后重新检查连接"));
+    if(fileWorkspace_) fileWorkspace_->setDeviceMaintenance(blocked);
+    for(auto* workspace:{serialWorkspace_,terminalWorkspace_}) if(workspace) workspace->setDeviceMaintenance(blocked);
+    if(screenMirrorPanel_) screenMirrorPanel_->setMaintenanceDevice(blocked?state.request.device.serial:std::string{});
+    updateDeviceControls(); updateAgentControls(); updateTasks();
+    if(previous && !blocked && !closeRequested_) refreshDevices();
 }

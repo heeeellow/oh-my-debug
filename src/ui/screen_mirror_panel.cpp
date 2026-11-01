@@ -158,6 +158,16 @@ void ScreenMirrorPanel::setDevice(const serialdemo::AdbDevice& device)
     updateControls();
 }
 
+void ScreenMirrorPanel::setMaintenanceDevice(const std::string& serial)
+{
+    maintenanceSerial_ = serial; updateControls();
+}
+bool ScreenMirrorPanel::busyForDevice(const std::string& serial) const
+{
+    return !serial.empty() && ((busy_ && selected_.serial == serial) ||
+        (state_.running && state_.serial == serial));
+}
+
 void ScreenMirrorPanel::updateControls()
 {
     const bool sessionContext = state_.running || !state_.detail.empty() || busy_;
@@ -173,7 +183,7 @@ void ScreenMirrorPanel::updateControls()
                          QStringLiteral("\n下次启动设备：%1").arg(text(selected_.serial)));
     if (!busy_)
         status_->setText(text(state_.message));
-    start_->setEnabled(!shuttingDown_ && !busy_ && !state_.running && !selected_.serial.empty() &&
+    start_->setEnabled(!shuttingDown_ && !busy_ && !state_.running && !selected_.serial.empty() && selected_.serial != maintenanceSerial_ &&
                        selected_.state == "device" &&
                        !qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE"));
     stop_->setEnabled(!shuttingDown_ && !busy_ && state_.running);
@@ -185,7 +195,7 @@ void ScreenMirrorPanel::updateControls()
 
 void ScreenMirrorPanel::startCurrentDevice()
 {
-    if (state_.running || busy_ || shuttingDown_ || qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE"))
+    if (state_.running || busy_ || shuttingDown_ || (!maintenanceSerial_.empty() && selected_.serial == maintenanceSerial_) || qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE"))
         return;
     state_.serial = selected_.serial;
     state_.detail.clear();

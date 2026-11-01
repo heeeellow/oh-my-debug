@@ -158,15 +158,16 @@ CommandResult ProcessRunner::run(const std::string &program,
 
 ManagedCommandResult ProcessRunner::runManaged(const std::string& program,
     const std::vector<std::string>& arguments, std::chrono::milliseconds timeout,
-    const std::atomic<bool>& cancel, const std::function<void(const std::string&)>& progress)
+    const std::atomic<bool>& cancel, const std::function<void(const std::string&)>& progress,
+    const std::function<bool(const char*, std::size_t)>& stdoutSink)
 {
     ManagedCommandResult result;
     if (cancel) { result.cancelled = true; return result; }
     std::mutex mutex;
-    std::atomic<bool> truncated{false};
+    std::atomic<bool> truncated{false}, outputFailed{false};
     const auto append = [&](std::string& output, const char* data, std::size_t size) {
         { std::lock_guard<std::mutex> lock(mutex);
-          constexpr std::size_t limit = 4 * 1024 * 1024;
+          const std::size_t limit = stdoutSink ? 64 * 1024 : 4 * 1024 * 1024;
           const auto available = limit - output.size();
           output.append(data, std::min(size, available));
           if (size > available) truncated = true;
@@ -175,9 +176,16 @@ ManagedCommandResult ProcessRunner::runManaged(const std::string& program,
     };
     {
         TinyProcessLib::Process process(toNativeString(buildCommandLine(program, arguments)), {},
-            [&](const char* data, std::size_t size) { append(result.command.standardOutput, data, size); },
+            [&](const char* data, std::size_t size) {
+                if (!stdoutSink) append(result.command.standardOutput, data, size);
+                else if (!outputFailed) {
+                    try { if (!stdoutSink(data, size)) outputFailed = true; }
+                    catch (...) { outputFailed = true; }
+                }
+            },
             [&](const char* data, std::size_t size) { append(result.command.standardError, data, size); });
         if (!process.get_id()) { result.command.standardError = "无法启动进程：" + program; return result; }
+        result.started = true;
 #ifdef _WIN32
         // 等待期间保留原生进程句柄，防止子进程退出后其 PID 被操作系统复用。
         const std::unique_ptr<void, decltype(&CloseHandle)> client(
@@ -186,9 +194,9 @@ ManagedCommandResult ProcessRunner::runManaged(const std::string& program,
         auto waiter = std::async(std::launch::async, [&] { return process.get_exit_status(); });
         const auto deadline = std::chrono::steady_clock::now() + timeout;
         while (waiter.wait_for(std::chrono::milliseconds(20)) != std::future_status::ready) {
-            if (cancel || truncated || std::chrono::steady_clock::now() >= deadline) {
+            if (cancel || truncated || outputFailed || std::chrono::steady_clock::now() >= deadline) {
                 result.cancelled = cancel.load();
-                result.command.timedOut = !result.cancelled && !truncated;
+                result.command.timedOut = !result.cancelled && !truncated && !outputFailed;
                 // TinyProcessLib::kill 在 Windows 上会连带终止直接子进程；
                 // 若当前 ADB 客户端刚拉起了共享的 ADB Server，只应终止客户端自身而不误杀共享服务。
 #ifdef _WIN32
@@ -202,6 +210,7 @@ ManagedCommandResult ProcessRunner::runManaged(const std::string& program,
         result.command.exitCode = waiter.get();
     }
     result.outputTruncated = truncated.load();
+    result.outputFailed = outputFailed.load();
     return result;
 }
 

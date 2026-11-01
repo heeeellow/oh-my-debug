@@ -288,7 +288,7 @@ void FileTransferWorkspace::refreshOnEntry()
 
 void FileTransferWorkspace::loadRemote(const std::string& requestedDirectory)
 {
-    if (closing_ || service_->snapshot().active || qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE"))
+    if (closing_ || maintenanceBlocked_ || service_->snapshot().active || qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE"))
         return;
     if (requestedDirectory.empty())
         entryRefreshPending_ = false;
@@ -356,7 +356,7 @@ void FileTransferWorkspace::setDevice(const serialdemo::AdbDevice& device)
 
 void FileTransferWorkspace::transfer(testtools::TransferDirection direction)
 {
-    if (closing_ || service_->snapshot().active || qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE"))
+    if (closing_ || maintenanceBlocked_ || service_->snapshot().active || qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE"))
         return;
     if (localLoading_ || remoteLoading_ || local_.path.empty() || remote_.path.empty() ||
         !local_.error.empty() || !remote_.error.empty() || device_.state != "device" ||
@@ -519,6 +519,7 @@ void FileTransferWorkspace::retryFailed()
 
 void FileTransferWorkspace::startRequest(testtools::FileTransferRequest request)
 {
+    if (maintenanceBlocked_) return;
     const bool downloading = request.direction == testtools::TransferDirection::Download;
     std::string error;
     lastRequest_ = request;
@@ -556,7 +557,7 @@ void FileTransferWorkspace::updateControls()
     if (!status_ || !upload_ || !download_ || !localPath_ || !remotePath_)
         return;
     const auto state = service_->snapshot();
-    const bool online = !device_.serial.empty() && device_.state == "device" &&
+    const bool online = !maintenanceBlocked_ && !device_.serial.empty() && device_.state == "device" &&
                         !qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE");
     localPane_->setAvailable(!closing_ && !state.active, localLoading_);
     remotePane_->setAvailable(!closing_ && !state.active && online, remoteLoading_);
@@ -687,7 +688,7 @@ void FileTransferWorkspace::changeFiles(bool remote, testtools::FileOperation op
     auto* pane = remote ? remotePane_ : localPane_;
     const auto& listing = remote ? remote_ : local_;
     const auto draft = remote ? remotePath_->text() : QDir::fromNativeSeparators(localPath_->text());
-    if (closing_ || service_->snapshot().active || (remote ? remoteLoading_ : localLoading_) ||
+    if (closing_ || (remote && maintenanceBlocked_) || service_->snapshot().active || (remote ? remoteLoading_ : localLoading_) ||
         listing.path.empty() || QDir::cleanPath(draft) != QDir::cleanPath(text(listing.path)) ||
         (remote && (device_.state != "device" || qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE")))) return;
     testtools::FileManagementRequest request;
@@ -782,6 +783,7 @@ void FileTransferWorkspace::changeFiles(bool remote, testtools::FileOperation op
 
 void FileTransferWorkspace::startChange(testtools::FileManagementRequest request)
 {
+    if (request.remote && maintenanceBlocked_) return;
     std::string error;
     if (!service_->prepareChange(request, error)) { status_->setText(text(error)); return; }
     lastChange_ = std::move(request); lastWasChange_ = true;
@@ -863,5 +865,16 @@ void FileTransferWorkspace::updateRemoteLocations()
 void FileTransferWorkspace::cancelTransfer(std::uint64_t expectedId)
 {
     service_->cancel(expectedId);
+    updateControls();
+}
+
+void FileTransferWorkspace::setDeviceMaintenance(bool blocked)
+{
+    if (maintenanceBlocked_ == blocked) return;
+    maintenanceBlocked_=blocked;
+    if (blocked) {
+        ++remoteGeneration_; if(remoteCancel_) *remoteCancel_=true; remoteLoading_=false;
+        if(permissionsDialog_) permissionsDialog_->reject();
+    } else entryRefreshPending_=true;
     updateControls();
 }

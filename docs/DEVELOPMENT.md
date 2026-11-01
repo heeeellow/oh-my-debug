@@ -239,10 +239,12 @@ cmake --build build/tests/host --config Release --parallel
 ctest --test-dir build/tests/host -C Release --output-on-failure
 ```
 
-主机 CTest 包含 `core-application-contract`、`file-transfer-contract` 和 `serial-recording-contract`；Agent 主机契约由 `src/agent/` 的独立 CMake 工程验证。
+主机 CTest 包含 `core-application-contract`、`file-transfer-contract`、`serial-recording-contract` 和 `device-maintenance-contract`；Agent 主机契约由 `src/agent/` 的独立 CMake 工程验证。
 录制检查覆盖精确字节、UTF-8、成功 TX、停止/断线/退出、目标覆盖保护、注入的慢写与文件失败，以及有界显示投递；不访问串口设备。
 原生 `serial-recording-ui` 使用离线串口和文件夹具检查录制对话框、工具栏/全局停止、显示截断、搜索/高亮/ANSI、偏好和窗口退出。
 `file-management-ui` 用隔离偏好和目录检查分组路径、收藏/历史、确认与上下文门禁、任务状态；`native-file-backend` 另执行本地主机目录与假 ADB 下的固定管理命令，检查同名失败、链接不跟随和注入挂载表，不能作为实机 Linux/Android 验收。
+`native-device-maintenance` 使用独立模拟 ADB，核对超过 4 MiB 的精确字节流、原文件与部分文件、失败/超时/取消、Root 身份与 Remount 分开报告，以及重启离线/上线过程；不访问开发板。
+`device-maintenance-ui` 使用注入后端检查确认、固定上下文、文件/串口/投屏互斥、Windows COM 独立性、全局任务 ID 和退出；设置 `TESTTOOLS_MAINTENANCE_SNAPSHOTS=1` 可按需保存远程页常规、宽窗、窄窗、确认及部分结果，`--high-dpi` 单独抓高 DPI 样本。真实 Root、Remount、重启、Loader 与权限/物理异常须另列实机结果。
 权限修改检查另覆盖实际值读取、数字/勾选同步、多选不一致、取消和设备变化、非法八进制参数及写后回读；Windows Git Bash 不保留完整 POSIX 权限，夹具须把实际值不一致记为失败，不能据此宣称 Linux/Android chmod 验收通过。
 文件管理代表图可按需设置 `TESTTOOLS_FILE_SNAPSHOTS=1` 留下，普通回归不默认抓图。自动文件对话框需等待可见，在实际文件名控件中提交路径并核对录制快照目标，避免目录模型加载时序造成夹具读错文件。
 按需设置 `TESTTOOLS_RECORDING_SNAPSHOTS=1` 留下代表状态及实际尺寸/DPR 元数据，常规交互回归不必重新留图。

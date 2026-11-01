@@ -140,4 +140,13 @@
   <ItemGroup>
     <QtRcc Include="src\ui\resources\icons.qrc"><Filter>界面</Filter></QtRcc>
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\application\device\device_maintenance_service.cpp"><Filter>应用层\设备</Filter></ClCompile>
+    <ClCompile Include="src\adapters\device\adb_device_maintenance.cpp"><Filter>适配器\ADB</Filter></ClCompile>
+    <ClCompile Include="src\ui\widgets\device_maintenance_panel.cpp"><Filter>界面</Filter></ClCompile>
+    <ClInclude Include="src\core\device\device_maintenance.h"><Filter>核心层</Filter></ClInclude>
+    <ClInclude Include="src\application\device\device_maintenance_service.h"><Filter>应用层\设备</Filter></ClInclude>
+    <ClInclude Include="src\adapters\device\adb_device_maintenance.h"><Filter>适配器\ADB</Filter></ClInclude>
+    <QtMoc Include="src\ui\widgets\device_maintenance_panel.h"><Filter>界面</Filter></QtMoc>
+  </ItemGroup>
 </Project>
