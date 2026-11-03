@@ -11,11 +11,13 @@ struct AdbTerminalResult {
     bool started = false;
     std::string host;
     std::string error;
+    int effectiveUid = -1;
 };
 
 class AdbTerminalService {
 public:
-    AdbTerminalResult open(const serialdemo::AdbDevice &device) const;
+  int shellUid(const serialdemo::AdbDevice& device) const;
+  AdbTerminalResult open(const serialdemo::AdbDevice& device) const;
 };
 
 } // namespace testtools

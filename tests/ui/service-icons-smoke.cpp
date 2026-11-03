@@ -6,8 +6,8 @@
 #include <QtTest/QSignalSpy>
 #include <QtTest/QTest>
 #include <QtWidgets>
-#define private public
 #include "ui/main_window.h"
+#define private public
 #include "ui/pages/file_transfer_workspace.h"
 #include "ui/pages/serial_workspace.h"
 #undef private
@@ -96,7 +96,11 @@ class HeldClient final : public testtools::IAgentConnection {
     }
     std::atomic<bool> closed{false};
 };
-int main(int argc, char** argv)
+class MainWindowUiChecks {
+  public:
+    static int run(int argc, char** argv);
+};
+int MainWindowUiChecks::run(int argc, char** argv)
 {
     try {
         QApplication app(argc, argv);
@@ -174,6 +178,53 @@ int main(int argc, char** argv)
               "refresh action is immediately next to device selector");
         check(serial->channels_[1].serviceHint->isVisible() && !serial->channels_[1].connectButton->isEnabled(),
               "missing board service explained next to connection");
+        qunsetenv("TESTTOOLS_OFFLINE");
+        window.agentConnecting_ = true;
+        window.passiveAgentProbe_ = true;
+        window.updateServicePresentation();
+        check(window.topServiceButton_->isEnabled() &&
+                  window.topServiceButton_->property("needsConnection").toBool() &&
+                  window.topServiceButton_->text() == QStringLiteral("连接服务"),
+              "background existing-service probe leaves prominent connect action usable");
+        window.agentConnecting_ = false;
+        window.passiveAgentProbe_ = false;
+        qputenv("TESTTOOLS_OFFLINE", "1");
+        testtools::DeviceScanResult scan;
+        scan.devices.push_back({"device-A", "device", ""});
+        window.applyDeviceScan(scan, true);
+        QSignalSpy resets(window.deviceCombo_->model(), &QAbstractItemModel::modelReset);
+        const auto generation = window.agentGeneration_;
+        window.applyDeviceScan(scan, true);
+        check(resets.count() == 0 && window.selectedDevice().serial == "device-A" &&
+                  window.agentGeneration_ == generation,
+              "unchanged scan keeps model, selection and service generation stable");
+        auto failedScan = scan;
+        failedScan.error = "injected discovery failure";
+        window.applyDeviceScan(failedScan, true);
+        check(resets.count() == 0 && window.selectedDevice().serial == "device-A",
+              "failed discovery preserves current device and model");
+        window.applyDeviceScan(scan, true);
+        check(resets.count() == 0 &&
+                  window.adbStatusLabel_->text().contains(QStringLiteral("已连接")),
+              "discovery recovery restores status without rebuilding list");
+        scan.devices.push_back({"device-B", "device", ""});
+        window.applyDeviceScan(scan, true);
+        check(window.selectedDevice().serial == "device-A" && window.agentGeneration_ == generation,
+              "another device arriving neither switches selection nor reprobes current service");
+        qunsetenv("TESTTOOLS_OFFLINE");
+        window.scanning_ = true;
+        window.automaticScan_ = true;
+        window.serialBusy_ = true; // Local COM does not freeze ADB discovery controls.
+        window.updateDeviceControls();
+        check(window.deviceCombo_->isEnabled() && window.refreshButton_->isEnabled(),
+              "silent scan and local COM do not flash global device controls disabled");
+        window.scanning_ = false;
+        window.serialBusy_ = false;
+        qputenv("TESTTOOLS_OFFLINE", "1");
+        window.navigateTo("adb");
+        check(window.pages_->currentIndex() == MainWindow::MirrorPage,
+              "ADB group first opens remote debugging above file transfer");
+        window.navigateTo("terminal");
         window.grab().save(testOutputPath("service-disconnected.png"));
         auto held = std::make_shared<HeldClient>();
         window.agentClient_ = held;
@@ -203,6 +254,12 @@ int main(int argc, char** argv)
         qunsetenv("TESTTOOLS_OFFLINE");
         QMetaObject::invokeMethod(window.serviceHealthTimer_, "timeout", Qt::DirectConnection);
         qputenv("TESTTOOLS_OFFLINE", "1");
+        check(await([&] { return !window.serviceProbeActive_; }) && window.agentClient_ &&
+                  window.serviceHealthFailures_ == 1,
+              "one failed health probe does not flicker ready service to disconnected");
+        qunsetenv("TESTTOOLS_OFFLINE");
+        QMetaObject::invokeMethod(window.serviceHealthTimer_, "timeout", Qt::DirectConnection);
+        qputenv("TESTTOOLS_OFFLINE", "1");
         check(await([&] {
                   return !window.serviceProbeActive_ && !window.agentClient_ &&
                          !window.agentCleanupPending_;
@@ -225,4 +282,8 @@ int main(int argc, char** argv)
         std::cerr << e.what() << '\n';
         return 1;
     }
+}
+int main(int argc, char** argv)
+{
+    return MainWindowUiChecks::run(argc, argv);
 }

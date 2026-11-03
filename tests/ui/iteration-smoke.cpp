@@ -1,9 +1,10 @@
+#include "application/device/file_transfer_service.h"
 #include "application/serial/serial_port_claims.h"
 #include "application/serial/serial_session.h"
 #include "application/serial/serial_terminal.h"
-#include "application/device/file_transfer_service.h"
-#include "ui/widgets/file_pane.h"
 #include "test_paths.h"
+#include "ui/widgets/file_pane.h"
+#include <QtTest/QSignalSpy>
 #include <QtTest/QTest>
 #include <QtWidgets>
 #include <atomic>
@@ -230,12 +231,72 @@ int main(int argc, char** argv)
             return 0;
         }
 
-        normal->scanning_ = true;
-        normal->channels_[1].sourceCombo->setCurrentIndex(1);
-        normal->channels_[1].sourceCombo->setCurrentIndex(0);
-        normal->channels_[1].portCombo->setEditText("COM_TEST");
-        check(normal->channels_[1].connectButton->isEnabled(), "Agent enumeration does not disable local COM");
-        normal->scanning_ = false;
+        const auto refreshPc = [&](SerialWorkspace* workspace) {
+            auto& pc = workspace->channels_[1];
+            pc.sourceCombo->setCurrentIndex(1);
+            workspace->scanning_ = true; // An unrelated board enumeration is still pending.
+            pc.sourceCombo->setCurrentIndex(0);
+            const auto previous = pc.portCombo->currentText();
+            pc.portCombo->addItem("TESTTOOLS_REFRESH_SENTINEL");
+            pc.portCombo->setEditText("COM_DRAFT");
+            check(pc.sourceCombo->currentText() == QStringLiteral("PC端串口"),
+                  "PC name is consistent in every serial mode");
+            check(pc.connectButton->isEnabled() && pc.refreshPortsButton->isEnabled(),
+                  "board enumeration does not disable idle PC connect or refresh");
+            const auto generation = workspace->agentPortGeneration_;
+            QSignalSpy activity(workspace, &SerialWorkspace::activityChanged);
+            pc.refreshPortsButton->click();
+            check(pc.portCombo->findText("TESTTOOLS_REFRESH_SENTINEL") < 0 &&
+                      pc.portCombo->currentText() == "COM_DRAFT",
+                  "PC refresh actually rebuilds ports and keeps typed draft");
+            check(workspace->scanning_ && workspace->agentPortGeneration_ == generation,
+                  "PC refresh neither starts nor cancels board enumeration");
+            check(!activity.isEmpty() && activity.last().first().toString().startsWith(
+                                             QStringLiteral("已刷新 PC端串口")),
+                  "PC refresh reports its own result without requiring a service");
+            workspace->scanning_ = false;
+            pc.portCombo->setEditText(previous);
+        };
+        window.setSerialModeForDiagnostics("single");
+        for (const auto state : {testtools::AgentServiceState::Disconnected,
+                                 testtools::AgentServiceState::Connecting,
+                                 testtools::AgentServiceState::Failed}) {
+            window.serviceState_ = state;
+            normal->setServiceStatus(state, "fixture service unavailable");
+            refreshPc(normal);
+        }
+        window.serviceState_ = testtools::AgentServiceState::Disconnected;
+        normal->setServiceStatus(window.serviceState_, {});
+        normal->setDeviceMaintenance(true);
+        refreshPc(normal);
+        normal->setDeviceMaintenance(false);
+        normal->channels_[0].sourceCombo->setCurrentIndex(1);
+        check(!normal->channels_[0].refreshPortsButton->isEnabled(),
+              "device refresh still requires its board service");
+        refreshPc(normal);
+        normal->channels_[0].sourceCombo->setCurrentIndex(0);
+        window.grab().save(evidence + "/pc-serial-refresh-no-service.png");
+        window.setSerialModeForDiagnostics("dual");
+        check(normal->channels_[0].sourceCombo->itemText(0) == QStringLiteral("PC端串口"),
+              "dual endpoint A uses the PC name");
+        auto other = std::make_unique<FixtureTransport>();
+        serialdemo::SerialConfig otherConfig;
+        otherConfig.endpoint = "COM_OTHER";
+        normal->channels_[0].session.open(std::move(other), otherConfig);
+        check(await([&] { return normal->channels_[0].session.isOpen(); }),
+              "other PC endpoint active in fixture");
+        refreshPc(normal);
+        check(normal->channels_[0].session.isOpen() &&
+                  !normal->channels_[0].refreshPortsButton->isEnabled(),
+              "refreshing an idle PC endpoint preserves the other connection");
+        normal->channels_[0].connectButton->click();
+        check(await([&] {
+                  return !normal->channels_[0].session.isActive() &&
+                         !normal->channels_[0].disconnectPending;
+              }),
+              "other fixture endpoint closes");
+        window.setSerialModeForDiagnostics("terminal");
+        refreshPc(terminal);
         auto transport = std::make_unique<FixtureTransport>();
         auto* fixture = transport.get();
         serialdemo::SerialConfig config;

@@ -49,6 +49,14 @@ int wmain(int argc, wchar_t** argv)
         return 0;
     }
     if (command == "remount") {
+        if (scene == "remount-success-reboot") {
+            std::cout << "Now reboot your device for settings to take effect\nremount succeeded\n";
+            return 0;
+        }
+        if (scene == "remount-prepare-reboot") {
+            std::cout << "Overlayfs enabled.\nReboot the device for new settings to take effect\n";
+            return 0;
+        }
         if (scene == "remount-mixed") {
             std::cout << "remount succeeded\n/vendor: Permission denied\n";
             return 0;
@@ -91,7 +99,9 @@ int wmain(int argc, wchar_t** argv)
             return 0;
         }
         if (args[4] == "id -u") {
-            std::cout << (scene == "uid-denied" ? "2000\n" : "0\n");
+            std::cout << (scene == "uid-invalid"  ? "uid=0(root)\n"
+                          : scene == "uid-denied" ? "2000\n"
+                                                  : "0\n");
             return 0;
         }
         if (args[4] != "dmesg")

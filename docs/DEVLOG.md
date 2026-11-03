@@ -527,3 +527,48 @@ Agent 留出稳定边界。
 | 输出目录独立运行 | 去除 Qt 路径和插件环境变量后，直接启动 Release 输出中的文件、串口与远程调试页，3/3 退出码为 0，保存 1366×768、实际 DPR 1.25 的快照及控件元数据。见 `deployed-runtime.json`、`deployed-*.png.json`；输出保留图标许可 |
 | 文档、静态边界与差异 | 文档入口/相对链接、无 Qt 边界、项目登记、资源路径与差异检查通过，见 `static-checks.log`、`verification.json`；Git 交付状态以本页第 1 节为准 |
 | 无 Qt 核心与实机 | 本轮未修改无 Qt 层、Agent 或协议，未重跑核心/后端/板端构建与实机验收；未重新测量目录耗时、未执行真实文件变更、权限修改或串口发送，不能将图标替换视为这些场景的新增验收 |
+
+
+## 2026-11-01：0.13.0 / 2B 诊断维护归档
+
+按用户授权本地提交 `b512696`，未打标签、未推送。以下从当时 STATUS 迁入，证据根目录为 `build/iteration-0.13.0/`。当前实现与交付见 [STATUS](STATUS.md)。
+
+
+以下仅记录 0.13.0 / 2B。历史基线见 [开发日志](DEVLOG.md)。本轮使用无 Qt 假后端、原生模拟 ADB 和隔离主机文件；未访问开发板或执行真实 Root、挂载、重启。
+
+| 范围 | 结果与证据 |
+| --- | --- |
+| 桌面构建与固定 Bundle | Debug / Release 通过，既有 Bundle v2 三包大小与 SHA-256 校验通过；见 `release-build.log`、`debug-build.log`。Agent 源码/版本与协议未变，未重建板端程序；仍有可选 dxcompiler/dxil 提示，Widgets 运行正常 |
+| 无 Qt 核心 | CTest 4/4 通过，新增维护契约检查固定设备/路径/动作/超时、五类冲突、只读导出独立、单任务、旧 ID 停止无效、取消前不执行、重复执行防护、Root/Remount 部分结果及异常产物保留。见 `core-tests.log` |
+| 原生维护后端 | 独立模拟 ADB 通过：6 MiB + 7 字节精确导出，包含 NUL、CRLF 与 UTF-8；覆盖拒绝未授权覆盖、权限失败保留原文件及部分日志、超时/取消、主机打开失败、流式回调失败、Android/UID 核验、Root 拒绝不执行挂载、Remount 返回 0 但失败/不明确、重启各阶段及 Loader 资格。最后补查混合 Remount 响应与 ADB 客户端异常，后者不能当作设备离线证据；见 `refinement-tests.log`（1/1），本批完整后端检查另见 `related-tests.log` 中 `native-device-maintenance`，夹具和部分文件保留在 `native-tests/evidence/maintenance backend/` |
+| 原生交互与回归 | 相关 8 项 CTest 通过：文件页、文件后端、服务/图标、独立串口页、录制、文件管理、维护后端与维护界面。新增确认默认取消、确认期间设备变化、维护与文件/设备串口/投屏同步门禁、Windows 本地串口入口独立、全局任务 ID、部分完成展示与活动任务退出。见 `related-tests.log` |
+| 代表界面 | 按本轮范围目检远程页 1366×768、1920×1080、窄窗 1120×768（实际 DPR 1.25），以及确认框、部分完成结果；另查 1366×768、实际 DPR 1.5 的高 DPI 样本及交互。快照和尺寸/DPR 元数据见 `native-tests/evidence/remote-*.png/.json`，高 DPI 结果见 `highdpi-ui.log`；未展开全页面矩阵 |
+| 输出目录独立运行 | 去掉 Qt 路径和插件环境变量后，直接从 Release 输出打开离线远程调试页并保存快照及控件元数据，退出码为 0；见 `deployed-runtime.json`、`deployed-remote.png.json` |
+| 文档、静态边界与差异 | 结束前执行文档入口/链接、无 Qt 边界、模块登记和差异检查，记录见 `static-checks.log`、`verification.json`；提交状态以第 1 节为准 |
+| 实机、物理异常与压力 | 未验证真实日志权限、实际 Root/Remount 与分区可写性、adbd 重启/物理拔线、系统启动完成、USB Loader 枚举、磁盘满/异常网络路径、长时与超大日志。模拟 ADB 的成功或失败只证明主机处理，不代表固件兼容或真实设备验收 |
+
+## 2026-11-02：0.14.0 / 阶段 3 首次本地验证归档
+
+初次硬件信息只读展示在 `b512696` 之上完成，改动未提交。以下为 `build/iteration-0.14.0/` 当时的验证记录；不代表后续 0.14.1 反馈修正或当前设备状态。
+
+| 范围 | 结果与证据 |
+| --- | --- |
+| 桌面构建与固定 Bundle | Debug / Release 通过，既有 Bundle v2 三包大小和 SHA-256 校验通过；见 `release-build.log`、`debug-build.log`。Agent 源码/版本与协议未变，未重建板端程序；可选 dxcompiler/dxil 提示仍在，Widgets 运行正常 |
+| 无 Qt 核心 | CTest 5/5 通过，新增板卡信息契约覆盖能力门禁、固定顺序、多个存储候选、精确单位、0/未知区分、单项重读、旧 ID、取消/超时、关联错误、代次失效及远端结束未确认；另核对独立连接创建、失败不回退主连接、所属连接关闭不影响主会话。保留既有核心/文件/录制/维护回归。见 `core-tests.log` |
+| 原生界面与回归 | 相关 7 项 CTest 通过：硬件信息、文件页、文件管理、服务/图标、独立串口页、录制和设备维护。新增单项/全部读取、原始结果、失败原因、未知/0 显示、读取与维护门禁、设备/会话切换数据隔离、全局旧 ID 和活动任务退出。见 `related-tests.log` |
+| 代表界面 | 设备页标准样本 1366×768、宽窗实际 1920×1061（请求 1920×1080，受系统窗口边界限制）、窄窗 1120×768，另检查读取失败和 1366×768 高 DPI 样本，均保留实际尺寸/DPR 并目检；标准样本实际 DPR 1，高 DPI 样本 DPR 1.5。见 `native-tests/evidence/device-info-*.png/.json`、`highdpi-ui.log`。不展开全页面矩阵，低频详情及窄窗内容允许滚动 |
+| 输出目录独立运行 | 去掉 Qt 路径和插件环境变量后，从 Release 输出打开离线设备信息页并保存快照/控件元数据，退出码为 0，未连接状态下读取按钮禁用。见 `deployed-runtime.json`、`deployed-device-info.png.json` |
+| 当前设备与实机边界 | 随包 ADB 只读枚举未发现设备，见 `adb-devices-readonly.log`；没有执行实际硬件信息读取、Agent 部署/升级、提权、挂载、重启或物理异常测试。夹具数值不作为任何板型或真实硬件的规格/验收依据 |
+| 文档、静态边界与差异 | 文档入口/链接、无 Qt 边界、模块登记、工作区差异和元数据复核记录见 `static-checks.log`、`verification.json`；代码验证与提交状态分别记录 |
+
+## 2026-11-03：0.14.1 / 看板与连接反馈验证归档
+
+以下为 `build/iteration-0.14.1/` 的上一轮记录。后续发现 PC 串口刷新与设备扫描耦合，0.14.2 单独修正；这些旧结果不替代新增刷新场景的验证。
+
+| 范围 | 结果与证据 |
+| --- | --- |
+| 桌面构建 | Release / Debug 已通过；固定 Bundle v2 三包大小与 SHA-256 校验通过。Agent / 协议未变；可选 dxcompiler/dxil 提示保持。见 `release-build.log`、`debug-build.log` |
+| 无 Qt 核心 | CTest 5/5 通过，保留核心、文件、录制、维护和硬件信息契约。见 `core-tests.log` |
+| 原生界面与 ADB 适配器 | 文件页、服务/图标、独立串口、录制、文件管理、原生维护与维护界面等 7 项回归通过，见 `related-tests.log`。精简看板的不可用状态文案修正后单独复查 1/1 通过，见 `board-info-ui.log`；覆盖可见时自动加载、隐藏页不执行、切页保留、刷新、不重复内存、紧凑布局、详情中的多候选/0/未知、设备代次、维护门禁和退出。原生维护包含只读 UID 与成功/需重启混合响应，均为模拟 ADB |
+| 代表界面与实机只读 | 保留 1366×768、1920×1080、1120×768 与读取失败样本（实际 DPR 1.25），以及 1366×768 / DPR 1.5 高 DPI 交互样本；元数据核对全部尺寸，目检实机标准图、窄窗、失败和高 DPI，见 `native-tests/evidence/device-info-*`、`highdpi-ui.log`。当前 RK3568 MTB720 / Android 11（API 30）、既有 Agent 0.3.7 自动加载通过；显示 MemTotal 3852332 KiB（3.67 GiB）和 eMMC 31272730624 字节（29.12 GiB），健康原始字段可读取；只读复核见 `live-readonly.json`、`live-device-info.png/.json`。本轮没有部署、Root/Remount、重启或压力操作；首次 Remount 的真实过程与外部终端交互未重放 |
+| 文档、静态边界与差异 | 文档入口/相对链接、无 Qt 边界与静态基线通过；版本、模块登记、图片尺寸/DPR、证据和 Git 范围复核见 `static-checks.log`、`verification.json`。未暂存、提交或推送，第四阶段未开展 |

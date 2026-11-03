@@ -18,7 +18,7 @@ SerialConnectionBar::SerialConnectionBar(QWidget* parent) : QFrame(parent)
     settingsRowLayout->setContentsMargins(0, 0, 0, 8);
     settingsRowLayout->setSpacing(6);
     sourceCombo = new QComboBox(connectionRow);
-    sourceCombo->addItem(QStringLiteral("Windows 本地串口"), false);
+    sourceCombo->addItem(QStringLiteral("PC端串口"), false);
     sourceCombo->addItem(QStringLiteral("设备串口"), true);
     sourceCombo->setMinimumWidth(148);
     sourceCombo->setMaximumWidth(176);
@@ -96,7 +96,7 @@ SerialConnectionBar::SerialConnectionBar(QWidget* parent) : QFrame(parent)
         control->setCheckState(Qt::PartiallyChecked);
         control->setEnabled(false);
         control->setToolTip(
-            QStringLiteral("连接本地串口后可手动设置；半选表示本次连接尚未设置，不自动记忆电平"));
+            QStringLiteral("连接 PC端串口后可手动设置；半选表示本次连接尚未设置，不自动记忆电平"));
     }
     advancedSettings->addWidget(dtrCheck, 0, 4);
     advancedSettings->addWidget(rtsCheck, 1, 4);

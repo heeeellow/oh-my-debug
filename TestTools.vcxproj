@@ -294,4 +294,10 @@
     <ClInclude Include="src\adapters\device\adb_device_maintenance.h" />
     <QtMoc Include="src\ui\widgets\device_maintenance_panel.h" />
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\application\agent\board_info_service.cpp" />
+    <ClCompile Include="src\ui\widgets\board_info_panel.cpp" />
+    <ClInclude Include="src\application\agent\board_info_service.h" />
+    <QtMoc Include="src\ui\widgets\board_info_panel.h" />
+  </ItemGroup>
 </Project>

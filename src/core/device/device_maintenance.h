@@ -51,6 +51,7 @@ struct MaintenanceResult {
     bool commandIssued = false;
     bool rootVerified = false;
     bool remountAccepted = false;
+    bool remountRebootRequired = false;
     bool offlineObserved = false;
     bool onlineObserved = false;
 };

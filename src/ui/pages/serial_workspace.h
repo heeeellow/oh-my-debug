@@ -193,6 +193,7 @@ class SerialWorkspace final : public QWidget {
     void applyWorkspaceMode();
     void resizeEvent(QResizeEvent* event) override;
     void updateShortcutLayout();
+    void refreshLocalPorts(bool announce = false);
     void refreshAgentPorts();
     void applyPorts(int index, bool preserveEditedEndpoint = true);
     void applyPreferencesToUi();

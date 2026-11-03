@@ -137,6 +137,8 @@ QString applicationStyleSheet()
         QLabel#topServiceStatus[serviceState="working"] { color: #87652f; }
         QLabel#topServiceStatus[serviceState="failed"] { color: #a34a42; }
         QPushButton#serviceStatusButton[serviceState="failed"] { background: #f7eeeb; color: #a34a42; border-color: #e8c9c6; }
+        QPushButton#serviceStatusButton[needsConnection="true"]:enabled { background: #ad694e; border-color: #ad694e; color: #ffffff; font-weight: 600; }
+        QPushButton#serviceStatusButton[needsConnection="true"]:enabled:hover { background: #985b43; border-color: #985b43; color: #ffffff; }
         QPushButton#serviceStatusButton:hover { background: #e9e4de; border-color: #b9a99c; color: #493e36; }
         QPushButton#serviceStatusButton:pressed { background: #ded3c9; border-color: #ad694e; }
         QPushButton#serviceStatusButton:disabled { background: #f3f1ee; border-color: #e1ddd8; color: #8b837b; }

@@ -1,5 +1,6 @@
 #include "adapters/adb/process_runner.h"
 #include "adapters/device/adb_device_maintenance.h"
+#include "application/device/adb_terminal_service.h"
 #include "application/device/device_maintenance_service.h"
 #include "test_paths.h"
 #include <fstream>
@@ -30,6 +31,7 @@ int main(int argc, char** argv)
     try {
         check(argc == 2, "mock program argument");
         const auto program = std::filesystem::absolute(std::filesystem::u8path(argv[1])).u8string();
+        SetEnvironmentVariableW(L"ADB_PATH", std::filesystem::u8path(program).c_str());
         const auto root = testOutputDirectory() / "maintenance backend";
         std::filesystem::create_directories(root);
         const auto fixture = root / "commands";
@@ -114,6 +116,16 @@ int main(int argc, char** argv)
         check(streamed.outputFailed && streamed.command.standardOutput.empty(),
               "sink failure stops client without retaining stdout in memory");
 
+        scene("success");
+        check(AdbTerminalService().shellUid(request.device) == 0 &&
+                  read(fixture / "calls.txt").find("\troot\t") == std::string::npos,
+              "terminal identity reads current root without requesting root");
+        scene("uid-denied");
+        check(AdbTerminalService().shellUid(request.device) == 2000,
+              "terminal identity retains ordinary shell uid");
+        scene("uid-invalid");
+        check(AdbTerminalService().shellUid(request.device) == -1,
+              "unrecognized identity remains unknown");
         request.action = MaintenanceAction::RootRemount;
         scene("linux");
         result = run();
@@ -148,6 +160,17 @@ int main(int argc, char** argv)
         check(result.rootVerified && result.remountAccepted &&
                   result.outcome == MaintenanceOutcome::Completed,
               "root and remount stages complete");
+        scene("remount-success-reboot");
+        result = run();
+        check(result.rootVerified && result.remountAccepted && result.remountRebootRequired &&
+                  result.outcome == MaintenanceOutcome::Partial &&
+                  read(fixture / "calls.txt").find("\treboot\t") == std::string::npos,
+              "first remount success and required manual reboot reported separately");
+        scene("remount-prepare-reboot");
+        result = run();
+        check(!result.remountAccepted && result.remountRebootRequired &&
+                  result.outcome == MaintenanceOutcome::Partial,
+              "overlayfs preparation requiring reboot is not yet remount success");
         request.action = MaintenanceAction::Reboot;
         scene("success");
         result = run();

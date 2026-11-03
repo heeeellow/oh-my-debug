@@ -35,6 +35,7 @@
 | 重启至 Loader | 仅对本地已有 BSP/实机依据确认的目标开放，使用固定 `reboot loader`。ADB 离线只说明失去 ADB，不能证明 Loader；需要 USB 枚举或实机证据。当前默认没有已核实目标，因此入口隐藏，不按型号名称推断支持 |
 
 `root` 可能重启 adbd；Remount 可能受构建类型、verity 或 OverlayFS 限制。
+Remount 明确返回成功并同时要求重启时，分别记录“命令返回成功”和“部分设置需手动重启生效”，总体保留部分完成；仅有 OverlayFS 准备/重启提示时，不当作 Remount 已成功。结果区保留实际输出，不因为包含 `reboot` 一词就吞掉明确的成功响应。
 首版不自动追加 `disable-verity`、`remount -R`、重启或其他补救命令，详情保留实际响应供用户判断。
 停止只取消后续步骤或等待，不能撤销已经发出的 Root、挂载或重启请求，不能宣称回滚。
 
@@ -55,3 +56,4 @@ Root 与挂载部分完成、重启各阶段、确认期间设备变化、布局
 
 官方依据：[ADB 手册](https://android.googlesource.com/platform/packages/modules/adb/+/refs/heads/main/docs/user/adb.1.md)、
 [AOSP Remount / OverlayFS 说明](https://android.googlesource.com/platform/system/core/+/refs/heads/android16-release/fs_mgr/README.overlayfs.md)。
+混合成功/重启提示的依据见 [AOSP Remount 实现](https://android.googlesource.com/platform/system/core/+/android16-release/fs_mgr/fs_mgr_remount.cpp)。

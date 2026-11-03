@@ -149,4 +149,10 @@
     <ClInclude Include="src\adapters\device\adb_device_maintenance.h"><Filter>适配器\ADB</Filter></ClInclude>
     <QtMoc Include="src\ui\widgets\device_maintenance_panel.h"><Filter>界面</Filter></QtMoc>
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\application\agent\board_info_service.cpp"><Filter>应用层\Agent</Filter></ClCompile>
+    <ClCompile Include="src\ui\widgets\board_info_panel.cpp"><Filter>界面</Filter></ClCompile>
+    <ClInclude Include="src\application\agent\board_info_service.h"><Filter>应用层\Agent</Filter></ClInclude>
+    <QtMoc Include="src\ui\widgets\board_info_panel.h"><Filter>界面</Filter></QtMoc>
+  </ItemGroup>
 </Project>

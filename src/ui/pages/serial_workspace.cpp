@@ -362,11 +362,10 @@ void SerialWorkspace::buildUi()
             second.active = true;
             const auto conflict = testtools::SerialWorkspaceState::endpointConflict(first, second);
             if (conflict == testtools::SerialEndpointConflict::AgentSingleSession) {
-                QMessageBox::information(
-                    this,
-                    QStringLiteral("当前为单板串口会话"),
-                    QStringLiteral("当前设备连接一次只能使用一个设备串口。可同时使用一路 Windows "
-                                   "串口和一路设备串口。"));
+                QMessageBox::information(this,
+                                         QStringLiteral("当前为单板串口会话"),
+                                         QStringLiteral("当前设备连接一次只能使用一个设备串口。可同"
+                                                        "时使用一路 PC端串口和一路设备串口。"));
                 return;
             }
             if (conflict == testtools::SerialEndpointConflict::SameResource) {
@@ -504,8 +503,7 @@ void SerialWorkspace::applyWorkspaceMode()
         channel.group->style()->unpolish(channel.group);
         channel.group->style()->polish(channel.group);
         channel.sendEdit->setFixedHeight(single ? 56 : 44);
-        channel.sourceCombo->setItemText(0, single ? QStringLiteral("Windows 本地串口")
-                                                  : QStringLiteral("本地串口"));
+        channel.sourceCombo->setItemText(0, QStringLiteral("PC端串口"));
         channel.sourceCombo->setMinimumWidth(single ? 148 : 100);
         channel.sourceCombo->setMaximumWidth(single ? 176 : 116);
         channel.portCombo->setMinimumContentsLength(single ? 12 : 8);
@@ -679,7 +677,7 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     channel.refreshPortsButton =
         new QPushButton(QStringLiteral("刷新串口"), channel.actionsContainer);
     channel.refreshPortsButton->setObjectName(QStringLiteral("ghostButton"));
-    channel.refreshPortsButton->setToolTip(QStringLiteral("重新扫描本地与设备串口列表"));
+    channel.refreshPortsButton->setToolTip(QStringLiteral("重新扫描当前所选位置的串口"));
     channel.advancedSettingsButton =
         new QPushButton(QStringLiteral("更多参数"), channel.actionsContainer);
     channel.advancedSettingsButton->setObjectName(QStringLiteral("ghostButton"));
@@ -1087,8 +1085,15 @@ QWidget *SerialWorkspace::buildChannelPanel(int index)
     connect(channel.flowControlCombo, &QComboBox::currentIndexChanged, this, [this] {
         savePreferences();
     });
-    connect(channel.refreshPortsButton, &QPushButton::clicked, this, [this] {
-        refreshTargets();
+    connect(channel.refreshPortsButton, &QPushButton::clicked, this, [this, index] {
+        if (shuttingDown_ || channelActive(index))
+            return;
+        if (channelUsesAgent(index)) {
+            if (!scanning_ && !hasActiveAgentConnection() && selectedAgentIsOnline())
+                refreshAgentPorts();
+        } else {
+            refreshLocalPorts(true);
+        }
     });
     connect(
         channel.advancedSettingsButton, &QPushButton::toggled, this, [this, index](bool visible) {
@@ -1408,24 +1413,33 @@ void SerialWorkspace::refreshTargets()
         return;
     }
 
-    localPorts_ = testtools::SerialTransportService::localPorts();
-    applyPorts(0);
-    applyPorts(1);
+    refreshLocalPorts();
     refreshAgentPorts();
+}
+
+void SerialWorkspace::refreshLocalPorts(bool announce)
+{
+    if (shuttingDown_)
+        return;
+    localPorts_ = testtools::SerialTransportService::localPorts();
+    for (int index = 0; index < 2; ++index)
+        if (!channelUsesAgent(index))
+            applyPorts(index);
+    if (announce)
+        emit activityChanged(QStringLiteral("已刷新 PC端串口，共 %1 个").arg(localPorts_.size()));
+    updateGlobalControls();
 }
 
 void SerialWorkspace::refreshAgentPorts()
 {
     const auto generation = ++agentPortGeneration_;
     agentPorts_.clear();
-    applyPorts(0);
-    applyPorts(1);
+    for (int index = 0; index < 2; ++index)
+        if (channelUsesAgent(index))
+            applyPorts(index);
 
     if (!selectedAgentIsOnline()) {
         scanning_ = false;
-        emit activityChanged(currentAdbDevice_.serial.empty()
-                                 ? QStringLiteral("未选择设备，设备串口列表为空")
-                                 : QStringLiteral("请先在设备信息中连接当前设备"));
         updateGlobalControls();
         return;
     }
@@ -1447,8 +1461,9 @@ void SerialWorkspace::refreshAgentPorts()
                 }
                 guard->scanning_ = false;
                 guard->agentPorts_ = std::move(ports);
-                guard->applyPorts(0);
-                guard->applyPorts(1);
+                for (int index = 0; index < 2; ++index)
+                    if (guard->channelUsesAgent(index))
+                        guard->applyPorts(index);
                 if (!error.empty()) {
                     emit guard->activityChanged(fromUtf8(error));
                 } else {
@@ -1546,7 +1561,7 @@ void SerialWorkspace::applyPorts(int index, bool preserveEditedEndpoint)
             channel.portCombo->addItem(description.isEmpty() ? name : name + QStringLiteral(" — ") + description,
                                        name);
         }
-        channel.portCombo->setToolTip(QStringLiteral("Windows COM 口，例如 COM3"));
+        channel.portCombo->setToolTip(QStringLiteral("PC端 COM 口，例如 COM3"));
     }
 
     int restoreIndex = channel.portCombo->findData(previousData);
@@ -2139,7 +2154,14 @@ void SerialWorkspace::updateGlobalControls()
         const auto session = channels_[index].session.snapshot();
         const bool open = session.open;
         if (channels_[index].refreshPortsButton) {
-            channels_[index].refreshPortsButton->setEnabled(!scanning_ && !anyActive && (!maintenanceBlocked_ || !channelUsesAgent(index)));
+            const bool agent = channelUsesAgent(index);
+            channels_[index].refreshPortsButton->setEnabled(
+                !shuttingDown_ && !channelActive(index) &&
+                (!agent || (!scanning_ && !hasActiveAgentConnection() && selectedAgentIsOnline())));
+            channels_[index].refreshPortsButton->setToolTip(
+                agent ? selectedAgentIsOnline() ? QStringLiteral("重新扫描设备串口列表")
+                                                : QStringLiteral("请先连接当前设备的板端服务")
+                      : QStringLiteral("重新扫描 PC端串口，无需连接板端服务"));
         }
         if (channels_[index].disconnectPending ||
             session.state == testtools::SerialSessionState::Disconnecting) {
@@ -2168,14 +2190,15 @@ void SerialWorkspace::updateGlobalControls()
                                    !bidirectionalTestRunning_ && !session.scheduledSend.running;
         current.dtrCheck->setEnabled(controlsReady && current.session.supportsControlLine(SerialControlLine::Dtr));
         current.rtsCheck->setEnabled(controlsReady && current.session.supportsControlLine(SerialControlLine::Rts));
-        current.rtsCheck->setToolTip(channelUsesAgent(index)
-            ? QStringLiteral("设备串口暂不支持手动控制 RTS")
+        current.rtsCheck->setToolTip(
+            channelUsesAgent(index) ? QStringLiteral("设备串口暂不支持手动控制 RTS")
             : current.flowControlCombo->currentIndex() == 1
                 ? QStringLiteral("RTS 正由硬件流控管理")
-                : QStringLiteral("连接本地串口后可设置；半选表示本次连接尚未手动设置"));
-        current.dtrCheck->setToolTip(channelUsesAgent(index)
-            ? QStringLiteral("设备串口暂不支持手动控制 DTR")
-            : QStringLiteral("连接本地串口后可设置；半选表示本次连接尚未手动设置"));
+                : QStringLiteral("连接 PC端串口后可设置；半选表示本次连接尚未手动设置"));
+        current.dtrCheck->setToolTip(
+            channelUsesAgent(index)
+                ? QStringLiteral("设备串口暂不支持手动控制 DTR")
+                : QStringLiteral("连接 PC端串口后可设置；半选表示本次连接尚未手动设置"));
         channels_[index].autoSendButton->setEnabled(open && !stressTestRunning_ && !current.controlPending);
     }
     const bool missingChannelsReady =
@@ -2239,7 +2262,7 @@ void SerialWorkspace::updateRouteSummary()
     const auto endpoint = [this](int index) {
         const auto& channel = channels_[index];
         const QString type =
-            channelUsesAgent(index) ? QStringLiteral("设备") : QStringLiteral("Windows");
+            channelUsesAgent(index) ? QStringLiteral("设备") : QStringLiteral("PC端");
         const QString port = selectedEndpoint(channel.portCombo);
         return QStringLiteral("%1 · %2").arg(type,
                                              port.isEmpty() ? QStringLiteral("未选择") : port);

@@ -75,3 +75,16 @@ if(MSVC)
 endif()
 add_test(NAME device-maintenance-contract COMMAND testtools-maintenance-tests)
 set_tests_properties(device-maintenance-contract PROPERTIES TIMEOUT 15)
+
+add_executable(testtools-board-info-tests board_info_tests.cpp
+    ${TESTTOOLS_ROOT}/src/application/agent/board_info_service.cpp
+    ${TESTTOOLS_ROOT}/src/application/agent/board_test_job_client.cpp
+    ${TESTTOOLS_ROOT}/src/core/protocol/json_value.cpp)
+target_compile_features(testtools-board-info-tests PRIVATE cxx_std_17)
+target_include_directories(testtools-board-info-tests PRIVATE ${TESTTOOLS_ROOT}/src)
+target_link_libraries(testtools-board-info-tests PRIVATE Threads::Threads)
+if(MSVC)
+    target_compile_options(testtools-board-info-tests PRIVATE /utf-8)
+endif()
+add_test(NAME board-info-contract COMMAND testtools-board-info-tests)
+set_tests_properties(board-info-contract PROPERTIES TIMEOUT 15)

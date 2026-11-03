@@ -268,18 +268,28 @@ class AdbDeviceMaintenance final : public IDeviceMaintenanceBackend {
             std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) {
                 return char(std::tolower(c));
             });
-            result.remountAccepted = ok(remount) &&
-                                     text.find("remount succeeded") != std::string::npos &&
-                                     text.find("failed") == std::string::npos &&
-                                     text.find("error") == std::string::npos &&
-                                     text.find("denied") == std::string::npos &&
-                                     text.find("reboot") == std::string::npos;
-            result.outcome = result.remountAccepted     ? MaintenanceOutcome::Completed
+            result.remountAccepted =
+                ok(remount) && text.find("remount succeeded") != std::string::npos &&
+                text.find("failed") == std::string::npos &&
+                text.find("error") == std::string::npos && text.find("denied") == std::string::npos;
+            // AOSP 可以同时报告 Remount succeeded 和需重启；命令成功与设置生效分开保留。
+            result.remountRebootRequired =
+                text.find("now reboot your device") != std::string::npos ||
+                text.find("reboot the device for new settings") != std::string::npos ||
+                text.find("please reboot") != std::string::npos ||
+                text.find("reboot required") != std::string::npos ||
+                text.find("reboot is required") != std::string::npos;
+            result.outcome = result.remountAccepted && !result.remountRebootRequired
+                                 ? MaintenanceOutcome::Completed
                              : cancel                   ? MaintenanceOutcome::Cancelled
                              : remount.command.timedOut ? MaintenanceOutcome::TimedOut
                                                         : MaintenanceOutcome::Partial;
-            result.message = result.remountAccepted
+            result.message = result.remountAccepted && result.remountRebootRequired
+                                 ? "Root 已核验；Remount 返回成功，部分设置需手动重启生效"
+                             : result.remountAccepted
                                  ? "Root 已核验，Remount 已返回成功；分区可写性未逐项验证"
+                             : result.remountRebootRequired && ok(remount)
+                                 ? "Root 已核验；Remount 提示需手动重启后重试，请查看详情"
                                  : "Root 已核验，Remount 未确认完成；请查看详情";
             return result;
         }
