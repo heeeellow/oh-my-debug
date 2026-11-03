@@ -10,6 +10,7 @@ $repositoryRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $repositoryRoot
 try {
     & (Join-Path $PSScriptRoot 'check-project-docs.ps1')
+    if (-not $?) { throw 'Documentation checks failed' }
 
     & git diff --check
     if ($LASTEXITCODE -ne 0) {
@@ -76,6 +77,8 @@ try {
             @($Configuration)
         }
         foreach ($item in $configurations) {
+            & (Join-Path $PSScriptRoot 'clean-desktop-objects.ps1') -Configuration $item
+            if (-not $?) { throw "Desktop object cleanup failed for $item" }
             & $msBuild '.\TestTools.vcxproj' /m /nologo `
                 "/p:Configuration=$item" '/p:Platform=x64' "/p:QtMsBuild=$qtMsBuild"
             if ($LASTEXITCODE -ne 0) {

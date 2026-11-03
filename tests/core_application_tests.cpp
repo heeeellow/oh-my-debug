@@ -2,7 +2,7 @@
 #include "application/agent/agent_service_status.h"
 #include "application/device/screen_mirror_service.h"
 #include "application/agent/agent_target.h"
-#include "application/agent/board_profile.h"
+#include "application/serial/serial_link_verifier.h"
 #include "application/agent/board_test_job_client.h"
 #include "application/serial/serial_session.h"
 #include "application/serial/serial_port_claims.h"
@@ -295,110 +295,6 @@ int testJsonValueContracts()
     return 0;
 }
 
-int testBoardProfiles()
-{
-    const std::string profileText = R"({"profile_id":"bad"})";
-    testtools::JsonValue document;
-    testtools::JsonError jsonError;
-    if (!testtools::parseJson(profileText, document, jsonError))
-        return fail("Board Profile JSON");
-    document = testtools::JsonValue::object(
-        {{"profile_id", testtools::JsonValue::string("rk3572")},
-         {"profile_version", testtools::JsonValue::integer(2)},
-         {"identity",
-          testtools::JsonValue::object({{"board", testtools::JsonValue::string("evb")},
-                                        {"product", testtools::JsonValue::string("p1")}})},
-         {"memory",
-          testtools::JsonValue::object(
-              {{"memtotal_kib",
-                testtools::JsonValue::object(
-                    {{"min", testtools::JsonValue::integer(3900000)},
-                     {"max", testtools::JsonValue::integer(4000000)}})}})}});
-    testtools::Profile profile;
-    std::string profileError;
-    if (testtools::parseBoardProfile(
-            testtools::JsonValue::object({{"profile_id", testtools::JsonValue::string("bad")}}),
-            profile,
-            profileError) ||
-        profileError.empty()) {
-        return fail("Board Profile parse");
-    }
-    if (!testtools::parseBoardProfile(document, profile, profileError) ||
-        profile.profileId != "rk3572" || profile.profileVersion != 2 || !profile.memory ||
-        profile.memory->minimumKiB != 3900000 || profile.memory->maximumKiB != 4000000) {
-        return fail("Board Profile valid parse");
-    }
-    const auto root = std::filesystem::temp_directory_path() /
-                      ("testtools-board-profiles-" +
-                       std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-    std::error_code ec;
-    std::filesystem::remove_all(root, ec);
-    std::filesystem::create_directories(root);
-    std::ofstream(root / "invalid.json") << profileText;
-    std::ofstream(root / "valid.json") << testtools::serializeJson(document);
-    const auto loaded = testtools::loadBoardProfiles(root);
-    if (loaded.ok || loaded.profiles.size() != 1 || loaded.errors.size() != 1 ||
-        loaded.profiles.front().profileVersion != 2) {
-        std::filesystem::remove_all(root, ec);
-        return fail("Board Profile load diagnostics");
-    }
-    testtools::BoardIdentity identity{{{"board", "evb"}, {"product", "p1"}}};
-    testtools::BoardObservations observations;
-    observations.memory.memtotalKiB = 3950000;
-    const std::vector<testtools::Profile> profiles{profile};
-    const auto pass = testtools::evaluateBoardProfile(identity, observations, profiles);
-    if (pass.verdict != testtools::ProfileVerdict::Pass || pass.matchedProfileCount != 1 ||
-        !pass.profileId || *pass.profileId != "rk3572") {
-        std::filesystem::remove_all(root, ec);
-        return fail("Board Profile PASS evaluation");
-    }
-    observations.memory.memtotalKiB = 4100000;
-    const auto failed = testtools::evaluateBoardProfileForCapability(
-        identity, observations, profiles, "memory.capacity");
-    if (failed.verdict != testtools::ProfileVerdict::Fail) {
-        std::filesystem::remove_all(root, ec);
-        return fail("Board Profile FAIL evaluation");
-    }
-    const auto verify =
-        testtools::evaluateBoardProfileForCapability(identity, {}, profiles, "memory.capacity");
-    if (verify.verdict != testtools::ProfileVerdict::Verify) {
-        std::filesystem::remove_all(root, ec);
-        return fail("Board Profile VERIFY evaluation");
-    }
-    auto duplicate = profile;
-    duplicate.profileId = "rk3572-copy";
-    const auto multiple =
-        testtools::evaluateBoardProfile(identity, observations, {profile, duplicate});
-    const auto noMatch = testtools::evaluateBoardProfile(
-        testtools::BoardIdentity{{{"board", "other"}}}, observations, profiles);
-    std::filesystem::remove_all(root, ec);
-    if (multiple.verdict != testtools::ProfileVerdict::Verify ||
-        multiple.matchedProfileCount != 2 || noMatch.verdict != testtools::ProfileVerdict::Verify ||
-        noMatch.matchedProfileCount != 0) {
-        return fail("Board Profile unique match guard");
-    }
-
-    auto storageProfile = profile;
-    storageProfile.memory.reset();
-    testtools::StorageExpectation storageExpectation;
-    storageExpectation.type = "emmc";
-    storageProfile.storage = storageExpectation;
-    testtools::BoardObservations storageObservations;
-    storageObservations.storage.push_back({"emmc", 32000000000ULL, {1, 1, 1}});
-    const auto healthWithoutThreshold = testtools::evaluateBoardProfileForCapability(
-        identity, storageObservations, {storageProfile}, "storage.device.health");
-    if (healthWithoutThreshold.verdict != testtools::ProfileVerdict::Verify) {
-        return fail("Board Profile health requires a health expectation");
-    }
-    storageObservations.storage.front().type.clear();
-    const auto unknownStorageType = testtools::evaluateBoardProfileForCapability(
-        identity, storageObservations, {storageProfile}, "storage.device.info");
-    if (unknownStorageType.verdict != testtools::ProfileVerdict::Verify) {
-        return fail("Board Profile unknown storage type remains VERIFY");
-    }
-    return 0;
-}
-
 } // namespace
 
 int main()
@@ -447,7 +343,7 @@ int main()
             || mirror.start({"B", "device", {}}).success)
             return fail("mirror shutdown rejects new device operations");
     }
-    if (testJsonValueContracts() != 0 || testBoardProfiles() != 0) {
+    if (testJsonValueContracts() != 0) {
         return 1;
     }
     if (testBoardTestJobClient() != 0) {
@@ -1133,6 +1029,56 @@ int main()
         if (!passReport.passed || passReport.sentFrames != 2 || passReport.lostFrames != 0) {
             return fail("stress direction evaluation passes when all frames match");
         }
+    }
+
+    {
+        testtools::SerialLinkVerifier link;
+        auto frames = link.startProbe("p0", {serialdemo::LineEnding::CrLf, serialdemo::LineEnding::None});
+        if (std::string(frames[0].begin(), frames[0].end()) != "SERIAL_POC_A_TO_B_p0\r\n")
+            return fail("probe preserves wire token and per-endpoint line ending");
+        const auto old = link.probe().generation;
+        link.receive(1, {frames[0].begin(), frames[0].begin() + 7});
+        if (link.probe().aToBPassed) return fail("probe must wait for complete fragmented token");
+        link.receive(1, {frames[0].begin() + 7, frames[0].end()});
+        link.receive(0, frames[1]);
+        if (link.probe().running || !link.probe().aToBPassed || !link.probe().bToAPassed)
+            return fail("probe directions complete independently");
+        frames = link.startProbe("new", {serialdemo::LineEnding::None, serialdemo::LineEnding::None});
+        if (link.expireProbe(old) || !link.probe().running || !link.expireProbe(link.probe().generation))
+            return fail("old probe timeout cannot stop new probe");
+        link.receive(1, frames[0]);
+        if (link.probe().aToBPassed) return fail("expired probe cannot accept late data");
+
+        std::array<serialdemo::SerialConfig, 2> configs;
+        configs[0].baudRate = configs[1].baudRate = 9600;
+        const auto now = testtools::SerialLinkVerifier::Clock::time_point{};
+        const int interval = link.startStress(0, 2, 256, 10, configs, now);
+        if (interval != 284 || !link.nextStressFrame(0, now) || link.nextStressFrame(1, now))
+            return fail("stress scheduling preserves selected direction and physical rate limit");
+        const auto first = link.nextStressFrame(0, now);
+        link.recordStressAttempt(0, true, now); link.receive(1, first->bytes);
+        if (link.nextStressFrame(0, now + std::chrono::milliseconds(283)) || link.beginReceiveWait(true))
+            return fail("stress cannot send early or finish while frames remain");
+        const auto later = now + std::chrono::milliseconds(interval);
+        if (!link.nextStressFrame(0, later)) return fail("stress next frame due");
+        link.recordStressAttempt(0, true, later);
+        if (link.beginReceiveWait(false) || !link.beginReceiveWait(true) || link.nextStressFrame(0, later))
+            return fail("stress waits for accepted writes before collecting tail bytes");
+        const auto& direction = link.directions()[0];
+        const auto report = serialdemo::evaluateStressDirection(direction.sendPlan, direction.verifier);
+        if (report.passed || report.lostFrames != 1) return fail("extracted stress state preserves loss accounting");
+        const auto generation = link.stressGeneration();
+        link.stopStress();
+        if (link.stressRunning() || link.awaitingReceive() || link.nextStressFrame(0, later))
+            return fail("stress cancellation stops further submissions");
+        if (!link.startStress(1, 1, 8, 10, configs, now) || link.stressGeneration() == generation ||
+            link.directions()[0].transmitter != 1 || link.directions()[0].nextSequence != 0)
+            return fail("new stress has fresh identity, direction and sequence");
+        if (link.startStress(3, 1, 8, 10, configs, now) || !link.stressRunning())
+            return fail("invalid stress request cannot replace an active state");
+        link.recordStressAttempt(0, false, now);
+        if (link.nextStressFrame(0, later)) return fail("failed stress submission stops its send plan");
+        link.stopStress();
     }
 
     std::cout << "PASS core and application contracts without Qt or devices\n";

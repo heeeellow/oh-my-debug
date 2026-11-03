@@ -22,6 +22,7 @@ class QWidget;
 class QToolButton;
 class QMenu;
 class SerialWorkspace;
+class SerialTerminalWorkspace;
 class FileTransferWorkspace;
 class ScreenMirrorPanel;
 class DeviceMaintenancePanel;
@@ -132,7 +133,7 @@ class MainWindow final : public QMainWindow {
     QTimer* deviceRefreshTimer_ = nullptr;
     QStackedWidget* pages_ = nullptr;
     SerialWorkspace* serialWorkspace_ = nullptr;
-    SerialWorkspace* terminalWorkspace_ = nullptr;
+    SerialTerminalWorkspace* terminalWorkspace_ = nullptr;
     std::shared_ptr<testtools::SerialPortClaims> portClaims_ =
         std::make_shared<testtools::SerialPortClaims>();
     QLabel* activityLabel_ = nullptr;

@@ -13,8 +13,7 @@ Windows 上位机工程为根目录 `TestTools.vcxproj`；板端无 Qt Agent 位
 面向 ARM Android/Linux 独立构建。产品程序不依赖协议测试夹具。
 
 主解决方案 `TestTools.slnx` 只包含 Qt GUI 工程，确保 Visual Studio 的“本地 Windows 调试器”
-始终启动界面程序。用于协议开发的 Windows Agent 工程保留在
-`src/agent/TestToolsAgent.vcxproj`，需要时单独打开或命令行构建，不作为产品启动项目。
+始终启动界面程序。本机 Agent 协议检查统一使用 `src/agent/CMakeLists.txt` 的 `TESTTOOLS_BUILD_TESTS=ON`；需要协议夹具时显式开启 `TESTTOOLS_BUILD_FAKE_AGENT=ON`，不作为产品启动项目。
 
 ## 2. 目录约定
 
@@ -363,6 +362,8 @@ cmake -S tests/ui -B build/tests/ui -DCMAKE_PREFIX_PATH=<Qt安装目录>
 cmake --build build/tests/ui --config Release --parallel 4
 ctest --test-dir build/tests/ui -C Release --output-on-failure
 ```
+
+这些测试从当前 `TestTools.vcxproj` 的源码、MOC 和 RCC 清单确定 Release 对象，不扫描整个对象目录；工程清单变化触发 CMake 重配置，缺少当前对象时拒绝配置。基线构建通过 `scripts/clean-desktop-objects.ps1` 清理已移除源码留下的对象，直接构建后的原生测试也不会链接目录里的陈旧对象。
 
 这些测试链接当前产品的 Release 对象，覆盖真实 Widgets 交互、串口精确字节、Windows 原生图标、真实回环协议连接/失联与主机 ADB 异常夹具，默认不访问真实设备。
 `icon-style-ui` 检查内置 SVG 资源、缓存、16/20/24px 在 DPR 1/1.25/1.5/2 下的渲染，以及禁用、白色主动作和收藏状态。

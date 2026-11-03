@@ -9,7 +9,10 @@
 #include <QtTest/QTest>
 #include <QtWidgets>
 #define private public
+#define protected public
 #include "ui/pages/serial_workspace.h"
+#include "ui/pages/serial_terminal_workspace.h"
+#undef protected
 #undef private
 #include "ui/main_window.h"
 #include "ui/widgets/serial_shortcut_sidebar.h"
@@ -108,6 +111,16 @@ int main(int argc, char** argv)
     try {
         const QString work = QString::fromLocal8Bit(argv[1]);
         const bool live = argc > 2 && std::string(argv[2]) == "--com5";
+        QTemporaryDir preferences;
+        require(preferences.isValid(), "isolated serial preferences");
+        qputenv("TESTTOOLS_DATA_DIR", preferences.path().toUtf8());
+        testtools::SerialWorkspacePreferences initialPreferences;
+        initialPreferences.channels[1].autoScroll = false;
+        initialPreferences.channels[1].lineEnding = 3;
+        std::string preferencesError;
+        require(testtools::SerialPreferencesStore::save(
+                    std::filesystem::path(preferences.path().toStdWString()) / L"serial-preferences.json",
+                    initialPreferences, preferencesError), "seed isolated serial preferences");
         MainWindow window;
         window.resize(1366, 768);
         window.show();
@@ -115,15 +128,18 @@ int main(int argc, char** argv)
         pump();
         // Key/render regression for the reusable workspace component. Separate
         // application page ownership is covered by iteration-smoke.
-        auto* serial = window.findChild<SerialWorkspace*>("serialDebugWorkspace");
+        auto* serial = window.findChild<SerialTerminalWorkspace*>("serialTerminalWorkspace");
         require(serial, "workspace");
-        auto& channel = serial->channels_[1];
+        auto& channel = serial->channels_[0];
         auto* edit = channel.receiveEdit;
         if (!live)
             channel.autoScrollCheck->setChecked(false);
-        require(serial->setWorkspaceModeForDiagnostics("terminal"), "terminal mode");
+        require(window.setSerialModeForDiagnostics("terminal"), "terminal page");
+        window.findChild<SerialWorkspace*>("serialDebugWorkspace")->channels_[1].autoScrollCheck->setChecked(false);
+        const int normalEndingBefore = window.findChild<SerialWorkspace*>("serialDebugWorkspace")
+                                           ->channels_[1].lineEndingCombo->currentIndex();
         pump();
-        require(!channel.manualSendArea->isVisible() && serial->terminalOptionsButton_->isVisible(),
+        require(!channel.manualSendArea && !channel.sendEdit && serial->terminalOptionsButton_->isVisible(),
                 "direct terminal without composer or shortcut strip");
         require(window.focusWidget() == edit, "enter mode focuses terminal");
         channel.sourceCombo->setCurrentIndex(0);
@@ -178,7 +194,7 @@ int main(int argc, char** argv)
                     raw.append(reinterpret_cast<const char*>(entry.bytes.data()),
                                static_cast<qsizetype>(entry.bytes.size()));
             QFile output(work + "/com5-product-rx.bin");
-            output.open(QIODevice::WriteOnly);
+            require(output.open(QIODevice::WriteOnly), "open raw fixture log");
             require(output.write(raw) == raw.size(), "save raw fixture log");
             output.close();
             const auto snapshot = channel.session.snapshot();
@@ -243,7 +259,9 @@ int main(int argc, char** argv)
         serial->terminalEndingActions_[2]->trigger();
         QTest::keyClick(edit, Qt::Key_Return);
         pump();
-        require(state->take() == "\r\n" && channel.lineEndingCombo->currentIndex() == 3,
+        require(state->take() == "\r\n" && serial->preferences_.terminalLineEnding == 3 &&
+                    window.findChild<SerialWorkspace*>("serialDebugWorkspace")
+                        ->channels_[1].lineEndingCombo->currentIndex() == normalEndingBefore,
                 "terminal return option independent of normal sender");
         serial->terminalEndingActions_[0]->trigger();
         std::string lines = "\r\n";
@@ -311,103 +329,199 @@ int main(int argc, char** argv)
         window.grab().save(work + "/terminal-expanded-1366.png");
         channel.advancedSettingsButton->click();
         channel.searchButton->setChecked(false);
-        serial->setWorkspaceModeForDiagnostics("single");
-        pump();
-        if (serial->shortcutSidebar_->isHidden()) channel.toggleAtBarButton->click();
-        pump();
-        require(channel.manualSendArea->isVisible() && serial->shortcutSidebar_->isVisible(),
-                "ordinary sender and shortcuts preserved");
-        require(!channel.autoScrollCheck->isChecked(),
-                "terminal scrollback does not overwrite normal follow preference");
-        channel.lineEndingCombo->setCurrentIndex(3);
-        channel.sendHexCheck->setChecked(false);
-        channel.sendEdit->setPlainText("hello");
-        channel.sendButton->click();
-        pump(150);
-        require(state->take() == "hello\r\n", "normal text and shared CRLF");
-        channel.lineEndingCombo->setCurrentIndex(0);
-        channel.sendHexCheck->setChecked(true);
-        channel.sendEdit->setPlainText("00 FF 41");
-        channel.sendButton->click();
-        pump(150);
-        require(state->take() == std::string("\0\xff"
-                                             "A",
-                                             3),
-                "HEX bytes unchanged");
-        channel.lineEndingCombo->setCurrentIndex(3);
-        channel.sendHexCheck->setChecked(false);
-        auto* shortcuts = serial->shortcutSidebar_->findChild<QListWidget*>("shortcutList");
-        shortcuts->setCurrentRow(1);
-        pump();
-        require(state->take().empty(), "selecting shortcut does not transmit");
-        serial->shortcutSidebar_->findChild<QPushButton*>("shortcutFill-0")->click();
-        require(channel.sendEdit->toPlainText() == "AT" && state->take().empty(), "fill is local and preserves no-send behavior");
-        serial->shortcutSidebar_->findChild<QPushButton*>("shortcutSend-0")->click();
-        pump(150);
-        require(state->take() == "AT\r\n", "shortcut uses same line ending");
-        const auto originalCommands = serial->atCommandLibrary_.commands();
-        std::string commandError;
-        require(serial->atCommandLibrary_.add({"用于检查窄侧栏省略的较长指令名称", "00 FF 41", true}, commandError),
-                "HEX shortcut fixture accepted");
-        serial->shortcutSidebar_->setCommands(serial->atCommandLibrary_.commands());
-        const auto hexRow = QString::number(static_cast<int>(originalCommands.size()));
-        serial->shortcutSidebar_->findChild<QPushButton*>("shortcutFill-" + hexRow)->click();
-        require(channel.sendHexCheck->isChecked() && channel.sendEdit->toPlainText() == "00 FF 41" &&
-                    channel.lineEndingCombo->currentIndex() == 3 && state->take().empty(),
-                "HEX fill changes input format without sending or changing shared ending");
-        serial->shortcutSidebar_->findChild<QPushButton*>("shortcutSend-" + hexRow)->click();
-        pump(150);
-        require(state->take() == std::string("\0\xff" "A", 3), "HEX shortcut sends exact bytes without CRLF");
-        window.grab().save(work + "/shortcut-long-name.png");
-        require(serial->atCommandLibrary_.replace(originalCommands, commandError), "restore shortcut fixtures");
-        serial->shortcutSidebar_->setCommands(serial->atCommandLibrary_.commands());
+        {
+            auto* serial = window.findChild<SerialWorkspace*>("serialDebugWorkspace");
+            auto& channel = serial->channels_[1];
+            auto normalFixture = std::make_unique<FixtureTransport>(state);
+            auto* device = normalFixture.get();
+            channel.portCombo->setEditText("COM_NORMAL");
+            auto normalConfig = config;
+            normalConfig.endpoint = "COM_NORMAL";
+            channel.session.open(std::move(normalFixture), normalConfig);
+            require(window.setSerialModeForDiagnostics("single"), "normal page");
+            pump();
+            if (serial->shortcutSidebar_->isHidden())
+                channel.toggleAtBarButton->click();
+            pump();
+            require(channel.manualSendArea->isVisible() && serial->shortcutSidebar_->isVisible(),
+                    "ordinary sender and shortcuts preserved");
+            require(!channel.autoScrollCheck->isChecked(),
+                    "terminal scrollback does not overwrite normal follow preference");
+            channel.lineEndingCombo->setCurrentIndex(3);
+            channel.sendHexCheck->setChecked(false);
+            channel.sendEdit->setPlainText("hello");
+            channel.sendButton->click();
+            pump(150);
+            require(state->take() == "hello\r\n", "normal text and shared CRLF");
+            channel.lineEndingCombo->setCurrentIndex(0);
+            channel.sendHexCheck->setChecked(true);
+            channel.sendEdit->setPlainText("00 FF 41");
+            channel.sendButton->click();
+            pump(150);
+            require(state->take() == std::string("\0\xff"
+                                                 "A",
+                                                 3),
+                    "HEX bytes unchanged");
+            channel.lineEndingCombo->setCurrentIndex(3);
+            channel.sendHexCheck->setChecked(false);
+            auto* shortcuts = serial->shortcutSidebar_->findChild<QListWidget*>("shortcutList");
+            shortcuts->setCurrentRow(1);
+            pump();
+            require(state->take().empty(), "selecting shortcut does not transmit");
+            serial->shortcutSidebar_->findChild<QPushButton*>("shortcutFill-0")->click();
+            require(channel.sendEdit->toPlainText() == "AT" && state->take().empty(),
+                    "fill is local and preserves no-send behavior");
+            serial->shortcutSidebar_->findChild<QPushButton*>("shortcutSend-0")->click();
+            pump(150);
+            require(state->take() == "AT\r\n", "shortcut uses same line ending");
+            const auto originalCommands = serial->atCommandLibrary_.commands();
+            std::string commandError;
+            require(serial->atCommandLibrary_.add(
+                        {"用于检查窄侧栏省略的较长指令名称", "00 FF 41", true}, commandError),
+                    "HEX shortcut fixture accepted");
+            serial->shortcutSidebar_->setCommands(serial->atCommandLibrary_.commands());
+            const auto hexRow = QString::number(static_cast<int>(originalCommands.size()));
+            serial->shortcutSidebar_->findChild<QPushButton*>("shortcutFill-" + hexRow)->click();
+            require(channel.sendHexCheck->isChecked() &&
+                        channel.sendEdit->toPlainText() == "00 FF 41" &&
+                        channel.lineEndingCombo->currentIndex() == 3 && state->take().empty(),
+                    "HEX fill changes input format without sending or changing shared ending");
+            serial->shortcutSidebar_->findChild<QPushButton*>("shortcutSend-" + hexRow)->click();
+            pump(150);
+            require(state->take() == std::string("\0\xff"
+                                                 "A",
+                                                 3),
+                    "HEX shortcut sends exact bytes without CRLF");
+            window.grab().save(work + "/shortcut-long-name.png");
+            require(serial->atCommandLibrary_.replace(originalCommands, commandError),
+                    "restore shortcut fixtures");
+            serial->shortcutSidebar_->setCommands(serial->atCommandLibrary_.commands());
 
-        serial->shortcutSplitter_->setSizes({800, 300});
-        serial->shortcutSplitter_->splitterMoved(800, 1);
-        pump();
-        const int rememberedWidth = serial->preferences_.shortcutSidebarWidth;
-        window.resize(1120, 768);
-        pump();
-        require(serial->shortcutSidebar_->isHidden() && serial->preferences_.shortcutBarVisible &&
-                    serial->preferences_.shortcutSidebarWidth == rememberedWidth,
-                "narrow layout folds without changing saved preference or width");
-        window.grab().save(work + "/shortcut-narrow.png");
-        window.resize(1920, 1080);
-        pump();
-        require(serial->shortcutSidebar_->isVisible(), "wide layout restores preferred sidebar");
-        const int composerY = channel.manualSendArea->mapTo(serial, QPoint()).y();
-        serial->shortcutSidebar_->findChild<QToolButton*>("collapseShortcuts")->click();
-        pump();
-        require(serial->shortcutSidebar_->isHidden() && !serial->preferences_.shortcutBarVisible &&
-                    channel.manualSendArea->mapTo(serial, QPoint()).y() == composerY,
-                "explicit collapse is remembered without moving the composer vertically");
-        testtools::SerialWorkspacePreferences savedPreferences;
-        require(testtools::SerialPreferencesStore::load(serial->preferencesStorePath_, savedPreferences, commandError) &&
-                    !savedPreferences.shortcutBarVisible && savedPreferences.shortcutSidebarWidth == rememberedWidth,
-                "sidebar width and explicit collapse persist to isolated preferences");
-        window.resize(1366, 768);
-        pump();
-        require(serial->shortcutSidebar_->isHidden(), "resize preserves explicit collapsed preference");
-        channel.toggleAtBarButton->click();
-        pump();
-        require(serial->shortcutSidebar_->isVisible(), "toolbar reopens sidebar");
-        serialdemo::PeriodicSendConfig plan;
-        plan.interval = std::chrono::milliseconds(10);
-        plan.targetCount = 3;
-        require(channel.session.startScheduledSend({'P'}, plan), "scheduled send starts");
-        pump(150);
-        require(state->take() == "PPP" && !channel.session.snapshot().scheduledSend.running,
-                "scheduled count and bytes preserved");
-        window.grab().save(work + "/single-regression-1366.png");
-        serial->setWorkspaceModeForDiagnostics("terminal");
-        pump();
-        const auto generation = channel.session.generation();
-        require(channel.session.isOpen() && state->take().empty(),
-                "mode switch preserves connection and sends nothing");
-        device->unplug();
-        pump(200);
-        require(!channel.session.isOpen() && !channel.receiveEdit->toPlainText().isEmpty(),
-                "unplug preserves output");
+            serial->shortcutSplitter_->setSizes({800, 300});
+            serial->shortcutSplitter_->splitterMoved(800, 1);
+            pump();
+            const int rememberedWidth = serial->preferences_.shortcutSidebarWidth;
+            window.resize(1120, 768);
+            pump();
+            require(serial->shortcutSidebar_->isHidden() &&
+                        serial->preferences_.shortcutBarVisible &&
+                        serial->preferences_.shortcutSidebarWidth == rememberedWidth,
+                    "narrow layout folds without changing saved preference or width");
+            window.grab().save(work + "/shortcut-narrow.png");
+            window.resize(1920, 1080);
+            pump();
+            require(serial->shortcutSidebar_->isVisible(),
+                    "wide layout restores preferred sidebar");
+            const int composerY = channel.manualSendArea->mapTo(serial, QPoint()).y();
+            serial->shortcutSidebar_->findChild<QToolButton*>("collapseShortcuts")->click();
+            pump();
+            require(serial->shortcutSidebar_->isHidden() &&
+                        !serial->preferences_.shortcutBarVisible &&
+                        channel.manualSendArea->mapTo(serial, QPoint()).y() == composerY,
+                    "explicit collapse is remembered without moving the composer vertically");
+            testtools::SerialWorkspacePreferences savedPreferences;
+            require(testtools::SerialPreferencesStore::load(
+                        serial->preferencesStorePath_, savedPreferences, commandError) &&
+                        !savedPreferences.shortcutBarVisible &&
+                        savedPreferences.shortcutSidebarWidth == rememberedWidth,
+                    "sidebar width and explicit collapse persist to isolated preferences");
+            window.resize(1366, 768);
+            pump();
+            require(serial->shortcutSidebar_->isHidden(),
+                    "resize preserves explicit collapsed preference");
+            channel.toggleAtBarButton->click();
+            pump();
+            require(serial->shortcutSidebar_->isVisible(), "toolbar reopens sidebar");
+            serialdemo::PeriodicSendConfig plan;
+            plan.interval = std::chrono::milliseconds(10);
+            plan.targetCount = 3;
+            require(!serial->scheduleTimer_->isActive(), "idle send scheduler stopped");
+            require(channel.session.startScheduledSend({'P'}, plan), "scheduled send starts");
+            serial->setServiceStatus(testtools::AgentServiceState::Disconnected,
+                                     QStringLiteral("scheduler fixture"));
+            require(serial->scheduleTimer_->isActive(), "active plan starts scheduler");
+            pump(150);
+            require(state->take() == "PPP" && !channel.session.snapshot().scheduledSend.running,
+                    "scheduled count and bytes preserved");
+            require(!serial->scheduleTimer_->isActive(), "completed plan stops scheduler");
+            require(serial->selectWorkspaceMode("dual"), "dual page for reliability check");
+            auto& other = serial->channels_[0];
+            other.sourceCombo->setCurrentIndex(0);
+            other.portCombo->setEditText("COM_OTHER");
+            other.baudCombo->setCurrentText("115200");
+            auto otherState = std::make_shared<FixtureState>();
+            auto otherFixture = std::make_unique<FixtureTransport>(otherState);
+            auto otherConfig = config;
+            otherConfig.endpoint = "COM_OTHER";
+            other.session.open(std::move(otherFixture), otherConfig);
+            pump(30);
+            QTimer::singleShot(0, [] {
+                auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+                require(dialog, "reliability parameters dialog");
+                dialog->findChild<QComboBox*>()->setCurrentIndex(2);
+                const auto spins = dialog->findChildren<QSpinBox*>();
+                require(spins.size() == 3, "reliability parameter controls");
+                spins[0]->setValue(2);
+                spins[1]->setValue(8);
+                spins[2]->setValue(10);
+                dialog->accept();
+            });
+            serial->stressTestButton_->click();
+            require(serial->linkVerifier_.stressRunning() && serial->scheduleTimer_->isActive(),
+                    "reliability starts scheduler");
+            pump(120);
+            require(serial->linkVerifier_.awaitingReceive() && !serial->scheduleTimer_->isActive(),
+                    "tail collection stops scheduler without stopping reliability task");
+            serial->stressTestButton_->click();
+            require(!serial->linkVerifier_.stressRunning() && !serial->scheduleTimer_->isActive(),
+                    "reliability stop stays idle");
+            state->take();
+            other.connectButton->click();
+            pump(100);
+            require(serial->selectWorkspaceMode("single"), "single page after reliability check");
+            const auto commandCount = serial->atCommandLibrary_.commands().size();
+            bool managerEdited = false;
+            QTimer::singleShot(0, [&] {
+                auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+                require(dialog, "command manager dialog");
+                const auto buttons = dialog->findChildren<QPushButton*>();
+                QPushButton* create = nullptr;
+                QPushButton* save = nullptr;
+                for (auto* button : buttons) {
+                    if (button->text() == QStringLiteral("新建")) create = button;
+                    if (button->text() == QStringLiteral("保存指令")) save = button;
+                }
+                require(create && save, "command manager edit actions");
+                create->click();
+                dialog->findChild<QLineEdit*>()->setText("p0-manager");
+                dialog->findChild<QPlainTextEdit*>()->setPlainText("AT+P0");
+                save->click();
+                dialog->grab().save(work + "/command-manager.png");
+                managerEdited = true;
+                dialog->reject();
+            });
+            QAction* manageAction = nullptr;
+            for (auto* button : serial->shortcutSidebar_->findChildren<QToolButton*>())
+                if (button->text() == QStringLiteral("指令库") && button->menu())
+                    manageAction = button->menu()->actions().front();
+            require(manageAction, "command manager entry");
+            manageAction->trigger();
+            testtools::AtCommandLibrary persistedCommands;
+            require(managerEdited && serial->atCommandLibrary_.commands().size() == commandCount + 1 &&
+                        testtools::AtCommandStore::load(serial->atCommandStorePath_, persistedCommands, commandError) &&
+                        persistedCommands.commands().back().command == "AT+P0" && state->take().empty(),
+                    "extracted command manager edits and persists without transmitting");
+            window.grab().save(work + "/single-regression-1366.png");
+            window.setSerialModeForDiagnostics("terminal");
+            pump();
+            const auto generation = channel.session.generation();
+            require(channel.session.isOpen() && state->take().empty(),
+                    "mode switch preserves connection and sends nothing");
+            device->unplug();
+            pump(200);
+            require(!channel.session.isOpen() && !channel.receiveEdit->toPlainText().isEmpty(),
+                    "unplug preserves output");
+        }
         std::cout << "PASS: pure terminal view, autofocus, cursor-only echo redraw, exact bytes, "
                      "standard copy/paste/control shortcuts, return and backspace settings, "
                      "scrollback/input resume, search focus, normal-mode regression and unplug\n"

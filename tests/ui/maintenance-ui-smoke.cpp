@@ -11,11 +11,14 @@
 #include <iostream>
 #include <thread>
 #define private public
+#define protected public
 #include "ui/main_window.h"
 #include "ui/pages/file_transfer_workspace.h"
 #include "ui/pages/serial_workspace.h"
+#include "ui/pages/serial_terminal_workspace.h"
 #include "ui/screen_mirror_panel.h"
 #include "ui/widgets/device_maintenance_panel.h"
+#undef protected
 #undef private
 
 using namespace testtools;

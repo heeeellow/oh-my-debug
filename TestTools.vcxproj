@@ -130,7 +130,6 @@
     <ClCompile Include="src\application\agent\agent_connection_service.cpp" />
     <ClCompile Include="src\application\agent\agent_target.cpp" />
     <ClCompile Include="src\application\agent\agent_bundle.cpp" />
-    <ClCompile Include="src\application\agent\board_profile.cpp" />
     <ClCompile Include="src\application\agent\board_test_job_client.cpp" />
     <ClCompile Include="src\application\agent\linux_agent_deployment.cpp" />
     <ClCompile Include="src\application\device\device_discovery.cpp" />
@@ -190,7 +189,6 @@
     <ClInclude Include="src\application\agent\agent_connection_service.h" />
     <ClInclude Include="src\application\agent\agent_target.h" />
     <ClInclude Include="src\application\agent\agent_bundle.h" />
-    <ClInclude Include="src\application\agent\board_profile.h" />
     <ClInclude Include="src\application\agent\board_test_job_client.h" />
     <ClInclude Include="src\application\agent\linux_agent_deployment.h" />
     <ClInclude Include="src\application\device\device_discovery.h" />
@@ -299,5 +297,16 @@
     <ClCompile Include="src\ui\widgets\board_info_panel.cpp" />
     <ClInclude Include="src\application\agent\board_info_service.h" />
     <QtMoc Include="src\ui\widgets\board_info_panel.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\application\serial\serial_link_verifier.cpp" />
+    <ClCompile Include="src\ui\pages\serial_endpoint_workspace.cpp" />
+    <ClCompile Include="src\ui\pages\serial_terminal_workspace.cpp" />
+    <ClCompile Include="src\ui\widgets\at_command_dialog.cpp" />
+    <ClInclude Include="src\application\serial\serial_link_verifier.h" />
+    <ClInclude Include="src\ui\widgets\serial_workspace_helpers.h" />
+    <ClInclude Include="src\ui\widgets\at_command_dialog.h" />
+    <QtMoc Include="src\ui\pages\serial_endpoint_workspace.h" />
+    <QtMoc Include="src\ui\pages\serial_terminal_workspace.h" />
   </ItemGroup>
 </Project>

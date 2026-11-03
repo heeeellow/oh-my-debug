@@ -572,3 +572,18 @@ Agent 留出稳定边界。
 | 原生界面与 ADB 适配器 | 文件页、服务/图标、独立串口、录制、文件管理、原生维护与维护界面等 7 项回归通过，见 `related-tests.log`。精简看板的不可用状态文案修正后单独复查 1/1 通过，见 `board-info-ui.log`；覆盖可见时自动加载、隐藏页不执行、切页保留、刷新、不重复内存、紧凑布局、详情中的多候选/0/未知、设备代次、维护门禁和退出。原生维护包含只读 UID 与成功/需重启混合响应，均为模拟 ADB |
 | 代表界面与实机只读 | 保留 1366×768、1920×1080、1120×768 与读取失败样本（实际 DPR 1.25），以及 1366×768 / DPR 1.5 高 DPI 交互样本；元数据核对全部尺寸，目检实机标准图、窄窗、失败和高 DPI，见 `native-tests/evidence/device-info-*`、`highdpi-ui.log`。当前 RK3568 MTB720 / Android 11（API 30）、既有 Agent 0.3.7 自动加载通过；显示 MemTotal 3852332 KiB（3.67 GiB）和 eMMC 31272730624 字节（29.12 GiB），健康原始字段可读取；只读复核见 `live-readonly.json`、`live-device-info.png/.json`。本轮没有部署、Root/Remount、重启或压力操作；首次 Remount 的真实过程与外部终端交互未重放 |
 | 文档、静态边界与差异 | 文档入口/相对链接、无 Qt 边界与静态基线通过；版本、模块登记、图片尺寸/DPR、证据和 Git 范围复核见 `static-checks.log`、`verification.json`。未暂存、提交或推送，第四阶段未开展 |
+
+
+## 2026-11-03：0.14.2 / PC端串口刷新基线归档
+
+本地基线 `6508cb5`，未打标签或推送。以下是当时的验证范围，不替代 P0 重构后的验证。
+
+
+本轮只修改 PC端串口刷新与来源文案；0.14.1 的看板、维护和核心验证已归档到开发日志。本轮证据目录为 `build/iteration-0.14.2/`。
+
+| 范围 | 结果与证据 |
+| --- | --- |
+| 桌面构建 | Release / Debug 通过，固定 Bundle v2 三包大小与 SHA-256 校验通过；见 `release-build.log`、`debug-standard-build.log`。旧 Debug 在运行时曾先输出到独立目录，未强制关闭旧窗口；其退出后已完成常规 Debug 输出。已有可选 dxcompiler/dxil 提示保持 |
+| 刷新与串口界面 | 两项原生 CTest 通过：`serial-independent-pages`、`serial-workspace-ui`，见 `serial-tests.log`。覆盖服务未连接/启动/失败、设备扫描与维护时 PC 刷新可用，点击确实重建列表、保留手工端口且不触发设备枚举；单/双串口与终端统一名称，空闲 PC 端点刷新不影响另一端模拟连接，设备侧仍有服务门禁，保留既有终端与串口回归。本轮没有 Core/Application 行为变化，未重复完整核心矩阵 |
+| 界面状态与实机边界 | 独立启动 Release 输出（移除 Qt 路径/插件环境），在无 ADB/板端服务条件下保存单串口 1366×768、窄双端 1120×768 样本，实际 DPR 1.25，尺寸、刷新按钮启用状态与页面名称已核对并目检。见 `pc-single-no-service.png/.json`、`pc-dual-narrow.png/.json`、`runtime-snapshots.json`。只读枚举主机 COM；连接/收发使用夹具，没有打开实际 COM、发送实际数据或操作开发板，物理插拔与真实链路未验证 |
+| 文档、静态边界与交付 | 文档入口/相对链接、静态基线与 Git 差异检查通过，见 `static-checks.log`、`verification.json`；Git 交付状态以本页第 1 节为准，第四阶段未开展 |

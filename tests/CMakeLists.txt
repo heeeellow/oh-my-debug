@@ -12,7 +12,7 @@ add_executable(testtools-core-tests
     ${TESTTOOLS_ROOT}/src/application/device/screen_mirror_service.cpp
     ${TESTTOOLS_ROOT}/src/application/agent/agent_target.cpp
     ${TESTTOOLS_ROOT}/src/application/agent/agent_bundle.cpp
-    ${TESTTOOLS_ROOT}/src/application/agent/board_profile.cpp
+    ${TESTTOOLS_ROOT}/src/application/serial/serial_link_verifier.cpp
     ${TESTTOOLS_ROOT}/src/application/agent/board_test_job_client.cpp
     ${TESTTOOLS_ROOT}/src/application/serial/serial_session.cpp
     ${TESTTOOLS_ROOT}/src/application/serial/serial_recorder.cpp

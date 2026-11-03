@@ -59,12 +59,14 @@ TestTools 从串口助手演进为设备中心的调试与测试工作台。架�
 
 | 层 | 源码所有权 | 边界 |
 | --- | --- | --- |
-| Presentation | `src/ui/main_window.*`、`src/ui/pages/serial_workspace.*`、`src/ui/theme.*` | Qt 控件、文案和 GUI 线程映射 |
+| Presentation | `src/ui/main_window.*`、`src/ui/pages/serial_{endpoint,terminal}_workspace.*`、`src/ui/pages/serial_workspace.*`、`src/ui/theme.*` | Qt 控件、文案和 GUI 线程映射 |
 | Application | `src/application/{agent,device,serial,support}/` | 设备连接、串口会话、日志缓冲与偏好持久化；Qt 只读取快照 |
 | Core | `src/core/{device,protocol,serial,support}/` | 协议、值对象、接口、编解码、发送与测试逻辑；标准 C++，不得依赖 Qt |
 | Host adapters | `src/adapters/{adb,agent,device,serial}/` | ADB、进程、Agent TCP 和 Windows COM 的具体实现；不保存产品用例状态 |
 | Board Agent | `src/agent/agent_service.*`、`serial_bridge.*`、`board_capability.*`、`board_test_job.*`、`native_board_observations.*` | 固定能力、参数校验和板端资源访问 |
 | 快捷指令与偏好 | `src/application/serial/at_command_library.*` | 无 Qt 的快捷指令（AT/HEX）与串口界面偏好值对象、边界校验和版本化本地 JSON；界面只负责编辑、选择与发送意图 |
+| 串口公共端点 | `src/ui/pages/serial_endpoint_workspace.*` | 两类页面共用的连接栏、异步关闭、显示队列、录制与服务状态桥接；只创建调用方需要的实际端点 |
+| 双端验证与压测 | `src/application/serial/serial_link_verifier.*` | 无 Qt 的探测帧、方向状态、线速间隔、尾部等待和接收统计；普通计划发送仍独立归 `SerialSession` |
 | 串口终端 | `src/application/serial/serial_terminal.*` | 无 Qt 的 UTF-8/ANSI 解析、有界显示单元、键码/粘贴编码；复用串口会话，不产生隐式终端应答，命令历史由板端拥有 |
 | 串口页面占用 | `src/application/serial/serial_port_claims.*` | 无 Qt 的主机资源登记；Windows 端口别名归一化、按设备保持 Agent 单会话；登记不替代 OS/Agent 裁决 |
 | Android 投屏 | `src/core/device/screen_mirror.h`、`src/application/device/screen_mirror_service.*` | 固定控制接口、会话设备与生命周期；后台操作通过快照返回，不依赖 Qt |
@@ -123,7 +125,8 @@ UI 不直接创建具体后端。子进程通过私有环境复用 ADB，关闭�
 桌面在后台建立独立控制连接，避免硬件读取与主窗口断开/重连共用 socket；仅固定 `job.start/status/cancel`，不经过 ADB Shell。`BoardInfoPanel` 用 Qt 定时器显示快照并检查设备/会话代次，主窗口复用既有维护门禁与退出收尾。规则见 [硬件信息契约](features/BOARD_INFO.md)。
 
 串口终端与普通监视器各有独立会话；RX 通过有界队列和合并通知，在 GUI 线程核对代次后送入各自显示模型。终端按连续流解析，
-Qt 只把变化的行映射为样式并处理焦点、选区和输入法；按键输入通过 `SerialSession` 的异步队列。
+`SerialTerminalWorkspace` 只拥有一个端点及既有终端解析/显示；Qt 只把变化的行映射为样式并处理焦点、选区和输入法，按键输入通过 `SerialSession` 的异步队列。
+`SerialWorkspace` 只负责单/双串口调试；`AtCommandDialog` 负责指令编辑弹窗，`SerialLinkVerifier` 拥有双端测试状态。两类页面经公共端点宿主复用会话生命周期，终端不创建普通发送区、侧栏或链路测试控件。发送调度只在实际发送任务需要时运行，尾部等待沿用既有有界回调。
 终端只显示板端回显，不增加第二个串口连接或在普通日志上按时间推断帧边界。行为见
 [串口终端契约](features/SERIAL_TERMINAL.md)。
 
@@ -165,8 +168,7 @@ Agent 不提供任意 shell RPC。每项能力必须映射到受控实现或允�
 
 板级能力 ID 只表达稳定语义，Provider 身份只表达当前实现来源。静态 ProviderBinding 把能力定义、
 可用性探测和固定执行函数绑定；边界只允许 `agent_native`、`runner_pack`、`sdk_bsp` 和可选
-`rk_reference` 四类，不建立动态插件或任意路径执行。执行结果、能力专用 observations、上位机
-Board Profile evaluation 和最终 verdict 分层处理，详细契约见
+`rk_reference` 四类，不建立动态插件或任意路径执行。执行状态与能力专用 observations 分层处理，设备信息仅展示观察值；当前不实现板型规格比较。Provider 的设计取舍见
 [`ADR-0003`](decisions/0003-stable-board-capabilities-and-providers.md)。
 
 ## 6. 协议与数据通道

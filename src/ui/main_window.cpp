@@ -7,6 +7,7 @@
 #include "theme.h"
 #include "ui/pages/file_transfer_workspace.h"
 #include "ui/pages/serial_workspace.h"
+#include "ui/pages/serial_terminal_workspace.h"
 #include "ui/screen_mirror_panel.h"
 #include "ui/widgets/board_info_panel.h"
 #include "ui/widgets/device_maintenance_panel.h"
@@ -169,10 +170,11 @@ void MainWindow::closeEvent(QCloseEvent* event)
         centralWidget()->setEnabled(false);
         updateAdbTerminalControls();
         setActivity(QStringLiteral("正在保存录制并结束后台任务…"));
-        for (auto* workspace : {serialWorkspace_, terminalWorkspace_}) if (workspace) {
+        for (auto* workspace : {static_cast<SerialEndpointWorkspace*>(serialWorkspace_),
+                                static_cast<SerialEndpointWorkspace*>(terminalWorkspace_)}) if (workspace) {
             workspace->stopRecordings();
             for (const auto& task : workspace->activeTasks())
-                if (task.kind != SerialWorkspace::BackgroundTask::Kind::Recording) workspace->stopTask(task);
+                if (task.kind != SerialEndpointWorkspace::BackgroundTask::Kind::Recording) workspace->stopTask(task);
         }
         if (fileWorkspace_) fileWorkspace_->shutdown();
         else fileShutdownComplete_ = true;
@@ -571,21 +573,23 @@ QPushButton* MainWindow::addNavigationButton(const QString& text, int pageIndex,
 
 QWidget* MainWindow::buildSerialPage(bool terminal)
 {
-    auto* workspace = new SerialWorkspace(this,
-        terminal ? SerialWorkspace::Purpose::Terminal : SerialWorkspace::Purpose::Debug, portClaims_);
+    SerialEndpointWorkspace* workspace = nullptr;
+    if (terminal) {
+        terminalWorkspace_ = new SerialTerminalWorkspace(this, portClaims_);
+        workspace = terminalWorkspace_;
+    } else {
+        serialWorkspace_ = new SerialWorkspace(this, portClaims_);
+        workspace = serialWorkspace_;
+    }
     workspace->setObjectName(terminal ? QStringLiteral("serialTerminalWorkspace")
                                      : QStringLiteral("serialDebugWorkspace"));
-    if (terminal)
-        terminalWorkspace_ = workspace;
-    else
-        serialWorkspace_ = workspace;
     connect(workspace,
-            &SerialWorkspace::prepareServiceRequested,
+            &SerialEndpointWorkspace::prepareServiceRequested,
             this,
             &MainWindow::deploySelectedAgent);
-    connect(workspace, &SerialWorkspace::workspaceModeChanged, this, [this] { updateNavigation(); });
-    connect(workspace, &SerialWorkspace::activityChanged, this, &MainWindow::setActivity);
-    connect(workspace, &SerialWorkspace::busyChanged, this, [this](bool) {
+    connect(workspace, &SerialEndpointWorkspace::workspaceModeChanged, this, [this] { updateNavigation(); });
+    connect(workspace, &SerialEndpointWorkspace::activityChanged, this, &MainWindow::setActivity);
+    connect(workspace, &SerialEndpointWorkspace::busyChanged, this, [this](bool) {
         serialBusy_ = (serialWorkspace_ && serialWorkspace_->hasActiveConnections()) ||
                       (terminalWorkspace_ && terminalWorkspace_->hasActiveConnections());
         updateDeviceControls();
@@ -1614,12 +1618,13 @@ void MainWindow::updateTasks(bool rebuildMenu)
     int count = 0;
     QStringList descriptions;
     if (rebuildMenu) taskMenu_->clear();
-    for (auto* workspace : {serialWorkspace_, terminalWorkspace_}) if (workspace) {
+    for (auto* workspace : {static_cast<SerialEndpointWorkspace*>(serialWorkspace_),
+                            static_cast<SerialEndpointWorkspace*>(terminalWorkspace_)}) if (workspace) {
         for (const auto& task : workspace->activeTasks()) {
             ++count; descriptions.push_back(task.title);
             if (rebuildMenu) {
-                const QString verb = task.kind == SerialWorkspace::BackgroundTask::Kind::Recording ? QStringLiteral("停止录制")
-                    : task.kind == SerialWorkspace::BackgroundTask::Kind::ScheduledSend ? QStringLiteral("停止计划发送") : QStringLiteral("停止压测");
+                const QString verb = task.kind == SerialEndpointWorkspace::BackgroundTask::Kind::Recording ? QStringLiteral("停止录制")
+                    : task.kind == SerialEndpointWorkspace::BackgroundTask::Kind::ScheduledSend ? QStringLiteral("停止计划发送") : QStringLiteral("停止压测");
                 auto* action = taskMenu_->addAction(task.title + QStringLiteral("  ·  ") + (task.stoppable ? verb : QStringLiteral("等待保存")));
                 action->setEnabled(task.stoppable);
                 connect(action, &QAction::triggered, this, [this, workspace, task] { workspace->stopTask(task); updateTasks(); });
@@ -1721,7 +1726,9 @@ void MainWindow::updateMaintenanceState()
     maintenanceBlocking_=blocked;
     if(blocked && !previous) disconnectAgent(QStringLiteral("设备维护中；完成后重新检查连接"));
     if(fileWorkspace_) fileWorkspace_->setDeviceMaintenance(blocked);
-    for(auto* workspace:{serialWorkspace_,terminalWorkspace_}) if(workspace) workspace->setDeviceMaintenance(blocked);
+    for (auto* workspace : {static_cast<SerialEndpointWorkspace*>(serialWorkspace_),
+                            static_cast<SerialEndpointWorkspace*>(terminalWorkspace_)})
+        if (workspace) workspace->setDeviceMaintenance(blocked);
     if(screenMirrorPanel_) screenMirrorPanel_->setMaintenanceDevice(blocked?state.request.device.serial:std::string{});
     updateDeviceControls(); updateAgentControls(); updateTasks();
     if(previous && !blocked && !closeRequested_) refreshDevices();

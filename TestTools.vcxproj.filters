@@ -31,7 +31,6 @@
     <ClCompile Include="src\application\agent\agent_connection_service.cpp"><Filter>应用层\Agent</Filter></ClCompile>
     <ClCompile Include="src\application\agent\agent_target.cpp"><Filter>应用层\Agent</Filter></ClCompile>
     <ClCompile Include="src\application\agent\agent_bundle.cpp"><Filter>应用层\Agent</Filter></ClCompile>
-    <ClCompile Include="src\application\agent\board_profile.cpp"><Filter>应用层\Agent</Filter></ClCompile>
     <ClCompile Include="src\application\agent\board_test_job_client.cpp"><Filter>应用层\Agent</Filter></ClCompile>
     <ClCompile Include="src\application\agent\linux_agent_deployment.cpp"><Filter>应用层\Agent</Filter></ClCompile>
     <ClCompile Include="src\application\device\device_discovery.cpp"><Filter>应用层\设备</Filter></ClCompile>
@@ -91,7 +90,6 @@
     <ClInclude Include="src\application\agent\agent_connection_service.h"><Filter>应用层\Agent</Filter></ClInclude>
     <ClInclude Include="src\application\agent\agent_target.h"><Filter>应用层\Agent</Filter></ClInclude>
     <ClInclude Include="src\application\agent\agent_bundle.h"><Filter>应用层\Agent</Filter></ClInclude>
-    <ClInclude Include="src\application\agent\board_profile.h"><Filter>应用层\Agent</Filter></ClInclude>
     <ClInclude Include="src\application\agent\board_test_job_client.h"><Filter>应用层\Agent</Filter></ClInclude>
     <ClInclude Include="src\application\agent\linux_agent_deployment.h"><Filter>应用层\Agent</Filter></ClInclude>
     <ClInclude Include="src\application\device\device_discovery.h"><Filter>应用层\设备</Filter></ClInclude>
@@ -154,5 +152,16 @@
     <ClCompile Include="src\ui\widgets\board_info_panel.cpp"><Filter>界面</Filter></ClCompile>
     <ClInclude Include="src\application\agent\board_info_service.h"><Filter>应用层\Agent</Filter></ClInclude>
     <QtMoc Include="src\ui\widgets\board_info_panel.h"><Filter>界面</Filter></QtMoc>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\application\serial\serial_link_verifier.cpp"><Filter>应用层\串口</Filter></ClCompile>
+    <ClCompile Include="src\ui\pages\serial_endpoint_workspace.cpp"><Filter>界面</Filter></ClCompile>
+    <ClCompile Include="src\ui\pages\serial_terminal_workspace.cpp"><Filter>界面</Filter></ClCompile>
+    <ClCompile Include="src\ui\widgets\at_command_dialog.cpp"><Filter>界面</Filter></ClCompile>
+    <ClInclude Include="src\application\serial\serial_link_verifier.h"><Filter>应用层\串口</Filter></ClInclude>
+    <ClInclude Include="src\ui\widgets\serial_workspace_helpers.h"><Filter>界面</Filter></ClInclude>
+    <ClInclude Include="src\ui\widgets\at_command_dialog.h"><Filter>界面</Filter></ClInclude>
+    <QtMoc Include="src\ui\pages\serial_endpoint_workspace.h"><Filter>界面</Filter></QtMoc>
+    <QtMoc Include="src\ui\pages\serial_terminal_workspace.h"><Filter>界面</Filter></QtMoc>
   </ItemGroup>
 </Project>

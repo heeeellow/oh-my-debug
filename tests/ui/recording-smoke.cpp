@@ -13,9 +13,12 @@
 #include <atomic>
 #include <iostream>
 #define private public
+#define protected public
 #include "ui/main_window.h"
 #include "ui/pages/serial_workspace.h"
+#include "ui/pages/serial_terminal_workspace.h"
 #include "ui/pages/file_transfer_workspace.h"
+#undef protected
 #undef private
 
 namespace {
@@ -206,7 +209,7 @@ int main(int argc, char** argv)
         normal->stopTask(normal->activeTasks().back());
 
         auto* terminal = window.terminalWorkspace_;
-        auto& term = terminal->channels_[1];
+        auto& term = terminal->channels_[0];
         auto termOwned = std::make_unique<Transport>(); auto* termTransport = termOwned.get();
         config.endpoint = "COM_TERMINAL";
         const auto termGeneration = term.session.open(std::move(termOwned), config);

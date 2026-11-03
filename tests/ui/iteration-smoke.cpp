@@ -11,9 +11,12 @@
 #include <iostream>
 #include <mutex>
 #define private public
+#define protected public
 #include "ui/main_window.h"
 #include "ui/pages/file_transfer_workspace.h"
 #include "ui/pages/serial_workspace.h"
+#include "ui/pages/serial_terminal_workspace.h"
+#undef protected
 #undef private
 
 namespace {
@@ -61,10 +64,10 @@ int exactLines(const QString& text, const QString& value)
 {
     return text.split('\n').count(value);
 }
-void saveRaw(SerialWorkspace* workspace, const QString& filename)
+void saveRaw(SerialEndpointWorkspace* workspace, const QString& filename)
 {
     QByteArray bytes;
-    for (const auto& entry : workspace->channels_[1].logBuffer.entries())
+    for (const auto& entry : workspace->channels_[workspace->primaryChannelIndex()].logBuffer.entries())
         if (entry.direction == testtools::SerialLogDirection::Rx)
             bytes.append(reinterpret_cast<const char*>(entry.bytes.data()), qsizetype(entry.bytes.size()));
     QFile output(filename);
@@ -101,9 +104,12 @@ int main(int argc, char** argv)
         QApplication::setActiveWindow(&window);
         auto* normal = window.serialWorkspace_;
         auto* terminal = window.terminalWorkspace_;
-        auto& channel = terminal->channels_[1];
+        auto& channel = terminal->channels_[0];
         auto* edit = channel.receiveEdit;
-        check(normal != terminal && terminal->currentWorkspaceMode() == "terminal", "separate terminal page");
+        check(terminal->channels_.size() == 1 && !channel.manualSendArea && !channel.sendEdit && !channel.autoSendButton,
+              "terminal constructs one endpoint and no ordinary-send controls");
+        check(!normal->scheduleTimer_->isActive(), "debug scheduler idle at startup");
+        check(static_cast<SerialEndpointWorkspace*>(normal) != terminal && terminal->currentWorkspaceMode() == "terminal", "separate terminal page");
         check(channel.portCombo->currentData().toString() == QString::fromStdString(previous.channels[1].endpoint) ||
               channel.portCombo->currentText() == QString::fromStdString(previous.channels[1].endpoint), "migrate previous B endpoint");
         check(window.setSerialModeForDiagnostics("terminal"), "show terminal page");
@@ -231,8 +237,8 @@ int main(int argc, char** argv)
             return 0;
         }
 
-        const auto refreshPc = [&](SerialWorkspace* workspace) {
-            auto& pc = workspace->channels_[1];
+        const auto refreshPc = [&](SerialEndpointWorkspace* workspace) {
+            auto& pc = workspace->channels_[workspace->primaryChannelIndex()];
             pc.sourceCombo->setCurrentIndex(1);
             workspace->scanning_ = true; // An unrelated board enumeration is still pending.
             pc.sourceCombo->setCurrentIndex(0);
@@ -244,7 +250,7 @@ int main(int argc, char** argv)
             check(pc.connectButton->isEnabled() && pc.refreshPortsButton->isEnabled(),
                   "board enumeration does not disable idle PC connect or refresh");
             const auto generation = workspace->agentPortGeneration_;
-            QSignalSpy activity(workspace, &SerialWorkspace::activityChanged);
+            QSignalSpy activity(workspace, &SerialEndpointWorkspace::activityChanged);
             pc.refreshPortsButton->click();
             check(pc.portCombo->findText("TESTTOOLS_REFRESH_SENTINEL") < 0 &&
                       pc.portCombo->currentText() == "COM_DRAFT",

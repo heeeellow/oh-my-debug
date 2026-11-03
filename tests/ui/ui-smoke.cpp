@@ -8,10 +8,13 @@
 #include <QtCore/QJsonObject>
 #include <QtWidgets>
 #define private public
+#define protected public
 #include "ui/main_window.h"
 #include "ui/pages/file_transfer_workspace.h"
 #include "ui/pages/serial_workspace.h"
+#include "ui/pages/serial_terminal_workspace.h"
 #include "ui/screen_mirror_panel.h"
+#undef protected
 #undef private
 #include <iostream>
 #include <thread>
@@ -402,11 +405,11 @@ int main(int argc, char** argv)
                     child = b;
             check(child, "serial child exists");
             child->click();
-            auto* activeWorkspace = std::string(mode) == "terminal" ? w->terminalWorkspace_ : w->serialWorkspace_;
+            SerialEndpointWorkspace* activeWorkspace = std::string(mode) == "terminal" ? static_cast<SerialEndpointWorkspace*>(w->terminalWorkspace_) : static_cast<SerialEndpointWorkspace*>(w->serialWorkspace_);
             check(child->isChecked() && activeWorkspace->currentWorkspaceMode() == mode,
                   "left serial mode navigation");
             QTest::qWait(80);
-            auto* port = activeWorkspace->channels_[1].portCombo;
+            auto* port = activeWorkspace->channels_[activeWorkspace->primaryChannelIndex()].portCombo;
             std::cerr << mode << " port visible=" << port->isVisible() << " size=" << port->width()
                       << "," << port->height() << " global=" << port->mapTo(w, QPoint()).x() << ","
                       << port->mapTo(w, QPoint()).y() << " window=" << w->width() << std::endl;

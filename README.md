@@ -15,6 +15,7 @@ TestTools 是面向 Rockchip 板卡与通用硬件研发、测试和现场排障
 - [Android 投屏契约](docs/features/SCREEN_MIRROR.md)：独立投屏窗口、设备控制、截图与进程生命周期。
 - [设备诊断与维护契约](docs/features/DEVICE_MAINTENANCE.md)：日志导出、Root/Remount、重启、固定设备与任务互斥。
 - [板卡硬件信息契约](docs/features/BOARD_INFO.md)：内存、存储和健康字段的只读展示、顺序读取与会话隔离，不做规格比较。
+- [前置清理、原生感终端、GPIO 与 iperf3 工具规划（ADR-0007）](docs/decisions/0007-native-terminal-gpio-and-iperf3-plan.md)：阶段 P0 仓库清理与终端架构解耦、`libvterm` 字符网格终端、内嵌 ADB Shell、GPIO 快速控制与 iperf3 离线打包测速方案。
 - [工作台交互升级与板级能力规划（ADR-0006）](docs/decisions/0006-workstation-ux-and-capabilities-plan.md)：顶栏重塑、快捷指令右侧栏化、串口流式录制、ADB 文件与维护增强及分阶段实施计划。
 - [整体迭代与新会话接手（ADR-0005）](docs/decisions/0005-adb-workspace-terminal-and-files.md)：ADB 工作区、导航与顶栏、独立文件传输页、后续终端候选及投屏音频边界；区分已接受方向和待定项。
 - [上一轮路线图（ADR-0004）](docs/decisions/0004-serial-terminal-and-adb-integration.md)：Debug 串口终端、内置 ADB 打包与串口补强方案。
