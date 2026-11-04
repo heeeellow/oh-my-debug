@@ -1,17 +1,17 @@
 #include "application/agent/agent_connection_service.h"
 #include "application/agent/agent_service_status.h"
 #include "core/protocol/agent_protocol.h"
-#include "ui/widgets/file_pane.h"
 #include "test_paths.h"
+#include "ui/main_window.h"
+#include "ui/widgets/file_pane.h"
 #include <QtTest/QSignalSpy>
 #include <QtTest/QTest>
 #include <QtWidgets>
-#include "ui/main_window.h"
 #define private public
 #define protected public
 #include "ui/pages/file_transfer_workspace.h"
-#include "ui/pages/serial_workspace.h"
 #include "ui/pages/serial_terminal_workspace.h"
+#include "ui/pages/serial_workspace.h"
 #undef protected
 #undef private
 #include <asio.hpp>
@@ -110,6 +110,9 @@ int MainWindowUiChecks::run(int argc, char** argv)
         app.setStyle("Fusion");
         app.setFont(QFont("Microsoft YaHei UI", 10));
         qputenv("TESTTOOLS_OFFLINE", "1");
+        QTemporaryDir preferences;
+        check(preferences.isValid(), "isolated service UI preferences");
+        qputenv("TESTTOOLS_DATA_DIR", preferences.path().toUtf8());
         // Local files retain asynchronous Windows associations; device categories use embedded SVG.
         FileListModel model(nullptr, false);
         model.replace({{"log.txt", testtools::FileKind::Regular},
@@ -159,6 +162,25 @@ int MainWindowUiChecks::run(int argc, char** argv)
         window.setSerialModeForDiagnostics("terminal");
         auto* serial = window.terminalWorkspace_;
         {
+            testtools::DeviceScanResult empty;
+            window.applyDeviceScan(empty, true);
+            testtools::DeviceScanResult initial;
+            initial.devices.push_back({"initial-device", "device", "model:fixture"});
+            window.applyDeviceScan(initial, true);
+            check(window.selectedDevice().serial == "initial-device" &&
+                      window.adbStatusLabel_->text().contains(QStringLiteral("已连接")),
+                  "first sole online device is selected after an initially empty scan");
+            window.applyDeviceScan(empty, true);
+            initial.devices[0].serial = "replacement-device";
+            window.applyDeviceScan(initial, true);
+            check(window.selectedDevice().serial.empty() &&
+                      window.adbStatusLabel_->text().contains(QStringLiteral("待选择")),
+                  "a previously selected device disappearing never silently binds another");
+            window.applyDeviceScan(initial, false);
+            check(window.selectedDevice().serial == "replacement-device",
+                  "manual refresh resolves unchanged list with an unselected placeholder");
+        }
+        {
             QSignalBlocker block(window.deviceCombo_);
             window.deviceCombo_->clear();
             window.deviceCombo_->addItem("loopback fixture", "device-A");
@@ -168,18 +190,28 @@ int MainWindowUiChecks::run(int argc, char** argv)
         window.deviceCombo_->currentIndexChanged(0);
         window.agentConnecting_ = false;
         serial->channels_[0].sourceCombo->setCurrentIndex(0);
+        check(await([&] { return !serial->localScanning_; }), "initial PC enumeration complete");
+        serial->enumerateLocalPorts_ = [] {
+            return std::vector<serialdemo::PortInfo>{{"COM_UI_FIXTURE", "fixture", ""}};
+        };
+        serial->channels_[0].refreshPortsButton->click();
+        check(await([&] { return !serial->localScanning_; }) &&
+                  !serial->channels_[0].feedbackPanel->isVisible(),
+              "valid listed PC target has no unrelated warning row");
         QTest::qWait(30);
-        const int logTop = serial->channels_[0].receiveEdit->mapTo(serial, QPoint()).y();
+        const int logTop = serial->channels_[0].receiveWidget->mapTo(serial, QPoint()).y();
         serial->channels_[0].sourceCombo->setCurrentIndex(1);
         serial->channels_[0].portCombo->setEditText("/dev/ttyTEST");
         QTest::qWait(30);
-        check(serial->channels_[0].receiveEdit->mapTo(serial, QPoint()).y() == logTop,
+        check(serial->channels_[0].receiveWidget->mapTo(serial, QPoint()).y() == logTop,
               "inline service hint preserves terminal vertical position");
         const int refreshLeft = window.refreshButton_->mapTo(&window, QPoint()).x();
-        const int comboRight = window.deviceCombo_->mapTo(&window, QPoint()).x() + window.deviceCombo_->width();
+        const int comboRight =
+            window.deviceCombo_->mapTo(&window, QPoint()).x() + window.deviceCombo_->width();
         check(refreshLeft >= comboRight && refreshLeft - comboRight <= 8,
               "refresh action is immediately next to device selector");
-        check(serial->channels_[0].serviceHint->isVisible() && !serial->channels_[0].connectButton->isEnabled(),
+        check(serial->channels_[0].serviceHint->isVisible() &&
+                  !serial->channels_[0].connectButton->isEnabled(),
               "missing board service explained next to connection");
         qunsetenv("TESTTOOLS_OFFLINE");
         window.agentConnecting_ = true;
@@ -268,7 +300,8 @@ int MainWindowUiChecks::run(int argc, char** argv)
                          !window.agentCleanupPending_;
               }),
               "lost service invalidated and cleanup asynchronous");
-        check(held->closed && serial->agentControlPort_ == 0 && serial->channels_[0].serviceHint->isVisible() &&
+        check(held->closed && serial->agentControlPort_ == 0 &&
+                  serial->channels_[0].serviceHint->isVisible() &&
                   !serial->channels_[0].connectButton->isEnabled(),
               "stale control port cannot reopen a board serial");
         check(window.topServiceStatus_->text().contains(QStringLiteral("连接失败")) &&
@@ -276,7 +309,8 @@ int MainWindowUiChecks::run(int argc, char** argv)
               "loss reflected in top bar");
         window.grab().save(testOutputPath("service-failed.png"));
         serial->channels_[0].sourceCombo->setCurrentIndex(0);
-        check(!serial->channels_[0].serviceHint->isVisible(), "local COM independent of service failure");
+        check(!serial->channels_[0].serviceHint->isVisible(),
+              "local COM independent of service failure");
         window.close();
         check(await([&] { return !window.isVisible(); }), "window closes after health operations");
         std::cout << "Native icons and real loopback service checks passed.\n";

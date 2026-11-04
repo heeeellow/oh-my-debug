@@ -1,4 +1,5 @@
 #include "application/serial/serial_workspace_state.h"
+#include "application/serial/serial_port_claims.h"
 
 #include "core/serial/codec.h"
 
@@ -6,6 +7,39 @@
 #include <utility>
 
 namespace testtools {
+
+LocalPortChoice chooseLocalPort(const std::string& previous,
+                               bool manual,
+                               const std::vector<std::string>& before,
+                               const std::vector<std::string>& available,
+                               bool explicitRefresh)
+{
+    if (manual)
+        return {previous, LocalPortChoiceState::Manual};
+    const auto same = [](const std::string& a, const std::string& b) {
+        return SerialPortClaims::resourceKey(false, {}, a) ==
+               SerialPortClaims::resourceKey(false, {}, b);
+    };
+    const auto contains = [&](const std::vector<std::string>& ports, const std::string& p) {
+        return std::any_of(ports.begin(), ports.end(), [&](const auto& value) { return same(value, p); });
+    };
+    for (const auto& endpoint : available)
+        if (same(endpoint, previous))
+            return {endpoint, LocalPortChoiceState::Selected};
+    if (explicitRefresh) {
+        std::vector<std::string> added;
+        for (const auto& endpoint : available)
+            if (!contains(before, endpoint) && !contains(added, endpoint))
+                added.push_back(endpoint);
+        if (added.size() == 1)
+            return {added.front(), LocalPortChoiceState::Selected};
+    }
+    if (previous.empty() && available.size() == 1)
+        return {available.front(), LocalPortChoiceState::Selected};
+    return {{}, !previous.empty() ? LocalPortChoiceState::Missing
+                                 : available.empty() ? LocalPortChoiceState::Empty
+                                                     : LocalPortChoiceState::Choose};
+}
 
 namespace {
 

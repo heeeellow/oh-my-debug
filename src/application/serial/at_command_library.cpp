@@ -63,8 +63,7 @@ bool parseLineEnding(const std::string& value, AtCommandLineEnding& ending)
     return true;
 }
 
-bool exactFields(const JsonValue& value,
-                 std::initializer_list<const char*> fields)
+bool exactFields(const JsonValue& value, std::initializer_list<const char*> fields)
 {
     if (!value.isObject() || value.objectItems().size() != fields.size())
         return false;
@@ -136,7 +135,8 @@ bool AtCommandLibrary::valid(const AtCommand& command,
         command.name.find('\n') != std::string::npos ||
         command.command.find('\r') != std::string::npos ||
         command.command.find('\n') != std::string::npos) {
-        error = "\u540d\u79f0\u548c\u6307\u4ee4\u5185\u5bb9\u4e0d\u80fd\u5305\u542b\u6362\u884c\uff0c\u8bf7\u5728\u4e3b\u9875\u9009\u62e9\u884c\u5c3e";
+        error = "\u540d\u79f0\u548c\u6307\u4ee4\u5185\u5bb9\u4e0d\u80fd\u5305\u542b\u6362\u884c"
+                "\uff0c\u8bf7\u5728\u4e3b\u9875\u9009\u62e9\u884c\u5c3e";
         return false;
     }
     if (command.hex) {
@@ -262,9 +262,8 @@ bool AtCommandStore::load(const std::filesystem::path& path,
         }
     } else if (schemaVersion == 2) {
         const auto* ending = root.find("line_ending");
-        if (!exactFields(root, {"schema_version", "line_ending", "commands"}) ||
-            !ending || !ending->isString() ||
-            !parseLineEnding(ending->stringValue(), globalEnding)) {
+        if (!exactFields(root, {"schema_version", "line_ending", "commands"}) || !ending ||
+            !ending->isString() || !parseLineEnding(ending->stringValue(), globalEnding)) {
             error = "AT \u6307\u4ee4\u6587\u4ef6\u884c\u5c3e\u8bbe\u7f6e\u9519\u8bef";
             return false;
         }
@@ -275,11 +274,10 @@ bool AtCommandStore::load(const std::filesystem::path& path,
     std::vector<AtCommand> commands;
     commands.reserve(commandsValue->arrayItems().size());
     for (const auto& value : commandsValue->arrayItems()) {
-        const bool validFields =
-            schemaVersion == 1
-                ? exactFields(value, {"name", "command", "line_ending"})
-                : (exactFields(value, {"name", "command"}) ||
-                   exactFields(value, {"name", "command", "hex"}));
+        const bool validFields = schemaVersion == 1
+                                     ? exactFields(value, {"name", "command", "line_ending"})
+                                     : (exactFields(value, {"name", "command"}) ||
+                                        exactFields(value, {"name", "command", "hex"}));
         if (!validFields) {
             error = "AT \u6307\u4ee4\u9879\u5b57\u6bb5\u9519\u8bef";
             return false;
@@ -314,7 +312,8 @@ bool AtCommandStore::load(const std::filesystem::path& path,
 }
 
 bool AtCommandStore::importCommands(const std::filesystem::path& path,
-                                    AtCommandLibrary& library, std::string& error)
+                                    AtCommandLibrary& library,
+                                    std::string& error)
 {
     std::error_code fileError;
     if (!std::filesystem::is_regular_file(path, fileError)) {
@@ -374,8 +373,7 @@ bool AtCommandStore::save(const std::filesystem::path& path,
     }
     const auto temporary = path.wstring() + L".tmp";
     {
-        std::ofstream output(std::filesystem::path(temporary),
-                             std::ios::binary | std::ios::trunc);
+        std::ofstream output(std::filesystem::path(temporary), std::ios::binary | std::ios::trunc);
         if (!output) {
             error = "\u65e0\u6cd5\u5199\u5165 AT \u6307\u4ee4\u6587\u4ef6";
             return false;
@@ -435,29 +433,59 @@ bool SerialPreferencesStore::load(const std::filesystem::path& path,
     const auto* schema = root.find("schema_version");
     const auto* channelsValue = root.find("channels");
     const auto* shortcutVisible = root.find("shortcut_bar_visible");
-    if (!schema || !schema->isInt64() || schema->int64Value() != 1 ||
-        !channelsValue || !channelsValue->isArray() ||
-        channelsValue->arrayItems().size() != 2 ||
+    if (!schema || !schema->isInt64() || schema->int64Value() != 1 || !channelsValue ||
+        !channelsValue->isArray() || channelsValue->arrayItems().size() != 2 ||
         (shortcutVisible && !shortcutVisible->isBool())) {
-        error = "\u4e32\u53e3\u914d\u7f6e\u6587\u4ef6\u7248\u672c\u6216\u7ed3\u6784\u4e0d\u53d7\u652f\u6301";
+        error = "\u4e32\u53e3\u914d\u7f6e\u6587\u4ef6\u7248\u672c\u6216\u7ed3\u6784\u4e0d\u53d7"
+                "\u652f\u6301";
         return false;
     }
 
     SerialWorkspacePreferences candidate;
-    if (const auto* ending = root.find("terminal_line_ending"); ending && ending->isInt64()
-        && ending->int64Value() >= 1 && ending->int64Value() <= 3) {
+    if (const auto* ending = root.find("terminal_line_ending");
+        ending && ending->isInt64() && ending->int64Value() >= 1 && ending->int64Value() <= 3) {
         candidate.terminalLineEnding = static_cast<int>(ending->int64Value());
     }
     if (shortcutVisible) {
         candidate.shortcutBarVisible = shortcutVisible->boolValue();
     }
-    if (const auto* width = root.find("shortcut_sidebar_width"); width && width->isInt64() &&
-        width->int64Value() >= 220 && width->int64Value() <= 480) {
+    if (const auto* width = root.find("shortcut_sidebar_width");
+        width && width->isInt64() && width->int64Value() >= 220 && width->int64Value() <= 480) {
         candidate.shortcutSidebarWidth = static_cast<int>(width->int64Value());
     }
-    if (const auto* key = root.find("terminal_backspace"); key && key->isInt64()
-        && (key->int64Value() == 8 || key->int64Value() == 127)) {
+    if (const auto* key = root.find("terminal_backspace");
+        key && key->isInt64() && (key->int64Value() == 8 || key->int64Value() == 127)) {
         candidate.terminalBackspace = static_cast<int>(key->int64Value());
+    }
+    if (const auto* v = root.find("terminal_smart_keys"); v && v->isBool())
+        candidate.terminalSmartKeys = v->boolValue();
+    if (const auto* v = root.find("terminal_copy_on_select"); v && v->isBool())
+        candidate.terminalCopyOnSelect = v->boolValue();
+    if (const auto* v = root.find("terminal_right_paste"); v && v->isBool())
+        candidate.terminalRightPaste = v->boolValue();
+    if (const auto* v = root.find("terminal_theme");
+        v && v->isInt64() && v->int64Value() >= 0 && v->int64Value() <= 2)
+        candidate.terminalTheme = int(v->int64Value());
+    if (const auto* v = root.find("terminal_font_size");
+        v && v->isInt64() && v->int64Value() >= 11 && v->int64Value() <= 18)
+        candidate.terminalFontSize = int(v->int64Value());
+    if (const auto* v = root.find("terminal_line_spacing");
+        v && v->isInt64() && v->int64Value() >= 0 && v->int64Value() <= 6)
+        candidate.terminalLineSpacing = int(v->int64Value());
+    if (const auto* v = root.find("terminal_cursor_shape");
+        v && v->isInt64() && v->int64Value() >= 0 && v->int64Value() <= 3)
+        candidate.terminalCursorShape = int(v->int64Value());
+    if (const auto* v = root.find("terminal_font");
+        v && v->isString() && v->stringValue().size() <= 128)
+        candidate.terminalFont = v->stringValue();
+    // Upgrade only the exact original typography defaults, once. Explicit custom values remain.
+    const auto* appearanceRevision = root.find("terminal_appearance_revision");
+    if ((!appearanceRevision || !appearanceRevision->isInt64() ||
+         appearanceRevision->int64Value() < 1) &&
+        candidate.terminalFont == "Cascadia Mono" && candidate.terminalFontSize == 14 &&
+        candidate.terminalLineSpacing == 2) {
+        candidate.terminalFontSize = 15;
+        candidate.terminalLineSpacing = 3;
     }
     for (std::size_t i = 0; i < 2; ++i) {
         const auto& item = channelsValue->arrayItems()[i];
@@ -468,19 +496,28 @@ bool SerialPreferencesStore::load(const std::filesystem::path& path,
         auto& dst = candidate.channels[i];
         if (const auto* v = item.find("use_agent"); v && v->isBool())
             dst.useAgent = v->boolValue();
-        if (const auto* v = item.find("endpoint"); v && v->isString() && v->stringValue().size() <= 256)
+        if (const auto* v = item.find("manual_endpoint"); v && v->isBool())
+            dst.manualEndpoint = v->boolValue();
+        if (const auto* v = item.find("endpoint");
+            v && v->isString() && v->stringValue().size() <= 256)
             dst.endpoint = v->stringValue();
-        if (const auto* v = item.find("baud_rate"); v && v->isInt64() && v->int64Value() > 0 && v->int64Value() <= 10000000)
+        if (const auto* v = item.find("baud_rate");
+            v && v->isInt64() && v->int64Value() > 0 && v->int64Value() <= 10000000)
             dst.baudRate = static_cast<int>(v->int64Value());
-        if (const auto* v = item.find("data_bits"); v && v->isInt64() && v->int64Value() >= 5 && v->int64Value() <= 8)
+        if (const auto* v = item.find("data_bits");
+            v && v->isInt64() && v->int64Value() >= 5 && v->int64Value() <= 8)
             dst.dataBits = static_cast<int>(v->int64Value());
-        if (const auto* v = item.find("parity"); v && v->isInt64() && v->int64Value() >= 0 && v->int64Value() <= 2)
+        if (const auto* v = item.find("parity");
+            v && v->isInt64() && v->int64Value() >= 0 && v->int64Value() <= 2)
             dst.parity = static_cast<int>(v->int64Value());
-        if (const auto* v = item.find("stop_bits"); v && v->isInt64() && v->int64Value() >= 0 && v->int64Value() <= 1)
+        if (const auto* v = item.find("stop_bits");
+            v && v->isInt64() && v->int64Value() >= 0 && v->int64Value() <= 1)
             dst.stopBits = static_cast<int>(v->int64Value());
-        if (const auto* v = item.find("flow_control"); v && v->isInt64() && v->int64Value() >= 0 && v->int64Value() <= 2)
+        if (const auto* v = item.find("flow_control");
+            v && v->isInt64() && v->int64Value() >= 0 && v->int64Value() <= 2)
             dst.flowControl = static_cast<int>(v->int64Value());
-        if (const auto* v = item.find("line_ending"); v && v->isInt64() && v->int64Value() >= 0 && v->int64Value() <= 3)
+        if (const auto* v = item.find("line_ending");
+            v && v->isInt64() && v->int64Value() >= 0 && v->int64Value() <= 3)
             dst.lineEnding = static_cast<int>(v->int64Value());
         if (const auto* v = item.find("receive_hex"); v && v->isBool())
             dst.receiveHex = v->boolValue();
@@ -510,6 +547,7 @@ bool SerialPreferencesStore::save(const std::filesystem::path& path,
             {"baud_rate", JsonValue::integer(ch.baudRate)},
             {"data_bits", JsonValue::integer(ch.dataBits)},
             {"endpoint", JsonValue::string(ch.endpoint)},
+            {"manual_endpoint", JsonValue::boolean(ch.manualEndpoint)},
             {"flow_control", JsonValue::integer(ch.flowControl)},
             {"line_ending", JsonValue::integer(ch.lineEnding)},
             {"parity", JsonValue::integer(ch.parity)},
@@ -528,6 +566,15 @@ bool SerialPreferencesStore::save(const std::filesystem::path& path,
         {"shortcut_sidebar_width", JsonValue::integer(preferences.shortcutSidebarWidth)},
         {"terminal_line_ending", JsonValue::integer(preferences.terminalLineEnding)},
         {"terminal_backspace", JsonValue::integer(preferences.terminalBackspace)},
+        {"terminal_smart_keys", JsonValue::boolean(preferences.terminalSmartKeys)},
+        {"terminal_copy_on_select", JsonValue::boolean(preferences.terminalCopyOnSelect)},
+        {"terminal_right_paste", JsonValue::boolean(preferences.terminalRightPaste)},
+        {"terminal_theme", JsonValue::integer(preferences.terminalTheme)},
+        {"terminal_appearance_revision", JsonValue::integer(1)},
+        {"terminal_font_size", JsonValue::integer(preferences.terminalFontSize)},
+        {"terminal_line_spacing", JsonValue::integer(preferences.terminalLineSpacing)},
+        {"terminal_cursor_shape", JsonValue::integer(preferences.terminalCursorShape)},
+        {"terminal_font", JsonValue::string(preferences.terminalFont)},
     });
     JsonLimits limits;
     limits.max_output_bytes = MaximumFileBytes;
@@ -546,8 +593,7 @@ bool SerialPreferencesStore::save(const std::filesystem::path& path,
     }
     const auto temporary = path.wstring() + L".tmp";
     {
-        std::ofstream output(std::filesystem::path(temporary),
-                             std::ios::binary | std::ios::trunc);
+        std::ofstream output(std::filesystem::path(temporary), std::ios::binary | std::ios::trunc);
         if (!output) {
             error = "\u65e0\u6cd5\u5199\u5165\u4e32\u53e3\u914d\u7f6e\u6587\u4ef6";
             return false;

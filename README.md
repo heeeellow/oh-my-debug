@@ -9,7 +9,7 @@ TestTools 是面向 Rockchip 板卡与通用硬件研发、测试和现场排障
 - [产品设计](docs/PRODUCT.md)：使用者、核心任务边界与首版范围。
 - [界面设计](docs/UI_DESIGN.md)：页面结构、文案、视觉规范与适配要求。
 - [串口调试契约](docs/features/SERIAL.md)：连接、收发、快捷指令、计划发送与可靠性压测规则。
-- [串口终端契约](docs/features/SERIAL_TERMINAL.md)：Debug 控制台、键盘、连续输出与 ANSI 解析。
+- [串口终端契约](docs/features/SERIAL_TERMINAL.md)：Debug 控制台、原生字符网格、复制粘贴、连续输出与 VT 解析。
 - [ADB 终端契约](docs/features/ADB_TERMINAL.md)：内置 ADB、当前设备 Shell 与系统终端回退规则。
 - [文件传输契约](docs/features/FILE_TRANSFER.md)：设备目录书签与收藏、文件/文件夹收发、受控文件管理及任务取消规则。
 - [Android 投屏契约](docs/features/SCREEN_MIRROR.md)：独立投屏窗口、设备控制、截图与进程生命周期。
@@ -34,3 +34,6 @@ TestTools 是面向 Rockchip 板卡与通用硬件研发、测试和现场排障
 
 在已配置 Qt VS Tools 的 Visual Studio 中打开 `TestTools.slnx`，选择 `x64` 和 Debug 或 Release。
 主程序位于 `build/windows/x64/<Configuration>/TestTools.exe`。详细环境、命令和设备侧产物规则见 [开发手册](docs/DEVELOPMENT.md)。
+
+解决方案内按应用层、核心层、适配器和界面职责浏览源码，另提供文档、脚本、测试及板端 Agent 入口。
+新增文件后用 `scripts/sync-vs-layout.ps1` 同步分组，维护规则见 [VS 解决方案视图](docs/DEVELOPMENT.md#21-visual-studio-解决方案视图)。

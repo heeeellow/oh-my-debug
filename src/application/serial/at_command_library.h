@@ -30,9 +30,7 @@ class AtCommandLibrary final {
     bool remove(std::size_t index);
 
   private:
-    bool valid(const AtCommand& command,
-               std::size_t ignoredIndex,
-               std::string& error) const;
+    bool valid(const AtCommand& command, std::size_t ignoredIndex, std::string& error) const;
 
     std::vector<AtCommand> commands_;
     AtCommandLineEnding lineEnding_ = AtCommandLineEnding::CrLf;
@@ -40,14 +38,13 @@ class AtCommandLibrary final {
 
 class AtCommandStore final {
   public:
-    static bool load(const std::filesystem::path& path,
-                     AtCommandLibrary& library,
-                     std::string& error);
-    static bool save(const std::filesystem::path& path,
-                     const AtCommandLibrary& library,
-                     std::string& error);
+    static bool
+    load(const std::filesystem::path& path, AtCommandLibrary& library, std::string& error);
+    static bool
+    save(const std::filesystem::path& path, const AtCommandLibrary& library, std::string& error);
     static bool importCommands(const std::filesystem::path& path,
-                                AtCommandLibrary& library, std::string& error);
+                               AtCommandLibrary& library,
+                               std::string& error);
 };
 
 struct SerialChannelPreferences {
@@ -63,7 +60,8 @@ struct SerialChannelPreferences {
     bool timestamp = false;
     bool autoScroll = true;
     bool sendHex = false;
-    bool highlightKeywords = false;
+    bool highlightKeywords = true;
+    bool manualEndpoint = false;
 };
 
 struct SerialWorkspacePreferences {
@@ -72,6 +70,14 @@ struct SerialWorkspacePreferences {
     int shortcutSidebarWidth = 240;
     int terminalLineEnding = 2;
     int terminalBackspace = 127;
+    bool terminalSmartKeys = true;
+    bool terminalCopyOnSelect = false;
+    bool terminalRightPaste = false;
+    int terminalTheme = 0;
+    int terminalFontSize = 15;
+    int terminalLineSpacing = 3;
+    int terminalCursorShape = 0;
+    std::string terminalFont = "Cascadia Mono";
     SerialWorkspacePreferences();
 };
 

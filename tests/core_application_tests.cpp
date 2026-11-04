@@ -9,6 +9,7 @@
 #include "application/serial/serial_terminal.h"
 #include "application/serial/at_command_library.h"
 #include "application/serial/serial_workspace_state.h"
+#include "application/serial/serial_preferences_writer.h"
 #include "application/support/background_task_group.h"
 #include "core/protocol/agent_protocol.h"
 #include "core/protocol/agent_version.h"
@@ -299,6 +300,96 @@ int testJsonValueContracts()
 
 int main()
 {
+    {
+        using S = testtools::LocalPortChoiceState;
+        const auto choose = testtools::chooseLocalPort;
+        if (choose("COM3", false, {"COM1", "COM3"}, {"COM1", "COM3", "COM5"}, true).endpoint != "COM3" ||
+            choose("com03", false, {"COM3"}, {"COM3"}, true).endpoint != "COM3")
+            return fail("refresh retains available selection and normalizes PC aliases");
+        if (choose("COM3", false, {"COM1", "COM3"}, {"COM1", "COM5"}, true).endpoint != "COM5" ||
+            !choose("COM3", false, {"COM1", "COM3"}, {"COM1", "COM5", "COM6"}, true).endpoint.empty() ||
+            !choose("COM3", false, {"COM1", "COM3"}, {"COM1", "COM5"}, false).endpoint.empty())
+            return fail("only an explicit refresh chooses a sole new port, never an arbitrary survivor");
+        if (choose("COM3", false, {}, {"COM1"}, false).state != S::Missing ||
+            choose("", false, {}, {}, false).state != S::Empty ||
+            choose("", false, {}, {"COM1", "COM2"}, false).state != S::Choose ||
+            choose("", false, {}, {"COM5"}, false).endpoint != "COM5")
+            return fail("missing, empty and initial port choices are distinct");
+        const auto manual = choose("COM99", true, {"COM3"}, {"COM5"}, true);
+        if (manual.endpoint != "COM99" || manual.state != S::Manual)
+            return fail("an explicit manual endpoint survives enumeration");
+
+        const auto directory = std::filesystem::temp_directory_path() /
+            ("testtools-pref-writer-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+        const auto path = directory / "preferences.json";
+        std::mutex gateMutex;
+        std::condition_variable gate;
+        bool entered = false, release = false;
+        std::vector<std::string> saved;
+        {
+            testtools::SerialPreferencesWriter writer(path,
+                [&](const auto& file, const auto& prefs, std::string& error) {
+                    const auto& endpoint = prefs.channels[0].endpoint;
+                    if (endpoint == "first") {
+                        std::unique_lock<std::mutex> lock(gateMutex);
+                        entered = true;
+                        gate.notify_one();
+                        gate.wait(lock, [&] { return release; });
+                    }
+                    if (endpoint == "fail") {
+                        error = "simulated storage failure";
+                        return false;
+                    }
+                    saved.push_back(endpoint);
+                    return testtools::SerialPreferencesStore::save(file, prefs, error);
+                });
+            testtools::SerialWorkspacePreferences prefs;
+            prefs.channels[0].endpoint = "first";
+            writer.submit(prefs);
+            bool started;
+            {
+                std::unique_lock<std::mutex> lock(gateMutex);
+                started = gate.wait_for(lock, std::chrono::seconds(2), [&] { return entered; });
+            }
+            prefs.channels[0].endpoint = "second";
+            writer.submit(prefs);
+            prefs.channels[0].endpoint = "latest";
+            prefs.channels[0].manualEndpoint = true;
+            writer.submit(prefs);
+            {
+                std::lock_guard<std::mutex> lock(gateMutex);
+                release = true;
+            }
+            gate.notify_one();
+            writer.waitIdle();
+            testtools::SerialWorkspacePreferences loaded;
+            std::string error;
+            if (!started || writer.pending() || saved != std::vector<std::string>{"first", "latest"} ||
+                !testtools::SerialPreferencesStore::load(path, loaded, error) ||
+                loaded.channels[0].endpoint != "latest" || !loaded.channels[0].manualEndpoint)
+                return fail("serialized preferences writer coalesces to the latest snapshot");
+            prefs.channels[0].endpoint = "fail";
+            writer.submit(prefs);
+            writer.waitIdle();
+            if (writer.error() != "simulated storage failure")
+                return fail("background preference errors are observable");
+            prefs.channels[0].endpoint = "recovered";
+            writer.submit(prefs);
+            writer.waitIdle();
+            if (!writer.error().empty())
+                return fail("a successful settings retry clears its error");
+            prefs.channels[0].endpoint = "on-exit";
+            writer.submit(prefs);
+        }
+        testtools::SerialWorkspacePreferences loaded;
+        std::string error;
+        if (!testtools::SerialPreferencesStore::load(path, loaded, error) ||
+            loaded.channels[0].endpoint != "on-exit")
+            return fail("writer destruction drains the accepted final snapshot");
+        std::error_code ec;
+        std::filesystem::remove(path, ec);
+        std::filesystem::remove(directory, ec);
+    }
     {
         testtools::SerialPortClaims claims;
         std::string error;
@@ -706,61 +797,6 @@ int main()
         return fail("terminal switch preserves running scheduled send guard");
     }
 
-    testtools::SerialTerminalBuffer terminal;
-    const auto pushTerminal = [&terminal](const std::string& text) {
-        terminal.push({text.begin(), text.end()}, "10:00:01.001");
-    };
-    pushTerminal("Boot \x1b[3");
-    pushTerminal("2mOK\x1b[0m\r\n\xE4\xB8");
-    pushTerminal("\xAD\r\nprogress 10%\rprogress 20%\x1b[K");
-    if (terminal.plainText() != "Boot OK\n中\nprogress 20%"
-        || terminal.lines()[0].cells[5].style.foreground == testtools::TerminalStyle::DefaultColor
-        || terminal.lines()[0].cells[4].style.foreground != testtools::TerminalStyle::DefaultColor
-        || terminal.plainText(true, "中") != "[10:00:01.001] 中") {
-        return fail("terminal streaming UTF-8, split ANSI, line overwrite and filtered timestamps");
-    }
-    terminal.clear();
-    pushTerminal("abc\b \bZ\x1b[2DXY\x1b]0;hidden title\a!\x1b[?2004h");
-    if (terminal.plainText() != "aXY!") return fail("terminal backspace, cursor and ignored OSC/private CSI");
-    terminal.clear();
-    pushTerminal("alpha\r\tZ");
-    if (terminal.plainText() != "alpha   Z") return fail("terminal tab advances without erasing existing text");
-    terminal.clear();
-    pushTerminal("\x1b[38;2;10;20;30mX\x1b[48;5;196mY\x1b[0mZ");
-    if (terminal.lines()[0].cells[0].style.foreground != 0x0a141e
-        || terminal.lines()[0].cells[1].style.background != 0xff0000
-        || !(terminal.lines()[0].cells[2].style == testtools::TerminalStyle{})) {
-        return fail("terminal RGB/indexed color and reset");
-    }
-    terminal.clear();
-    pushTerminal("\xE4\xB8"); terminal.resetStream(); pushTerminal("OK");
-    if (terminal.plainText() != "\xEF\xBF\xBD\nOK") return fail("terminal reconnect ends incomplete UTF-8 stream");
-    terminal.clear();
-    pushTerminal("abcdef\x1b[3G\x1b[KXY\nline2\x1b[1;1HZ");
-    if (terminal.plainText() != "ZbXY\nline2") return fail("terminal erase line and cursor addressing");
-    pushTerminal("\x1b[2J\x1b[Hroot# ");
-    if (terminal.plainText() != "root# " || terminal.lines().size() != 1) {
-        return fail("terminal clear screen leaves a visible prompt");
-    }
-    testtools::SerialTerminalBuffer bytewiseTerminal;
-    const std::string bytewiseStream = "\x1b[32mBoot 中\x1b[0m\r\nroot# ";
-    for (const unsigned char byte : bytewiseStream) bytewiseTerminal.push({byte});
-    if (bytewiseTerminal.plainText() != "Boot 中\nroot# ") return fail("terminal bytewise stream parsing");
-    testtools::SerialTerminalBuffer boundedTerminal(3);
-    const std::string longOutput = "one\ntwo\nthree\nfour";
-    boundedTerminal.push({longOutput.begin(), longOutput.end()});
-    if (!boundedTerminal.truncated() || boundedTerminal.plainText() != "two\nthree\nfour") {
-        return fail("terminal bounded scrollback");
-    }
-    boundedTerminal.acknowledgeChanges();
-    const std::string moreOutput = "\nfive";
-    boundedTerminal.push({moreOutput.begin(), moreOutput.end()});
-    if (boundedTerminal.needsFullRedraw() || boundedTerminal.removedLines() != 1 ||
-        boundedTerminal.firstChangedLine() != 2 ||
-        boundedTerminal.plainText() != "three\nfour\nfive")
-        return fail("terminal eviction preserves incremental tail rendering");
-    boundedTerminal.clear();
-    if (boundedTerminal.truncated() || !boundedTerminal.plainText().empty()) return fail("terminal clear resets truncation");
     using TerminalKey = testtools::TerminalKey;
     if (testtools::terminalKeyBytes(TerminalKey::Enter, serialdemo::LineEnding::Cr) != serialdemo::ByteBuffer{13}
         || testtools::terminalKeyBytes(TerminalKey::Up, serialdemo::LineEnding::Cr) != serialdemo::ByteBuffer{27,'[','A'}
@@ -768,13 +804,6 @@ int main()
             != serialdemo::ByteBuffer{'a',13,10,'b',13,10,'c',13,10,'d'}) {
         return fail("terminal keys and pasted line endings");
     }
-    terminal.clear(); pushTerminal("root# echo"); terminal.acknowledgeChanges();
-    pushTerminal("\x1b[2D");
-    if (!terminal.dirty() || terminal.cursorColumn() != 8 || terminal.plainText() != "root# echo")
-        return fail("terminal cursor-only movement must trigger screen update");
-    terminal.acknowledgeChanges(); pushTerminal("\b");
-    if (!terminal.dirty() || terminal.cursorColumn() != 7) return fail("terminal backspace updates cursor without text");
-
     testtools::SerialEndpointSelection localA{
         true, testtools::SerialEndpointKind::Local, "COM3", {}};
     auto localB = localA;
@@ -950,10 +979,22 @@ int main()
         legacy << R"({"schema_version":1,"shortcut_bar_visible":true,"channels":[{},{}]})";
     }
     if (!testtools::SerialPreferencesStore::load(prefPath, loadedPrefs, prefError) ||
-        !loadedPrefs.shortcutBarVisible || loadedPrefs.shortcutSidebarWidth != 240 || loadedPrefs.channels[1].highlightKeywords) {
+        !loadedPrefs.shortcutBarVisible || loadedPrefs.shortcutSidebarWidth != 240 || !loadedPrefs.channels[1].highlightKeywords) {
         std::filesystem::remove(prefPath);
         return fail("legacy serial preferences default sidebar width");
     }
+    {
+        std::ofstream legacy(prefPath, std::ios::binary | std::ios::trunc);
+        legacy << R"({"schema_version":1,"terminal_font":"Cascadia Mono","terminal_font_size":14,"terminal_line_spacing":2,"channels":[{}, {"highlight_keywords":false}]})";
+    }
+    if (!testtools::SerialPreferencesStore::load(prefPath, loadedPrefs, prefError) ||
+        loadedPrefs.terminalFontSize != 15 || loadedPrefs.terminalLineSpacing != 3 || loadedPrefs.channels[1].highlightKeywords)
+        return fail("legacy typography upgrades while explicit highlight-off stays off");
+    loadedPrefs.terminalFontSize = 14; loadedPrefs.terminalLineSpacing = 2;
+    if (!testtools::SerialPreferencesStore::save(prefPath, loadedPrefs, prefError) ||
+        !testtools::SerialPreferencesStore::load(prefPath, loadedPrefs, prefError) ||
+        loadedPrefs.terminalFontSize != 14 || loadedPrefs.terminalLineSpacing != 2 || loadedPrefs.channels[1].highlightKeywords)
+        return fail("explicit typography and highlight choices survive subsequent loads");
     {
         std::error_code cleanupError;
         std::filesystem::remove(prefPath, cleanupError);

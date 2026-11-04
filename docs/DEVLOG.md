@@ -587,3 +587,83 @@ Agent 留出稳定边界。
 | 刷新与串口界面 | 两项原生 CTest 通过：`serial-independent-pages`、`serial-workspace-ui`，见 `serial-tests.log`。覆盖服务未连接/启动/失败、设备扫描与维护时 PC 刷新可用，点击确实重建列表、保留手工端口且不触发设备枚举；单/双串口与终端统一名称，空闲 PC 端点刷新不影响另一端模拟连接，设备侧仍有服务门禁，保留既有终端与串口回归。本轮没有 Core/Application 行为变化，未重复完整核心矩阵 |
 | 界面状态与实机边界 | 独立启动 Release 输出（移除 Qt 路径/插件环境），在无 ADB/板端服务条件下保存单串口 1366×768、窄双端 1120×768 样本，实际 DPR 1.25，尺寸、刷新按钮启用状态与页面名称已核对并目检。见 `pc-single-no-service.png/.json`、`pc-dual-narrow.png/.json`、`runtime-snapshots.json`。只读枚举主机 COM；连接/收发使用夹具，没有打开实际 COM、发送实际数据或操作开发板，物理插拔与真实链路未验证 |
 | 文档、静态边界与交付 | 文档入口/相对链接、静态基线与 Git 差异检查通过，见 `static-checks.log`、`verification.json`；Git 交付状态以本页第 1 节为准，第四阶段未开展 |
+
+
+## 2026-11-03：0.14.3 / P0 归档
+
+基线 `0316243`，本地提交，未打标签、未推送。以下迁自当时 STATUS，只代表 P0 当轮验证；当前结果见 [STATUS](STATUS.md)。
+
+### 验证记录
+
+本轮为 P0 重构与清理，证据目录 `build/iteration-0.14.3/`。0.14.2 的验证记录已移至开发日志；本轮结果与 Git 交付状态分别记录。
+
+| 范围 | 结果与证据 |
+| --- | --- |
+| 桌面构建 | Debug / Release 通过，固定 Bundle v2 三包大小与 SHA-256 校验通过；最终产物见 `final-release-build.log`、`final-debug-build.log`。Agent 行为与版本未变，不重建三端板端包；已有可选 dxcompiler/dxil 提示保持 |
+| 无 Qt 核心 | CTest 5/5 通过，保留核心、文件、录制、维护与板卡信息检查；新增提取后的双向分片匹配、旧超时隔离、线速约束、尾部等待、丢帧判定、取消、重新启动和失败提交检查。最终检查与 Agent 主机契约 1/1 见 `baseline-build-and-tests.log` |
+| 原生回归 | 最终共 11 项通过：`final-ui-tests.log` 中其余 10 项通过，串口专项迁移到真实独立页面并隔离偏好后，`serial-ui-tests.log` 1/1 通过。覆盖精确键码、复制粘贴、光标、搜索、录制、高亮、端口交接、指令编辑/保存且不发送、普通计划发送与压测尾部等待的定时器启停；保留文件、维护、服务、板卡信息与退出回归。修正了拆分后重新进入终端未恢复实时光标跟随的问题；最初旧夹具仍访问已移除的隐藏发送控件，已随新宿主结构调整 |
+| 代表界面与独立运行 | 移除 Qt SDK 路径和插件环境后独立启动 Release，终端/单串口 1366×768、双端 1120×768 实际 DPR 1.25，终端高 DPI 1366×768 实际 DPR 1.5；四份 PNG/JSON 的尺寸、可见页面、接收/发送区域和无服务时 PC 刷新状态核对通过并逐张目检。另目检带输出终端 1366×768、1920×1080、参数/搜索展开与指令管理弹窗；窄双端与 0.14.2 比对，原有端点文本显示空间限制保持。见 `runtime-snapshots.json`、对应 PNG/JSON、`ui-evidence/terminal-*.png`、`ui-evidence/command-manager.png` |
+| 工程与生成物清理 | 移除未接入产品的 Board Profile 及旧 Windows Agent VS 工程；主机测试统一保留 CMake 入口。原生回归按当前 `.vcxproj` 清单链接，新增/删除文件触发重配置，基线构建前清理陈旧对象。历史目录只删除核对后的生成文件，共 2160 个、4601657669 字节（约 4.286 GiB）；保留日志、报告、关键快照、修改前备份、PATCHES、0.14.2 证据和活动构建目录。见 `cleanup-files.json`、`cleanup-retained.json`、`cleanup-result.json`、`object-cleanup-*.log` |
+| 文档、静态与实机边界 | 文档入口/相对链接、无 Qt 分层、工程清单与差异检查通过，见 `static-checks.log`、`verification.json`。原有 README、AGENTS、Agent 源码与版本、协议契约摘要核对保持；本轮使用离线/主机夹具，未打开真实 COM、发送实际数据或操作开发板。物理插拔、真实串口收发、长时高波特率与重启日志均未验证 |
+
+
+## 2026-11-03：0.15.0 / T1 验证归档
+
+该版本完成原生终端首轮实现，工作树未提交。以下为当轮记录；后续用户反馈与当前验收见 [STATUS](STATUS.md)。
+
+### 当轮验证
+
+证据目录 `build/iteration-0.15.0/`。P0 历史结果已迁入开发日志；下面只汇总 T1，验证与 Git 交付分开。
+
+| 范围 | 结果与证据 |
+| --- | --- |
+| 无 Qt 核心 | 最终 CTest 6/6 通过（`final-core-tests.log`），保留既有五类检查，新增 VT 主/备屏、滚动区域、分片 UTF-8/组合/宽字符、颜色/属性、模式输入、查询、重排、不可变快照、旧代次、历史与队列限额、输入拒绝及空闲检查 |
+| 桌面构建 | 最终 Debug / Release 通过，见 `final-release-build.log`、`final-debug-build.log`；固定 Bundle v2 三包完整性校验通过，许可复制到两种输出。Agent 与协议无改动，未重建板端包；保留上游 C 类型转换和可选 dxcompiler/dxil 提示 |
+| 原生回归 | 最终 12/12 通过（`final-ui-tests.log`）；补齐框线样本对齐断言后，串口全回归再通过 1/1（`final-serial-tests.log`）。覆盖智能/传统键、Tab、IME 预编辑/提交、软折行/矩形/中文复制、多行确认与 bracketed paste、搜索、主备屏、录制、高亮、端口交接、普通计划发送、双端测试与文件/服务/维护/退出；修正维护夹具旧菜单动作生命周期 |
+| 代表界面 | 移除 Qt SDK 路径后独立 Release 快照 5/5 退出成功：终端 1366×768、1920×1080（DPR 1），窄窗 1120×768（DPR 1.25），终端 1366×768（DPR 1.5），普通单串口 1366×768（DPR 1）；PNG/JSON 尺寸与接收区数量核对并目检。另目检三套配色、框线/宽字符/样式及带输出的 DPR 1.5 终端；终端 DPI 专项通过，见 `runtime-snapshots.json`、`highdpi-serial.log` 与对应图片 |
+| 主机日志回放 | 最终约 15.009 秒输入 2251080 字节（目标 1.5 Mbps / 8N1）；解析完整，显示丢失 0，历史按字符单元限额淘汰。最后三秒保持搜索，10 ms 心跳采样的 P99 间隔 19.862 ms、最大 94.851 ms，最大绘制 23.294 ms，进程工作集峰值约 298.5 MiB；58 次键盘输入均到达模拟发送端。数据见 `ui-evidence/terminal-throughput.json`；只代表该主机短时样本，UART 与长时压力未验证 |
+| COM3 / 115200 | CH343 端口两次打开成功，发送回车后均未收到数据；第二次明确记录 TX=1 / RX=0；未观察到提示符，未执行 Shell/stty/top/vi 等后续命令。端口已释放。用户说明可能死机或休眠、当前不在设备旁并要求先不测，已暂停。`com3-live.log` 与 `live/com3-rx.bin.json` 只证明该范围 |
+| 文档、静态与范围 | 文档入口/相对链接、无 Qt 边界、工程清单、差异检查通过；固定 libvterm 的逐文件摘要和输出许可核对通过。`static-checks.log`、`verification.json` 记录交付摘要；`AGENTS.md`、Agent 源码/版本与协议保持 |
+
+终端 DPI 专项只覆盖本轮终端。额外整份串口夹具在 DPR 1.5 下曾触发普通快捷侧栏的“宽窗恢复”断言，未据此宣称普通侧栏高 DPI 验收通过；该项留待按实际可用窗口宽度复核。常规 DPI 的普通串口回归已通过。
+
+## 2026-11-04：0.15.1 / 时间戳与终端显示验证归档
+
+证据目录 `build/iteration-0.15.1/`；0.15.0 验证已迁入开发日志。本轮结果与 Git 交付分别记录。
+
+| 范围 | 结果与证据 |
+| --- | --- |
+| 核心 | 6/6 通过，新增无接收/只发送/清屏/窗口变化/纯光标移动的时间戳边界，以及默认自动高亮、原始字体默认值一次升级和明确偏好保留检查。见 `core-tests.log` |
+| 桌面 | Debug / Release 通过；固定 Agent Bundle v2 与许可复制通过。见 `release-build.log`、`debug-build.log`；Agent 0.3.7 / 协议 1 未变，未重建板端包 |
+| 原生回归 | 最终 12/12 通过（`final-ui-tests.log`）。更新高亮默认值断言、文件夹具离线关闭，默认 CTest 的 ADB 固定到模拟程序。另定位维护夹具误用上一任务进度、从空菜单取末项的偶发崩溃，改为先等待新任务 ID/活动状态并检查菜单；该专项连续三次通过。见 `initial-ui-tests.log`、`ui-fixture-tests.log`、`maintenance-tests.log`、`maintenance-failure-analysis.md` |
+| 界面与独立运行 | 已目检未连接空屏、收到文本、主备屏、框线/中文、柔和高亮和时间栏。移除 Qt SDK 路径后的独立 Release 快照 5/5 成功：终端 1366×768、1920×1080（DPR 1），1120×768（DPR 1.25）、1366×768（DPR 1.5），普通串口 1366×768；PNG/JSON 尺寸核对通过，终端高 DPI 输入、复制、搜索与断线夹具通过。见 `runtime-snapshots.json`、`highdpi-serial.log` 与对应图片 |
+| 主机回放 | 约 15.124 秒按 1.5 Mbps / 8N1 输入 2251080 字节，显示丢失 0，含最后三秒持续搜索；10 ms GUI 心跳 P99 间隔 20.188 ms、最大 98.930 ms，最大绘制 28.896 ms，工作集峰值约 300.0 MiB。见 `ui-evidence/terminal-throughput.json`；不等同硬件压力验收 |
+| ADB / 实机 | 按用户要求暂停，不标记设备发现已修复。两套 36.0.0 ADB 客户端曾返回空列表；随后 RK 工具可识别 Rockchip USB / WinUSB 接口，但其 1.0.40 客户端与 1.0.41 服务存在版本冲突。已经启动的旧客户端查询自动重启过电脑端 ADB 服务，已向用户说明并致歉；不是开发板重启。没有 Root、Remount、刷机、驱动修改或 COM3 操作；原因留待用户在设备旁确认 |
+| 文档与范围 | 文档入口、相对链接、分层、工程清单和 Git 差异检查通过；交付摘要见 `verification.json`。ADB 产品源码、Agent、协议和主机环境设置未为此改动，工作树未暂存/提交/推送 |
+
+## 2026-11-04：0.15.2 / ADB 选中与空闲交互验证归档
+
+证据目录 `build/iteration-0.15.2/`；0.15.1 验证已迁入开发日志。本轮结果与 Git 交付分别记录。
+
+| 范围 | 结果与证据 |
+| --- | --- |
+| 桌面构建 | Debug / Release 通过；固定 Agent Bundle v2 校验与许可复制通过。Release / Debug 默认输出均已更新，证据目录保留隔离 Debug 构建；未主动关闭用户程序。Agent 0.3.7 / 协议 1 未变 |
+| 空闲交互复现 | 在实际产品对象上停止 RX 后模拟输入与切页，DPR 1.25。旧 Debug 空白/保留文字重绘中位 210.440 / 192.315 ms，按键到模拟发送中位 211.160 / 199.449 ms；旧 Release 重绘中位 17.977 / 13.317 ms。见 `baseline-debug/terminal-interaction.json`、`baseline-release/terminal-interaction.json` |
+| 核心与原生回归 | 核心 6/6、首轮全量原生 13/13 通过；最终缓存保留调整后，终端/串口/高亮/ADB 选中/回放相关 6/6 复测通过，Debug 空闲交互 1/1 通过。见 `core-tests.log`、`final-ui-tests.log`、`final-terminal-tests.log`、`final-debug-idle-tests.log` |
+| 界面与独立运行 | 移除 Qt SDK 路径后的独立 Release 快照 5/5 成功：1366×768、1920×1080（DPR 1），1120×768（DPR 1.25）、1366×768（DPR 1.5）及普通串口 1366×768。终端代表 DPR 1.5 输入/复制/搜索/外观/断线夹具通过；已目检缓存文字、框线、时间栏、高亮与浅色主题。见 `runtime-snapshots.json`、`highdpi-serial.log` 与对应图片 |
+| 空闲交互优化后 | 同为 DPR 1.25，Debug 空屏/保留文字的重绘中位降至 3.245 / 3.325 ms，按键到模拟发送中位 11.818 / 12.035 ms；切页往返最大 62.200 / 53.798 ms。样本仍有空屏按键最大 132.266 ms 的离群值，不能承诺无延迟。Release 重绘中位 1.272 / 1.346 ms。见 `final-debug/terminal-interaction.json`、`ui-evidence/terminal-interaction.json`；均不包含实际串口/板端回显耗时 |
+| 持续回放 | 约 15.043 秒按 1.5 Mbps / 8N1 输入 2251080 字节，显示丢失 0；GUI 10 ms 心跳 P99 间隔 19.389 ms、最大 100.389 ms，最大绘制 16.080 ms，工作集峰值约 307.1 MiB。见 `ui-evidence/terminal-throughput.json`，不等同硬件压力验收 |
+| ADB 只读观察 | 现有主机服务确认 `66c8c84745c4330` 在线，原 Debug 窗口仍为“请选择设备 / ADB 未连接”，复现选择状态错误。新版在同一设备上已显示“ADB 已连接”，Shell/投屏/日志入口可用。只读 Shell 可用（UID 2000、Android 11、arm64）；现有 Agent PID/日志是旧记录，未探测到当前服务，未把 ADB 在线误报为板端服务已就绪。未 Root、部署、刷机、改驱动或打开 COM3。见 `device-observations.json`、`agent-read-only-state.txt`、`online-adb-1366.png.json` |
+| 文档与范围 | 文档入口、相对链接、工程清单、分层和 Git 差异检查通过；交付摘要 `verification.json` 与反馈差异 `feedback.patch`。串口参数、应用层/Agent/协议和 ADB 适配器未改；未暂存/提交/推送 |
+
+## 2026-11-04：0.15.3 工程基线整理
+
+用户确认 Release 交互流畅度明显改善后，决定先整理并提交当前成果。ADB Shell 沿用外部终端，
+内嵌与多标签继续作为候选；串口热插拔不单独安排功能迭代。阶段进度和验证边界统一见
+[当前状态](STATUS.md)。
+
+- 桌面编译文件补齐 VS 筛选器，按应用层、核心层、适配器、界面和第三方依赖归类；终端引擎、网格组件及 libvterm 不再散落在项目根节点。
+- 解决方案增加文档、工程配置、构建脚本、测试和板端源码导航，仍只构建和启动桌面 GUI；源码磁盘路径与编译项保持。
+- 增加 `scripts/sync-vs-layout.ps1` 与只读检查，接入静态基线检查；使用稳定标识和排序，兼容 Windows PowerShell 5.1 / PowerShell 7。
+- 补齐终端数据流与线程所有权，修正目录说明，并核对第三方版本说明与实际文件清单。
+- 本轮证据保存在 `build/consolidation-0.15.3/`；保留此前 T1 和体验修正的原始证据。本次不操作开发板、不占用 COM3、不重启 ADB，不追加实机或压力验收结论。

@@ -71,6 +71,11 @@ SerialEndpointWorkspace::SerialEndpointWorkspace(
     : QWidget(parent), channels_(std::size_t(channelCount)),
       portClaims_(claims ? std::move(claims) : std::make_shared<testtools::SerialPortClaims>())
 {
+    enumerateLocalPorts_ = [] { return testtools::SerialTransportService::localPorts(); };
+    preferenceSaveTimer_ = new QTimer(this);
+    preferenceSaveTimer_->setSingleShot(true);
+    preferenceSaveTimer_->setInterval(200);
+    connect(preferenceSaveTimer_, &QTimer::timeout, this, &SerialEndpointWorkspace::flushPreferences);
 }
 
 SerialEndpointWorkspace::~SerialEndpointWorkspace()
@@ -95,6 +100,7 @@ bool SerialEndpointWorkspace::initializePreferences(const wchar_t* filename,
             root / L"serial-preferences.json", preferences_, error);
     if (!preferencesLoaded_)
         preferences_.channels[1].lineEnding = defaultLineEnding;
+    preferencesWriter_ = std::make_unique<testtools::SerialPreferencesWriter>(preferencesStorePath_);
     return !exists;
 }
 
@@ -115,7 +121,9 @@ void SerialEndpointWorkspace::prepareForShutdown()
 {
     if (shuttingDown_)
         return;
+    flushPreferences();
     shuttingDown_ = true;
+    ++localScanGeneration_;
     if (recordingTimer_)
         recordingTimer_->stop();
     stopRecordings();
@@ -123,6 +131,9 @@ void SerialEndpointWorkspace::prepareForShutdown()
     controlTasks_.wait();
     disconnectAll();
     scanTasks_.wait();
+    localScanTasks_.wait();
+    if (preferencesWriter_)
+        preferencesWriter_->waitIdle();
     QCoreApplication::removePostedEvents(this);
 }
 
@@ -139,6 +150,17 @@ void SerialEndpointWorkspace::buildPageHeader(const QString& title, const QStrin
     pageTitle_ = new QLabel(title, bar);
     pageTitle_->setObjectName(QStringLiteral("pageTitle"));
     modeDescriptionLabel_ = new QLabel(description, bar);
+    defaultDescription_ = description;
+    pageNoticeTimer_ = new QTimer(this);
+    pageNoticeTimer_->setSingleShot(true);
+    pageNoticeTimer_->setInterval(4000);
+    connect(pageNoticeTimer_, &QTimer::timeout, this, [this] {
+        modeDescriptionLabel_->setText(defaultDescription_);
+        modeDescriptionLabel_->setToolTip(defaultDescription_);
+        modeDescriptionLabel_->setProperty("notice", false);
+        modeDescriptionLabel_->style()->unpolish(modeDescriptionLabel_);
+        modeDescriptionLabel_->style()->polish(modeDescriptionLabel_);
+    });
     modeDescriptionLabel_->setObjectName(QStringLiteral("modeDescription"));
     modeDescriptionLabel_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     row->addWidget(pageTitle_);
@@ -192,7 +214,7 @@ bool SerialEndpointWorkspace::eventFilter(QObject* watched, QEvent* event)
     if (event->type() == QEvent::KeyPress &&
         static_cast<QKeyEvent*>(event)->key() == Qt::Key_Escape) {
         for (auto& channel : channels_)
-            if ((watched == channel.searchEdit || watched == channel.receiveEdit) &&
+            if ((watched == channel.searchEdit || watched == channel.receiveWidget) &&
                 channel.searchButton->isChecked()) {
                 channel.searchButton->setChecked(false);
                 return true;
@@ -346,7 +368,10 @@ void SerialEndpointWorkspace::updateGlobalControls()
             const bool agent = channelUsesAgent(index);
             channels_[index].refreshPortsButton->setEnabled(
                 !shuttingDown_ && !channelActive(index) &&
-                (!agent || (!scanning_ && !hasActiveAgentConnection() && selectedAgentIsOnline())));
+                (agent ? !scanning_ && !hasActiveAgentConnection() && selectedAgentIsOnline()
+                       : !localScanning_));
+            channels_[index].refreshPortsButton->setText(
+                !agent && localScanning_ ? QStringLiteral("正在刷新…") : QStringLiteral("刷新串口"));
             channels_[index].refreshPortsButton->setToolTip(
                 agent ? selectedAgentIsOnline() ? QStringLiteral("重新扫描设备串口列表")
                                                 : QStringLiteral("请先连接当前设备的板端服务")
@@ -481,6 +506,34 @@ QWidget* SerialEndpointWorkspace::buildChannelPanel(int index)
     channel.settingsRowLayout = connection->settingsRowLayout;
     channel.advancedSettingsArea = connection->advancedSettingsArea;
     layout->addWidget(connection);
+    channel.feedbackPanel = new QFrame(channel.group);
+    channel.feedbackPanel->setObjectName(QStringLiteral("serialFeedback"));
+    auto* feedbackRow = new QHBoxLayout(channel.feedbackPanel);
+    feedbackRow->setContentsMargins(10, 6, 8, 6);
+    channel.feedbackLabel = new QLabel(channel.feedbackPanel);
+    channel.feedbackLabel->setObjectName(QStringLiteral("serialFeedbackText"));
+    channel.feedbackLabel->setWordWrap(true);
+    channel.feedbackLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    channel.feedbackRetry = new QPushButton(QStringLiteral("重试"), channel.feedbackPanel);
+    channel.feedbackRetry->setObjectName(QStringLiteral("clearButton"));
+    feedbackRow->addWidget(channel.feedbackLabel, 1);
+    feedbackRow->addWidget(channel.feedbackRetry);
+    layout->addWidget(channel.feedbackPanel);
+    channel.feedbackPanel->hide();
+    connect(channel.feedbackRetry, &QPushButton::clicked, this, [this, index] {
+        auto& current = channels_[index];
+        if (!current.connectionFeedback.isEmpty()) {
+            if (!channelActive(index) && channelReady(index))
+                connectChannel(index);
+        } else if (!current.recordingFeedback.isEmpty()) {
+            toggleRecording(index);
+        } else if (index == primaryChannelIndex() && !preferencesError_.isEmpty()) {
+            if (preferencesWriter_)
+                preferencesWriter_->submit(preferences_);
+        } else {
+            current.refreshPortsButton->click();
+        }
+    });
     channel.dtrCheck->setProperty("diagnosticObjectName", QStringLiteral("dtr%1").arg(index));
     channel.rtsCheck->setProperty("diagnosticObjectName", QStringLiteral("rts%1").arg(index));
     connect(channel.dtrCheck, &QCheckBox::clicked, this, [this, index](bool checked) {
@@ -561,11 +614,11 @@ QWidget* SerialEndpointWorkspace::buildChannelPanel(int index)
     channel.recordButton->setToolTip(
         QStringLiteral("持续录制到独立文件，不受清屏、过滤或显示截断影响"));
     receiveHeader->addWidget(channel.recordButton);
-    channel.highlightButton = new QPushButton(QStringLiteral("高亮"), terminalHeader);
+    channel.highlightButton = new QPushButton(QStringLiteral("自动高亮"), terminalHeader);
     channel.highlightButton->setObjectName(QStringLiteral("serialHighlightButton"));
     channel.highlightButton->setCheckable(true);
     channel.highlightButton->setToolTip(
-        QStringLiteral("只读标记错误与警告词；不改变原始字节、导出内容或 ANSI 样式"));
+        QStringLiteral("自动识别错误与警告词；点击可关闭。仅改变显示，不改动原始字节或日志导出"));
     receiveHeader->addWidget(channel.highlightButton);
     channel.searchButton = new QPushButton(QStringLiteral("搜索"), terminalHeader);
     channel.searchButton->setObjectName(QStringLiteral("clearButton"));
@@ -668,29 +721,52 @@ QWidget* SerialEndpointWorkspace::buildChannelPanel(int index)
         findLogMatch(index, 1);
     });
 
-    channel.receiveEdit = new ReceiveConsole(terminalFrame);
-    channel.receiveEdit->setObjectName(QStringLiteral("receiveConsole"));
-    channel.receiveEdit->setReadOnly(true);
-    // SerialLogBuffer 已限制日志容量，视图层不再二次隐式裁剪行数。
-    channel.receiveEdit->setMaximumBlockCount(0);
-    channel.receiveEdit->installEventFilter(this);
-    channel.receiveEdit->setPlaceholderText(
-        QStringLiteral("等待数据；发送成功显示 TX，接收数据显示 RX"));
+    channel.receiveWidget = createReceiveView(index, terminalFrame);
+    channel.receiveWidget->setObjectName(QStringLiteral("receiveConsole"));
+    channel.receiveWidget->installEventFilter(this);
     setupReceiveInput(index);
-    terminalLayout->addWidget(channel.receiveEdit, 1);
+    terminalLayout->addWidget(channel.receiveWidget, 1);
     logSendLayout->addWidget(terminalFrame, 1);
 
     buildSendArea(index, terminalHeader, receiveHeader, logSendLayout);
 
     connect(channel.sourceCombo, &QComboBox::currentIndexChanged, this, [this, index] {
+        if (!applyingPreferences_)
+            channels_[index].endpointManuallyEdited = false;
+        channels_[index].connectionFeedback.clear();
         applyPorts(index, false);
         updateRouteSummary();
         updateGlobalControls();
         savePreferences();
     });
     connect(channel.portCombo, &QComboBox::currentTextChanged, this, [this, index] {
+        channels_[index].connectionFeedback.clear();
+        updateChannelFeedback(index);
         updateRouteSummary();
         updateGlobalControls();
+        savePreferences();
+    });
+    connect(channel.portCombo, &QComboBox::activated, this, [this, index](int) {
+        auto& current = channels_[index];
+        current.endpointManuallyEdited = false;
+        current.portFeedback.clear();
+        current.connectionFeedback.clear();
+        updateChannelFeedback(index);
+        savePreferences();
+    });
+    connect(channel.portCombo->lineEdit(), &QLineEdit::textEdited, this,
+            [this, index](const QString& text) {
+        auto& current = channels_[index];
+        current.endpointManuallyEdited = true;
+        current.connectionFeedback.clear();
+        auto& pref = preferences_.channels[preferenceIndex(index)];
+        pref.endpoint = toUtf8(text.trimmed());
+        pref.manualEndpoint = true;
+        current.portFeedback = text.trimmed().isEmpty() ? QString() :
+            QStringLiteral("手动输入：%1%2").arg(text.trimmed(),
+                current.portCombo->findData(text.trimmed()) < 0
+                    ? QStringLiteral("（当前列表未发现，连接时将直接尝试）") : QString());
+        updateChannelFeedback(index);
         savePreferences();
     });
     connect(channel.baudCombo, &QComboBox::currentTextChanged, this, [this] {
@@ -715,7 +791,7 @@ QWidget* SerialEndpointWorkspace::buildChannelPanel(int index)
             if (!scanning_ && !hasActiveAgentConnection() && selectedAgentIsOnline())
                 refreshAgentPorts();
         } else {
-            refreshLocalPorts(true);
+            refreshLocalPorts(true, index);
         }
     });
     connect(
@@ -740,10 +816,8 @@ QWidget* SerialEndpointWorkspace::buildChannelPanel(int index)
         savePreferences();
     });
     connect(channel.autoScrollCheck, &QCheckBox::toggled, this, [this, index](bool checked) {
-        if (checked && channels_[index].receiveEdit->verticalScrollBar()) {
-            channels_[index].receiveEdit->verticalScrollBar()->setValue(
-                channels_[index].receiveEdit->verticalScrollBar()->maximum());
-        }
+        if (checked)
+            followOutput(index);
         savePreferences();
     });
     connect(channel.resetCounterButton, &QPushButton::clicked, this, [this, index] {
@@ -752,9 +826,10 @@ QWidget* SerialEndpointWorkspace::buildChannelPanel(int index)
     connect(channel.saveLogButton, &QPushButton::clicked, this, [this, index] {
         saveChannelLog(index);
     });
-    channel.highlighter = new SerialKeywordHighlighter(channel.receiveEdit->document());
+    if (channel.receiveEdit)
+        channel.highlighter = new SerialKeywordHighlighter(channel.receiveEdit->document());
     connect(channel.highlightButton, &QPushButton::toggled, this, [this, index](bool enabled) {
-        channels_[index].highlighter->setEnabled(enabled);
+        setHighlightEnabled(index, enabled);
         savePreferences();
     });
     connect(channel.recordButton, &QPushButton::clicked, this, [this, index] {
@@ -773,17 +848,92 @@ bool SerialEndpointWorkspace::setWorkspaceModeForDiagnostics(const QString& mode
     return selectWorkspaceMode(modeName);
 }
 
-void SerialEndpointWorkspace::refreshLocalPorts(bool announce)
+void SerialEndpointWorkspace::refreshLocalPorts(bool announce, int requestedChannel)
 {
     if (shuttingDown_)
         return;
-    localPorts_ = testtools::SerialTransportService::localPorts();
-    for (int index = 0; index < int(channels_.size()); ++index)
-        if (!channelUsesAgent(index))
-            applyPorts(index);
-    if (announce)
-        emit activityChanged(QStringLiteral("已刷新 PC端串口，共 %1 个").arg(localPorts_.size()));
+    if (announce) {
+        for (int index = 0; index < int(channels_.size()); ++index)
+            if ((requestedChannel < 0 || index == requestedChannel) &&
+                !channelUsesAgent(index) && !channelActive(index))
+                localRefreshRequested_[index] = true;
+        showPageNotice(QStringLiteral("正在刷新 PC端串口…"));
+    }
+    if (localScanning_)
+        return;
+    localScanTasks_.reapFinished();
+    localScanning_ = true;
+    const auto generation = ++localScanGeneration_;
+    const auto enumerate = enumerateLocalPorts_;
+    QPointer<SerialEndpointWorkspace> guard(this);
+    localScanTasks_.start([guard, generation, enumerate] {
+        std::vector<PortInfo> ports;
+        std::string error;
+        try {
+            ports = enumerate();
+        } catch (const std::exception& exception) {
+            error = exception.what();
+        } catch (...) {
+            error = "无法读取 PC端串口列表";
+        }
+        QMetaObject::invokeMethod(guard, [guard, generation, ports = std::move(ports), error]() mutable {
+            if (!guard || guard->shuttingDown_ || generation != guard->localScanGeneration_)
+                return;
+            guard->localScanning_ = false;
+            if (error.empty()) {
+                guard->applyLocalPorts(std::move(ports));
+            } else {
+                for (int index = 0; index < int(guard->channels_.size()); ++index)
+                    if (guard->localRefreshRequested_[index] && !guard->channelUsesAgent(index)) {
+                        guard->channels_[index].portFeedback =
+                            QStringLiteral("串口刷新失败：%1；原列表已保留。").arg(fromUtf8(error));
+                        guard->updateChannelFeedback(index);
+                    }
+                guard->localRefreshRequested_.fill(false);
+                guard->showPageNotice(QStringLiteral("串口刷新失败，请在连接区重试"));
+                emit guard->activityChanged(QStringLiteral("串口刷新失败：%1").arg(fromUtf8(error)));
+            }
+            guard->updateGlobalControls();
+        }, Qt::QueuedConnection);
+    });
     updateGlobalControls();
+}
+
+void SerialEndpointWorkspace::applyLocalPorts(std::vector<PortInfo> ports)
+{
+    const auto previous = std::move(localPorts_);
+    localPorts_ = std::move(ports);
+    QStringList notices;
+    for (int index = 0; index < int(channels_.size()); ++index) {
+        if (channelUsesAgent(index))
+            continue;
+        auto& channel = channels_[index];
+        const auto before = selectedEndpoint(channel.portCombo);
+        applyPorts(index, true, localRefreshRequested_[index], &previous);
+        if (!localRefreshRequested_[index])
+            continue;
+        const auto after = selectedEndpoint(channel.portCombo);
+        QString result;
+        if (channelActive(index))
+            result = QStringLiteral("列表已更新，当前连接保持 %1").arg(after);
+        else if (channel.endpointManuallyEdited)
+            result = QStringLiteral("列表已更新，保留手动输入 %1").arg(after);
+        else if (!after.isEmpty() && before != after)
+            result = QStringLiteral("已选中 %1，尚未连接").arg(after);
+        else if (!after.isEmpty())
+            result = QStringLiteral("保留 %1").arg(after);
+        else
+            result = QStringLiteral("请选择串口");
+        notices << QStringLiteral("%1：%2（共 %3 个）")
+                       .arg(channelDisplayName(index), result).arg(localPorts_.size());
+    }
+    localRefreshRequested_.fill(false);
+    if (!notices.isEmpty()) {
+        const auto message = notices.join(QStringLiteral("；"));
+        showPageNotice(message);
+        emit activityChanged(message);
+    }
+    savePreferences();
 }
 
 void SerialEndpointWorkspace::refreshAgentPorts()
@@ -871,61 +1021,85 @@ void SerialEndpointWorkspace::setAgentConnection(const std::string& adbSerial,
     updateRouteSummary();
 }
 
-void SerialEndpointWorkspace::applyPorts(int index, bool preserveEditedEndpoint)
+void SerialEndpointWorkspace::applyPorts(int index, bool preserveEditedEndpoint,
+                                         bool explicitRefresh,
+                                         const std::vector<PortInfo>* previousPorts)
 {
     auto& channel = channels_[index];
-    if (!channel.portCombo || channelActive(index)) {
+    if (!channel.portCombo || channelActive(index))
         return;
-    }
-    const QString previousData = selectedEndpoint(channel.portCombo);
-    const QString previousText = channel.portCombo->currentText();
-    const bool edited =
-        previousText != channel.portCombo->itemText(channel.portCombo->currentIndex());
-    const QString preferredEndpoint =
-        fromUtf8(preferences_.channels[preferenceIndex(index)].endpoint);
+    auto& pref = preferences_.channels[preferenceIndex(index)];
+    QString previous = preserveEditedEndpoint ? selectedEndpoint(channel.portCombo) : QString();
+    if (previous.isEmpty() && preserveEditedEndpoint)
+        previous = fromUtf8(pref.endpoint);
+    const bool manual = preserveEditedEndpoint && channel.endpointManuallyEdited;
+    const int caret = channel.portCombo->lineEdit()->cursorPosition();
+    const int selected = channel.portCombo->lineEdit()->selectionStart();
+    const int selectionLength = channel.portCombo->lineEdit()->selectedText().size();
     const QSignalBlocker blocker(channel.portCombo);
     channel.portCombo->clear();
-
+    channel.portFeedback.clear();
+    QString chosen;
     if (channelUsesAgent(index)) {
         for (const auto& port : agentPorts_) {
             QString detail = fromUtf8(port.interfaceName);
-            if (!port.occupiedBy.empty()) {
+            if (!port.occupiedBy.empty())
                 detail = QStringLiteral("占用中：%1").arg(fromUtf8(port.occupiedBy));
-            } else if (!port.readable || !port.writable) {
+            else if (!port.readable || !port.writable)
                 detail = QStringLiteral("权限不足");
-            }
-            const QString endpoint = fromUtf8(port.endpoint);
-            channel.portCombo->addItem(
-                detail.isEmpty() ? endpoint : endpoint + QStringLiteral(" — ") + detail, endpoint);
+            const auto endpoint = fromUtf8(port.endpoint);
+            channel.portCombo->addItem(detail.isEmpty() ? endpoint : endpoint + QStringLiteral(" — ") + detail,
+                                       endpoint);
         }
+        const int restore = channel.portCombo->findData(previous);
+        if (manual)
+            chosen = previous;
+        else if (restore >= 0)
+            chosen = previous;
+        else if (channel.portCombo->count())
+            chosen = channel.portCombo->itemData(0).toString();
         channel.portCombo->setToolTip(QStringLiteral("当前连接设备提供的串口节点"));
     } else {
+        std::vector<std::string> before, available;
+        if (previousPorts)
+            for (const auto& port : *previousPorts)
+                before.push_back(port.name);
         for (const auto& port : localPorts_) {
-            const QString name = fromUtf8(port.name);
-            const QString description = fromUtf8(port.description);
-            channel.portCombo->addItem(
-                description.isEmpty() ? name : name + QStringLiteral(" — ") + description, name);
+            available.push_back(port.name);
+            const auto name = fromUtf8(port.name), description = fromUtf8(port.description);
+            channel.portCombo->addItem(description.isEmpty() ? name : name + QStringLiteral(" — ") + description,
+                                       name);
         }
-        channel.portCombo->setToolTip(QStringLiteral("PC端 COM 口，例如 COM3"));
+        const auto choice = testtools::chooseLocalPort(toUtf8(previous), manual, before, available,
+                                                       explicitRefresh);
+        chosen = fromUtf8(choice.endpoint);
+        if (choice.state == testtools::LocalPortChoiceState::Missing)
+            channel.portFeedback = QStringLiteral("原串口 %1 未发现，请选择其他串口或刷新。").arg(previous);
+        else if (choice.state == testtools::LocalPortChoiceState::Empty)
+            channel.portFeedback = QStringLiteral("未发现 PC端串口，请检查 USB 连接后刷新。");
+        channel.portCombo->setToolTip(QStringLiteral("PC端 COM 口；手动输入将明确保留，不会自动连接"));
     }
-
-    int restoreIndex = channel.portCombo->findData(previousData);
-    if (restoreIndex < 0) {
-        restoreIndex = channel.portCombo->findData(previousText);
+    channel.portCombo->setCurrentIndex(-1);
+    if (!manual && !chosen.isEmpty()) {
+        channel.portCombo->setCurrentIndex(channel.portCombo->findData(chosen));
+        pref.endpoint = toUtf8(chosen);
+        pref.manualEndpoint = false;
+    } else {
+        channel.portCombo->setEditText(chosen);
     }
-    if (restoreIndex < 0 && !preferredEndpoint.isEmpty()) {
-        restoreIndex = channel.portCombo->findData(preferredEndpoint);
-    }
-    if (restoreIndex >= 0) {
-        channel.portCombo->setCurrentIndex(restoreIndex);
-    } else if (preserveEditedEndpoint && edited && !previousText.trimmed().isEmpty()) {
-        channel.portCombo->setEditText(previousText);
-    } else if (!preferredEndpoint.isEmpty() && channel.portCombo->count() == 0) {
-        channel.portCombo->setEditText(preferredEndpoint);
-    }
-    if (channel.portCombo->lineEdit()) {
+    if (manual) {
+        channel.portFeedback = chosen.isEmpty() ? QString() :
+            QStringLiteral("手动输入：%1%2").arg(chosen,
+                channel.portCombo->findData(chosen) < 0 ? QStringLiteral("（当前列表未发现，连接时将直接尝试）") : QString());
+        if (selected >= 0)
+            channel.portCombo->lineEdit()->setSelection(selected, selectionLength);
+        else
+            channel.portCombo->lineEdit()->setCursorPosition(caret);
+    } else {
         channel.portCombo->lineEdit()->setCursorPosition(0);
     }
+    channel.portCombo->lineEdit()->setPlaceholderText(QStringLiteral("请选择串口"));
+    updateChannelFeedback(index);
     updateRouteSummary();
 }
 
@@ -935,6 +1109,7 @@ void SerialEndpointWorkspace::applyPreferencesToUi()
     for (int index = 0; index < int(channels_.size()); ++index) {
         auto& channel = channels_[static_cast<std::size_t>(index)];
         const auto& pref = preferences_.channels[preferenceIndex(index)];
+        channel.endpointManuallyEdited = pref.manualEndpoint;
         const QSignalBlocker b1(channel.sourceCombo);
         const QSignalBlocker b2(channel.portCombo);
         const QSignalBlocker b3(channel.baudCombo);
@@ -984,6 +1159,7 @@ void SerialEndpointWorkspace::savePreferences()
         const auto& channel = channels_[static_cast<std::size_t>(index)];
         auto& pref = preferences_.channels[preferenceIndex(index)];
         pref.useAgent = channelUsesAgent(index);
+        pref.manualEndpoint = channel.endpointManuallyEdited;
         const QString endpointText = selectedEndpoint(channel.portCombo);
         if (!endpointText.isEmpty()) {
             pref.endpoint = toUtf8(endpointText);
@@ -1006,8 +1182,79 @@ void SerialEndpointWorkspace::savePreferences()
             pref.sendHex = channel.sendHexCheck->isChecked();
         pref.highlightKeywords = channel.highlightButton->isChecked();
     }
-    std::string ignoredError;
-    testtools::SerialPreferencesStore::save(preferencesStorePath_, preferences_, ignoredError);
+    preferencesDirty_ = true;
+    preferenceSaveTimer_->start();
+}
+
+void SerialEndpointWorkspace::flushPreferences()
+{
+    if (!preferencesDirty_)
+        return;
+    preferenceSaveTimer_->stop();
+    preferencesDirty_ = false;
+    if (preferencesWriter_)
+        preferencesWriter_->submit(preferences_);
+}
+
+bool SerialEndpointWorkspace::hasPendingPreferences() const
+{
+    return preferencesDirty_ ||
+           (preferencesWriter_ && preferencesWriter_->pending());
+}
+
+void SerialEndpointWorkspace::showPageNotice(const QString& message)
+{
+    if (!modeDescriptionLabel_ || shuttingDown_)
+        return;
+    modeDescriptionLabel_->setText(modeDescriptionLabel_->fontMetrics().elidedText(
+        message, Qt::ElideRight, std::max(220, width() - 180)));
+    modeDescriptionLabel_->setToolTip(message);
+    modeDescriptionLabel_->setProperty("notice", true);
+    modeDescriptionLabel_->style()->unpolish(modeDescriptionLabel_);
+    modeDescriptionLabel_->style()->polish(modeDescriptionLabel_);
+    pageNoticeTimer_->start();
+}
+
+void SerialEndpointWorkspace::updateChannelFeedback(int index)
+{
+    auto& channel = channels_[index];
+    if (!channel.feedbackPanel)
+        return;
+    QStringList messages;
+    if (!channel.connectionFeedback.isEmpty())
+        messages << channel.connectionFeedback;
+    else if (!channel.portFeedback.isEmpty())
+        messages << channel.portFeedback;
+    if (!channel.recordingFeedback.isEmpty())
+        messages << channel.recordingFeedback;
+    const bool preferenceError = index == primaryChannelIndex() && !preferencesError_.isEmpty();
+    if (preferenceError)
+        messages << QStringLiteral("设置保存失败：%1").arg(preferencesError_);
+    const auto text = messages.join('\n');
+    if (channel.feedbackLabel->text() != text)
+        channel.feedbackLabel->setText(text);
+    const bool error = !channel.connectionFeedback.isEmpty() ||
+                       !channel.recordingFeedback.isEmpty() || preferenceError;
+    const auto tone = error ? QStringLiteral("error") : QStringLiteral("info");
+    if (channel.feedbackPanel->property("tone").toString() != tone) {
+        channel.feedbackPanel->setProperty("tone", tone);
+        channel.feedbackPanel->style()->unpolish(channel.feedbackPanel);
+        channel.feedbackPanel->style()->polish(channel.feedbackPanel);
+        channel.feedbackLabel->style()->unpolish(channel.feedbackLabel);
+        channel.feedbackLabel->style()->polish(channel.feedbackLabel);
+    }
+    const bool connection = !channel.connectionFeedback.isEmpty();
+    const bool recording = !channel.recordingFeedback.isEmpty();
+    channel.feedbackRetry->setText(connection ? QStringLiteral("重试连接")
+                                  : recording ? QStringLiteral("重选录制文件")
+                                  : preferenceError ? QStringLiteral("重试保存")
+                                                               : QStringLiteral("刷新串口"));
+    channel.feedbackRetry->setEnabled(!shuttingDown_ &&
+        (connection ? !channelActive(index) && channelReady(index)
+         : recording ? channel.session.isOpen()
+         : preferenceError ? !preferencesWriter_->pending()
+                                       : channel.refreshPortsButton->isEnabled()));
+    channel.feedbackPanel->setVisible(!text.isEmpty());
 }
 
 SerialConfig SerialEndpointWorkspace::channelConfig(int index) const
@@ -1088,7 +1335,8 @@ void SerialEndpointWorkspace::connectChannel(int index)
 
     QString error;
     if (!validateChannel(index, error)) {
-        QMessageBox::warning(this, QStringLiteral("无法连接"), error);
+        setChannelStatus(index, error, true);
+        emit activityChanged(error);
         return;
     }
 
@@ -1114,6 +1362,8 @@ void SerialEndpointWorkspace::connectChannel(int index)
         transport = testtools::SerialTransportService::createLocal();
     }
     channel.connectButton->setText(QStringLiteral("取消 / 断开"));
+    channel.connectionFeedback.clear();
+    updateChannelFeedback(index);
     setChannelControlsEnabled(index, false);
     setChannelStatus(index, QStringLiteral("正在连接..."));
     updateGlobalControls();
@@ -1156,10 +1406,17 @@ void SerialEndpointWorkspace::attachSessionCallbacks(int index)
                     const bool error = state == TransportState::Error;
                     guard->setChannelStatus(index, status, error);
                     if (connected) {
+                        channel.connectedOnce = true;
+                        channel.connectionFeedback.clear();
+                        channel.portFeedback.clear();
+                        guard->showPageNotice(status);
+                        guard->updateChannelFeedback(index);
                         channel.connectButton->setText(QStringLiteral("断开"));
                         if (channel.sendButton)
                             channel.sendButton->setEnabled(true);
                     } else if (!progress) {
+                        if (channel.connectedOnce && !channel.disconnectPending && !error)
+                            channel.connectionFeedback = QStringLiteral("连接已断开：%1").arg(status);
                         if (!channel.session.isOpen()) {
                             guard->disconnectChannel(index, false);
                             guard->setChannelStatus(index, status, error);
@@ -1304,9 +1561,19 @@ void SerialEndpointWorkspace::toggleRecording(int index)
 
 void SerialEndpointWorkspace::pollRecordings()
 {
+    if (preferencesWriter_) {
+        const auto error = fromUtf8(preferencesWriter_->error());
+        if (error != preferencesError_) {
+            preferencesError_ = error;
+            if (!error.isEmpty())
+                emit activityChanged(QStringLiteral("串口设置保存失败：%1").arg(error));
+        }
+    }
     for (int index = 0; index < int(channels_.size()); ++index) {
         auto& channel = channels_[index];
         const auto state = channel.session.recordingSnapshot();
+        channel.recordingFeedback = state.state == testtools::SerialRecordState::Failed
+            ? QStringLiteral("录制失败：%1").arg(fromUtf8(state.error)) : QString();
         using State = testtools::SerialRecordState;
         const bool stopping =
             state.busy && state.state != State::Starting && state.state != State::Recording;
@@ -1357,6 +1624,7 @@ void SerialEndpointWorkspace::pollRecordings()
             emit activityChanged(
                 QStringLiteral("%1 · %2 · %3").arg(channelDisplayName(index), message, path));
         }
+        updateChannelFeedback(index);
     }
 }
 
@@ -1466,6 +1734,7 @@ void SerialEndpointWorkspace::completeChannelDisconnect(int index,
         return;
     }
     channel.disconnectPending = false;
+    channel.connectedOnce = false;
     channel.portClaim.reset();
     channel.controlPending = false;
     channel.lineStates = {Qt::PartiallyChecked, Qt::PartiallyChecked};
@@ -1478,6 +1747,7 @@ void SerialEndpointWorkspace::completeChannelDisconnect(int index,
         channel.sendButton->setEnabled(false);
     setChannelControlsEnabled(index, true);
     if (showClosedStatus) {
+        channel.connectionFeedback.clear();
         setChannelStatus(index, QStringLiteral("已断开"));
     }
     updateGlobalControls();
@@ -1497,6 +1767,9 @@ void SerialEndpointWorkspace::setChannelControlsEnabled(int index, bool enabled)
 
 void SerialEndpointWorkspace::setChannelStatus(int index, const QString& message, bool error)
 {
+    if (error)
+        channels_[index].connectionFeedback = message;
+    updateChannelFeedback(index);
     auto* label = channels_[index].statusLabel;
     QString display = message;
     QString role = QStringLiteral("connectionStatusIdle");
@@ -1791,7 +2064,7 @@ void SerialEndpointWorkspace::resetChannelCounters(int index)
 void SerialEndpointWorkspace::saveChannelLog(int index)
 {
     auto& channel = channels_[index];
-    const QString text = channel.receiveEdit->toPlainText();
+    const QString text = receiveText(index);
     if (text.trimmed().isEmpty()) {
         QMessageBox::information(
             this, QStringLiteral("暂无日志"), QStringLiteral("当前收发记录为空，无需导出。"));
@@ -1853,4 +2126,28 @@ bool SerialEndpointWorkspace::selectedAgentIsOnline() const
     return !maintenanceBlocked_ && currentAdbDevice_.state == "device" &&
            !currentAdbDevice_.serial.empty() && agentControlPort_ != 0 &&
            agentAdbSerial_ == currentAdbDevice_.serial;
+}
+
+QWidget* SerialEndpointWorkspace::createReceiveView(int index, QWidget* parent)
+{
+    auto* edit = new ReceiveConsole(parent);
+    channels_[index].receiveEdit = edit;
+    edit->setReadOnly(true);
+    edit->setMaximumBlockCount(0);
+    edit->setPlaceholderText(QStringLiteral("等待数据；发送成功显示 TX，接收数据显示 RX"));
+    return edit;
+}
+QString SerialEndpointWorkspace::receiveText(int index) const
+{
+    return channels_[index].receiveEdit->toPlainText();
+}
+void SerialEndpointWorkspace::followOutput(int index)
+{
+    auto* scroll = channels_[index].receiveEdit->verticalScrollBar();
+    scroll->setValue(scroll->maximum());
+}
+void SerialEndpointWorkspace::setHighlightEnabled(int index, bool enabled)
+{
+    if (channels_[index].highlighter)
+        channels_[index].highlighter->setEnabled(enabled);
 }

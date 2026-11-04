@@ -12,7 +12,7 @@
 Windows 上位机工程为根目录 `TestTools.vcxproj`；板端无 Qt Agent 位于 `src/agent/`，通过 CMake
 面向 ARM Android/Linux 独立构建。产品程序不依赖协议测试夹具。
 
-主解决方案 `TestTools.slnx` 只包含 Qt GUI 工程，确保 Visual Studio 的“本地 Windows 调试器”
+主解决方案 `TestTools.slnx` 只有 Qt GUI 一个可构建工程，并通过解决方案文件夹提供文档、脚本、测试与板端源码入口，确保 Visual Studio 的“本地 Windows 调试器”
 始终启动界面程序。本机 Agent 协议检查统一使用 `src/agent/CMakeLists.txt` 的 `TESTTOOLS_BUILD_TESTS=ON`；需要协议夹具时显式开启 `TESTTOOLS_BUILD_FAKE_AGENT=ON`，不作为产品启动项目。
 
 ## 2. 目录约定
@@ -21,8 +21,8 @@ Windows 上位机工程为根目录 `TestTools.vcxproj`；板端无 Qt Agent 位
 src/
 ├── adapters/      ADB、Agent TCP 和 Windows COM 等具体适配器
 ├── agent/         无 Qt 的真实板端 Agent；本机服务仅为可选协议测试夹具
-├── application/   按 agent/device/serial/support/testing 组织的用例和生命周期
-├── core/          按 protocol/serial/support 组织的平台无关逻辑
+├── application/   按 agent/device/serial/support/terminal 组织的用例和生命周期
+├── core/          按 device/protocol/serial/support 组织的平台无关逻辑
 ├── diagnostics/   内置自检和实机冒烟入口
 ├── ui/            Qt 界面与 GUI 线程桥接
 └── main.cpp       Windows 应用入口
@@ -36,6 +36,34 @@ build/             所有生成物，不提交 Git
 
 仓库根目录 `AGENTS.md` 是工具无关的接手入口；`docs/features/` 保存功能行为契约，
 `docs/decisions/` 只保存影响长期维护的重要决策，不为每次修改创建文档。
+
+### 2.1 Visual Studio 解决方案视图
+
+桌面项目使用 `TestTools.vcxproj.filters` 分组。分组不移动磁盘文件、不改变包含路径和编译清单；
+同一职责的 `.cpp`、普通头文件及 Qt MOC 头文件放在一起，不再按扩展名拆开。
+
+| 解决方案位置 | 对应内容 |
+| --- | --- |
+| TestTools → 应用层 / 核心层 / 适配器 / 诊断 / 应用入口 | `src/` 对应职责；应用层独立列出终端引擎 |
+| TestTools → 界面 → 主窗口与主题 / 页面 / 组件 / 资源 | `src/ui/`，包括字符网格、连接栏、页面和 RCC |
+| TestTools → 第三方依赖 → 具体依赖 | 实际参与桌面编译的第三方源文件，包括 libvterm |
+| 文档 / 工程配置 / 构建与验证 / 测试 / 板端 Agent | 解决方案文件入口；测试及 Agent 仍按各自 CMake 流程构建 |
+
+新增源码先加入 `TestTools.vcxproj` 的正确项类型，再运行：
+
+```powershell
+.\scripts\sync-vs-layout.ps1
+.\scripts\sync-vs-layout.ps1 -Check
+```
+
+该脚本从项目编译清单生成全部源码筛选器，并从现有文档、脚本、测试与 Agent 目录生成解决方案文件入口；
+使用稳定标识和固定排序，重复运行不改写已一致的文件。`check-baseline.ps1` 包含只读分组检查，
+遗漏或陈旧分组会提示重新同步。新增目录职责需要在脚本中明确映射。该脚本包含中文分组名，
+以 UTF-8 BOM 保存，兼容 Windows PowerShell 5.1 和 PowerShell 7；编码例外已在 `.editorconfig` 固定。
+
+若 VS 提示磁盘上的解决方案已更改，选择“重载”。查看分组时使用解决方案视图；
+“显示所有文件”会切换为包含未纳入项目文件的磁盘目录视图。
+筛选器行为参考 [Microsoft 文档](https://learn.microsoft.com/en-us/cpp/build/reference/vcxproj-filters-files)。
 
 ## 3. 强制边界
 
@@ -238,7 +266,7 @@ cmake --build build/tests/host --config Release --parallel
 ctest --test-dir build/tests/host -C Release --output-on-failure
 ```
 
-主机 CTest 包含 `core-application-contract`、`file-transfer-contract`、`serial-recording-contract`、`device-maintenance-contract` 和 `board-info-contract`；Agent 主机契约由 `src/agent/` 的独立 CMake 工程验证。
+主机 CTest 包含 `core-application-contract`、`file-transfer-contract`、`serial-recording-contract`、`device-maintenance-contract` 、`board-info-contract` 和 `terminal-engine-contract`；Agent 主机契约由 `src/agent/` 的独立 CMake 工程验证。
 录制检查覆盖精确字节、UTF-8、成功 TX、停止/断线/退出、目标覆盖保护、注入的慢写与文件失败，以及有界显示投递；不访问串口设备。
 原生 `serial-recording-ui` 使用离线串口和文件夹具检查录制对话框、工具栏/全局停止、显示截断、搜索/高亮/ANSI、偏好和窗口退出。
 `file-management-ui` 用隔离偏好和目录检查分组路径、收藏/历史、确认与上下文门禁、任务状态；`native-file-backend` 另执行本地主机目录与假 ADB 下的固定管理命令，检查同名失败、链接不跟随和注入挂载表，不能作为实机 Linux/Android 验收。
@@ -366,6 +394,8 @@ ctest --test-dir build/tests/ui -C Release --output-on-failure
 这些测试从当前 `TestTools.vcxproj` 的源码、MOC 和 RCC 清单确定 Release 对象，不扫描整个对象目录；工程清单变化触发 CMake 重配置，缺少当前对象时拒绝配置。基线构建通过 `scripts/clean-desktop-objects.ps1` 清理已移除源码留下的对象，直接构建后的原生测试也不会链接目录里的陈旧对象。
 
 这些测试链接当前产品的 Release 对象，覆盖真实 Widgets 交互、串口精确字节、Windows 原生图标、真实回环协议连接/失联与主机 ADB 异常夹具，默认不访问真实设备。
+
+排查仅在调试版出现的交互延迟时，可在独立 CMake 目录配置 `-DTESTTOOLS_HOST_CONFIGURATION=Debug`，并以 `--config Debug` 构建同名检查，链接已构建的 Debug 产品对象与匹配的 Qt 调试库。默认仍为 Release，不混用两种对象与运行库。
 `icon-style-ui` 检查内置 SVG 资源、缓存、16/20/24px 在 DPR 1/1.25/1.5/2 下的渲染，以及禁用、白色主动作和收藏状态。
 仅在需要图标样张时设置 `TESTTOOLS_ICON_SNAPSHOTS=1`，输出常规与高 DPI 图标板；实际页面仍按第 5.2 节选择代表样本。
 修改产品代码后必须先重建产品和此测试目标，不能以旧对象结果验收。测试证据默认写入该 CMake 构建目录的 `evidence/`，偏好写入 `fixture-data/`，避免覆盖旧迭代记录。可用 CMake 的 `TESTTOOLS_TEST_OUTPUT` 或手动运行时的同名环境变量指定其他证据目录。
@@ -386,3 +416,16 @@ PNG 使用设备像素，逻辑窗口尺寸与物理屏幕分辨率分别记录�
 
 `iteration-smoke` 默认使用假串口，验证独立页面、占用交接、偏好迁移、万行增量显示和地址草稿。
 `iteration-smoke --live <Windows串口> <ADB设备序列号>` 会真实打开指定串口，发送 Shell 检查、历史/补全/中断和 10500 行有上限的合成输出，连接并重连当前 Agent，并在关闭终端后将串口交给普通监视器；必须在已授权且确认是 Debug Shell 的端口上显式执行。该模式不由 CTest 自动运行，不代表物理拔线、重启启动日志或长时压力通过。
+
+
+`terminal-engine-contract` 在没有 Qt 的工程中编译固定 libvterm C17 源码，验证主/备屏、滚动区、宽字符、模式输入、重排、快照、代次、限额和恢复。原生 `terminal-throughput-ui` 使用隔离串口夹具，约 15 秒按 1.5 Mbps（8N1，有效 150000 B/s）回放，最后三秒保持搜索打开；JSON 记录字节、截断、GUI 心跳间隔、绘制、内存和输入。该结果只代表主机样本，不代表 UART/板端压力验收。
+
+`terminal-idle-interaction-ui` 复用同一夹具的 `--interaction-only` 模式，分别在无 RX 空屏、保留一屏文字后停止 RX 的情况下记录重绘、按键到模拟发送与切页往返耗时；JSON 标记 Debug/Release 和实际 DPR。模拟发送不包含串口驱动、线速、板端执行或实际回显。
+
+`terminal-echo-latency-ui` 复用 `--echo-latency`，用立即回显的假串口记录程序化按键到模拟写入、解析快照和 Paint 事件完成后的分布，分别覆盖提示符和保留历史。事件泵使用让出调度而非休眠轮询，避免 Windows 粗粒度等待放大测量值。它不测物理键盘、串口驱动、线速、板端执行和显示器呈现延迟；需要版本对比时使用相同测量源和隔离产品对象。
+
+`terminal-live-smoke <COM端口> <波特率> <证据目录>` 为另行授权的真实 Debug 串口验证，不注册到 CTest。它会发送回车，观察到 Shell 提示符后执行明确的 printf、uname、stty、临时全屏输出及可用的 top/只读 vi，并恢复 tty 参数和尺寸、排空录制、释放串口；没有收到提示符则不发送后续命令。程序化输入法事件不能替代人工 Windows IME 验证。旧的 `serial-smoke --com5` 与 `iteration-smoke --live` 路径已撤销，避免新旧夹具混用。
+
+`serial-smoke <证据目录> --terminal-only` 只运行原生终端专项，适合按代表 DPR 检查字格、中文/组合字符、框线、复制粘贴、搜索与焦点；默认不加此参数时仍检查普通串口、侧栏、计划发送、双端测试和指令管理。
+
+默认原生 CTest 把 `ADB_PATH` 固定为当前构建的 `mock-adb`；少数模拟后端可自行覆盖为专用替身。需要临时解除离线 UI 门禁的测试也不能调用电脑上的共享 ADB 服务。文件/投屏假后端关闭前恢复离线标记，以免退出清理进入真实 ADB。实机入口仍须显式参数和单独授权。

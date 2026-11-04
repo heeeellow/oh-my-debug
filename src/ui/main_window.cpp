@@ -169,10 +169,11 @@ void MainWindow::closeEvent(QCloseEvent* event)
         if (deviceRefreshTimer_) deviceRefreshTimer_->stop();
         centralWidget()->setEnabled(false);
         updateAdbTerminalControls();
-        setActivity(QStringLiteral("正在保存录制并结束后台任务…"));
+        setActivity(QStringLiteral("正在保存设置、录制并结束后台任务…"));
         for (auto* workspace : {static_cast<SerialEndpointWorkspace*>(serialWorkspace_),
                                 static_cast<SerialEndpointWorkspace*>(terminalWorkspace_)}) if (workspace) {
             workspace->stopRecordings();
+            workspace->flushPreferences();
             for (const auto& task : workspace->activeTasks())
                 if (task.kind != SerialEndpointWorkspace::BackgroundTask::Kind::Recording) workspace->stopTask(task);
         }
@@ -305,7 +306,7 @@ void MainWindow::buildUi()
     activity->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     auto* activityLayout = new QHBoxLayout(activity);
     activityLayout->setContentsMargins(18, 9, 18, 9);
-    auto* activityTitle = new QLabel(QStringLiteral("活动"), activity);
+    auto* activityTitle = new QLabel(QStringLiteral("最近操作"), activity);
     activityTitle->setObjectName(QStringLiteral("activityTitle"));
     activityLabel_ = new QLabel(QStringLiteral("正在初始化设备列表"), activity);
     activityLabel_->setObjectName(QStringLiteral("activityMessage"));
@@ -1391,7 +1392,11 @@ void MainWindow::applyDeviceScan(testtools::DeviceScanResult result, bool automa
     }
     const bool recovered = deviceScanFailed_;
     deviceScanFailed_ = false;
-    if (signature == lastDeviceScanSignature_) {
+    // A manual refresh can resolve a retained placeholder even when the list is
+    // unchanged; otherwise the user remains stuck without an active device.
+    const bool selectOnRefresh = !automatic && selectedDevice().serial.empty() &&
+                                 !result.devices.empty();
+    if (signature == lastDeviceScanSignature_ && !selectOnRefresh) {
         scanning_ = false;
         if (recovered || !automatic)
             applySelectedDevice();
@@ -1453,7 +1458,8 @@ void MainWindow::applyDeviceScan(testtools::DeviceScanResult result, bool automa
         setAdbStatus(QStringLiteral("设备 · 待授权"), StatusTone::Warning);
         setActivity(QStringLiteral("已发现设备，请在设备端确认授权"));
     } else {
-        if (automatic && restoreIndex < 0) {
+        if (automatic && restoreIndex < 0 &&
+            (deviceSelectionEstablished_ || onlineCount != 1)) {
             deviceCombo_->insertItem(0, previousSerial.isEmpty()
                                             ? QStringLiteral("请选择设备")
                                             : QStringLiteral("原设备已断开，请重新选择"));
@@ -1487,12 +1493,20 @@ void MainWindow::applySelectedDevice()
         return;
     }
     const auto device = selectedDevice();
+    if (!device.serial.empty())
+        deviceSelectionEstablished_ = true;
     if (device.state == "device")
         setAdbStatus(QStringLiteral("ADB · 已连接"), StatusTone::Good);
-    else
-        setAdbStatus(device.serial.empty()
-                         ? QStringLiteral("ADB · 未连接")
-                         : QStringLiteral("ADB · %1").arg(deviceStateText(device.state)),
+    else if (device.serial.empty()) {
+        int online = 0;
+        for (int i = 0; i < deviceCombo_->count(); ++i)
+            if (deviceCombo_->itemData(i, Qt::UserRole + 1).toString() == QStringLiteral("device"))
+                ++online;
+        setAdbStatus(online ? QStringLiteral("ADB · 已发现 %1 台，待选择").arg(online)
+                            : QStringLiteral("ADB · 未连接"),
+                     online ? StatusTone::Warning : StatusTone::Neutral);
+    } else
+        setAdbStatus(QStringLiteral("ADB · %1").arg(deviceStateText(device.state)),
                      StatusTone::Neutral);
     const bool identityChanged =
         appliedDevice_.serial != device.serial || appliedDevice_.state != device.state;
@@ -1608,8 +1622,10 @@ void MainWindow::setActivity(const QString& message)
 
 bool MainWindow::recordingsPending() const
 {
-    return (serialWorkspace_ && serialWorkspace_->hasPendingRecordings()) ||
-           (terminalWorkspace_ && terminalWorkspace_->hasPendingRecordings());
+    return (serialWorkspace_ && (serialWorkspace_->hasPendingRecordings() ||
+                                 serialWorkspace_->hasPendingBackgroundWork())) ||
+           (terminalWorkspace_ && (terminalWorkspace_->hasPendingRecordings() ||
+                                   terminalWorkspace_->hasPendingBackgroundWork()));
 }
 
 void MainWindow::updateTasks(bool rebuildMenu)

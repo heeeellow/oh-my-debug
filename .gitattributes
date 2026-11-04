@@ -16,3 +16,4 @@ third_party/platform-tools/source.properties -text
 third_party/scrcpy/scrcpy-server binary
 third_party/scrcpy/LICENSE.txt -text -whitespace
 third_party/scrcpy/licenses/* -text -whitespace
+third_party/libvterm/** -text -whitespace

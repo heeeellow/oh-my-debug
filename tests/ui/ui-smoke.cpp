@@ -443,6 +443,8 @@ int main(int argc, char** argv)
         f->remotePane_->selectNames({"boot.log"});
         f->download_->click();
         check(f->service_->snapshot().active, "final close has active file batch");
+        // Local file/mirror fixtures own no board-side jobs; never run real ADB exit cleanup.
+        qputenv("TESTTOOLS_OFFLINE", "1");
         w->close();
         check(await([&] {
                   return !w->isVisible() && w->fileShutdownComplete_ && w->mirrorShutdownComplete_;

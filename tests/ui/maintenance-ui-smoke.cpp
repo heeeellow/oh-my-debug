@@ -196,7 +196,9 @@ int main(int argc, char** argv)
         request.action = MaintenanceAction::RootRemount;
         auto& local = window.serialWorkspace_->channels_[1];
         local.sourceCombo->setCurrentIndex(0);
-        local.portCombo->setEditText("COM_TEST");
+        local.portCombo->lineEdit()->setFocus();
+        local.portCombo->lineEdit()->selectAll();
+        QTest::keyClicks(local.portCombo->lineEdit(), "COM_TEST");
         start(request);
         check(await([&] { return backend->calls == 1; }), "root fixture active");
         check(window.maintenanceBlocking_ && window.fileWorkspace_->maintenanceBlocked_ &&
@@ -223,11 +225,20 @@ int main(int argc, char** argv)
         backend->hold = true;
         request.action = MaintenanceAction::Dmesg;
         request.output = testOutputDirectory() / "partial.log";
+        const auto previousJob = service->snapshot().id;
         start(request);
-        check(await([&] { return service->snapshot().progress.bytes > 0; }),
-              "export progress observed");
+        check(await([&] {
+                  const auto state = service->snapshot();
+                  return state.active && state.id != previousJob &&
+                         state.request.action == MaintenanceAction::Dmesg && state.progress.bytes > 0;
+              }), "new export progress observed");
         QMetaObject::invokeMethod(window.taskMenu_, "aboutToShow", Qt::DirectConnection);
-        auto* oldStop = window.taskMenu_->actions().back();
+        const auto actions = window.taskMenu_->actions();
+        check(!actions.empty(), "active export has a global stop action");
+        auto* oldStop = actions.back();
+        // Retain this action explicitly: QMenu::clear otherwise deletes an owned action,
+        // making a later stale-token check a use-after-free in the fixture itself.
+        oldStop->setParent(&window);
         const auto oldId = service->snapshot().id;
         check(window.taskButton_->isVisible() && !window.maintenanceBlocking_,
               "export appears globally without device maintenance lock");

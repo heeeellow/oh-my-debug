@@ -188,6 +188,13 @@ QString applicationStyleSheet()
         }
         QPushButton#modeButton:focus { border: 1px solid #b56e52; }
         QLabel#modeDescription { color: #817a74; font-size: 12px; }
+        QLabel#modeDescription[notice="true"] { color: #715239; font-weight: 600; }
+        QFrame#serialFeedback {
+            background: #f6efe2; border: 1px solid #e5d8c1; border-radius: 6px;
+        }
+        QFrame#serialFeedback[tone="error"] { background: #f7e9e8; border-color: #e9c9c4; }
+        QLabel#serialFeedbackText { color: #70583a; font-size: 12px; }
+        QFrame#serialFeedback[tone="error"] QLabel#serialFeedbackText { color: #963f38; }
         QFrame#summaryCard {
             background: transparent;
             border: 0;

@@ -7,8 +7,20 @@
 #include <cstdint>
 #include <deque>
 #include <string>
+#include <vector>
 
 namespace testtools {
+
+enum class LocalPortChoiceState { Selected, Manual, Missing, Choose, Empty };
+struct LocalPortChoice {
+    std::string endpoint;
+    LocalPortChoiceState state = LocalPortChoiceState::Empty;
+};
+LocalPortChoice chooseLocalPort(const std::string& previous,
+                               bool manual,
+                               const std::vector<std::string>& before,
+                               const std::vector<std::string>& available,
+                               bool explicitRefresh);
 
 // 串口工作区模式切换守卫、双通道端点冲突判定与有界收发日志缓冲。
 enum class SerialWorkspaceMode {

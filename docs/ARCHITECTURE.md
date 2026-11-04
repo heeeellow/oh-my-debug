@@ -60,14 +60,14 @@ TestTools 从串口助手演进为设备中心的调试与测试工作台。架�
 | 层 | 源码所有权 | 边界 |
 | --- | --- | --- |
 | Presentation | `src/ui/main_window.*`、`src/ui/pages/serial_{endpoint,terminal}_workspace.*`、`src/ui/pages/serial_workspace.*`、`src/ui/theme.*` | Qt 控件、文案和 GUI 线程映射 |
-| Application | `src/application/{agent,device,serial,support}/` | 设备连接、串口会话、日志缓冲与偏好持久化；Qt 只读取快照 |
+| Application | `src/application/{agent,device,serial,support,terminal}/` | 设备连接、串口会话、日志录制、终端解析与偏好持久化；Qt 只读取快照 |
 | Core | `src/core/{device,protocol,serial,support}/` | 协议、值对象、接口、编解码、发送与测试逻辑；标准 C++，不得依赖 Qt |
 | Host adapters | `src/adapters/{adb,agent,device,serial}/` | ADB、进程、Agent TCP 和 Windows COM 的具体实现；不保存产品用例状态 |
 | Board Agent | `src/agent/agent_service.*`、`serial_bridge.*`、`board_capability.*`、`board_test_job.*`、`native_board_observations.*` | 固定能力、参数校验和板端资源访问 |
 | 快捷指令与偏好 | `src/application/serial/at_command_library.*` | 无 Qt 的快捷指令（AT/HEX）与串口界面偏好值对象、边界校验和版本化本地 JSON；界面只负责编辑、选择与发送意图 |
 | 串口公共端点 | `src/ui/pages/serial_endpoint_workspace.*` | 两类页面共用的连接栏、异步关闭、显示队列、录制与服务状态桥接；只创建调用方需要的实际端点 |
 | 双端验证与压测 | `src/application/serial/serial_link_verifier.*` | 无 Qt 的探测帧、方向状态、线速间隔、尾部等待和接收统计；普通计划发送仍独立归 `SerialSession` |
-| 串口终端 | `src/application/serial/serial_terminal.*` | 无 Qt 的 UTF-8/ANSI 解析、有界显示单元、键码/粘贴编码；复用串口会话，不产生隐式终端应答，命令历史由板端拥有 |
+| 串口终端 | `src/application/terminal/terminal_engine.*`、`src/ui/widgets/terminal_grid_widget.*` | 无 Qt 工作线程封装固定 libvterm，有界 RX/回看与不可变快照；Qt 仅画可见网格、桥接输入法和输入，固定 VT 应答经当前会话发送；命令历史由板端拥有 |
 | 串口页面占用 | `src/application/serial/serial_port_claims.*` | 无 Qt 的主机资源登记；Windows 端口别名归一化、按设备保持 Agent 单会话；登记不替代 OS/Agent 裁决 |
 | Android 投屏 | `src/core/device/screen_mirror.h`、`src/application/device/screen_mirror_service.*` | 固定控制接口、会话设备与生命周期；后台操作通过快照返回，不依赖 Qt |
 | 投屏适配与表现 | `src/adapters/device/scrcpy_backend.*`、`src/ui/screen_mirror_panel.*` | 适配器拥有 scrcpy 进程和固定 ADB 命令；Qt 只处理面板、调度和状态反馈 |
@@ -76,6 +76,30 @@ TestTools 从串口助手演进为设备中心的调试与测试工作台。架�
 
 `DeviceSession`、`FeatureRegistry`、`JobCoordinator` 等名称只表示规划中的职责，
 不是已经存在的类。新增代码应优先按职责补齐，不为匹配文档一次性创建空类型。
+
+### 3.1 终端的数据流与线程所有权
+
+```text
+PC / Agent 串口传输
+        ↓
+SerialSession ───────────→ SerialRecorder（后台录制，独立队列）
+        ↓
+TerminalEngine（单个工作线程：libvterm、顺序解析、有界历史）
+        ↓ 不可变 TerminalFrame / 行快照
+SerialTerminalWorkspace（GUI 线程：通知合并、会话状态、输入桥接）
+        ↓
+TerminalGridWidget（可见行与字形缓存、选区、搜索、输入法）
+
+键盘 / 粘贴 → TerminalEngine 编码 → 当前代次发送队列 → 串口传输
+```
+
+普通单/双串口页继续使用 `SerialWorkspace` 的收发记录和发送工具；两类页面通过
+`SerialEndpointWorkspace` 共用端点连接、占用登记、异步关闭与录制入口，不共用显示缓冲。
+`serial_terminal.*` 仅保留行尾、固定键值与粘贴字节辅助函数，不再拥有旧终端解析器。
+
+源文件的真实目录决定职责；Visual Studio 的筛选器只提供相同分层的导航视图。
+解决方案另列文档、测试、脚本和板端源码，但仍只有桌面 GUI 一个可构建项目。
+分组维护方式见 [开发手册](DEVELOPMENT.md#21-visual-studio-解决方案视图)。
 
 ## 4. Windows 端职责
 
@@ -124,11 +148,14 @@ UI 不直接创建具体后端。子进程通过私有环境复用 ADB，关闭�
 `BoardTestJobClient` 继续只拥有请求构造、响应校验和快照。`BoardInfoService` 为三个固定只读信息项提供顺序读取、取消/超时、代次和观察值解码，不引入通用任务引擎或规格判定。
 桌面在后台建立独立控制连接，避免硬件读取与主窗口断开/重连共用 socket；仅固定 `job.start/status/cancel`，不经过 ADB Shell。`BoardInfoPanel` 用 Qt 定时器显示快照并检查设备/会话代次，主窗口复用既有维护门禁与退出收尾。规则见 [硬件信息契约](features/BOARD_INFO.md)。
 
-串口终端与普通监视器各有独立会话；RX 通过有界队列和合并通知，在 GUI 线程核对代次后送入各自显示模型。终端按连续流解析，
-`SerialTerminalWorkspace` 只拥有一个端点及既有终端解析/显示；Qt 只把变化的行映射为样式并处理焦点、选区和输入法，按键输入通过 `SerialSession` 的异步队列。
+串口终端与普通监视器各有独立会话。普通监视器 RX 通过有界显示队列与合并通知，在 GUI 核对代次后显示；终端 RX 直接排入自己的后台解析队列，按连续流解析。
+`SerialTerminalWorkspace` 只拥有一个端点，解析放在无 Qt 的 `TerminalEngine` 单工作线程；串口原始录制先于解析队列，不可变快照交给 `TerminalGridWidget` 绘制可见脏行。Qt 处理焦点、选区和输入法，按键及固定 VT 查询应答经过当前代次的 `SerialSession` 异步队列；缩放不发送 Shell 命令。
 `SerialWorkspace` 只负责单/双串口调试；`AtCommandDialog` 负责指令编辑弹窗，`SerialLinkVerifier` 拥有双端测试状态。两类页面经公共端点宿主复用会话生命周期，终端不创建普通发送区、侧栏或链路测试控件。发送调度只在实际发送任务需要时运行，尾部等待沿用既有有界回调。
 终端只显示板端回显，不增加第二个串口连接或在普通日志上按时间推断帧边界。行为见
 [串口终端契约](features/SERIAL_TERMINAL.md)。
+
+PC 串口枚举由端点宿主的独立后台任务执行，Qt 回调核对代次和当前来源/活动状态后更新列表；选择规则由无 Qt 的 `chooseLocalPort` 决定。手工来源单独记录，不能用带描述的显示文字推断。
+`SerialPreferencesWriter` 负责单个偏好文件的串行写入与一份最新待写快照，不依赖 Qt；UI 负责 200 ms 合并和错误映射。主窗口退出先提交最后偏好，再轮询等待扫描、偏好与录制收尾；正常交互不等待文件写入线程。
 
 `SerialSession` 拥有无界面依赖的 `SerialRecorder`，在显示投递之前有界缓存 RX，并记录传输报告成功的 TX。
 录制器独占文件和工作线程；打开、写入、周期刷盘、元数据和关闭均不在串口回调或 GUI 线程执行。

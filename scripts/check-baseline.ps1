@@ -12,9 +12,16 @@ try {
     & (Join-Path $PSScriptRoot 'check-project-docs.ps1')
     if (-not $?) { throw 'Documentation checks failed' }
 
+    & (Join-Path $PSScriptRoot 'sync-vs-layout.ps1') -Check
+    if (-not $?) { throw 'Visual Studio layout checks failed' }
+
     & git diff --check
     if ($LASTEXITCODE -ne 0) {
         throw 'git diff --check failed'
+    }
+    & git diff --cached --check
+    if ($LASTEXITCODE -ne 0) {
+        throw 'git diff --cached --check failed'
     }
 
     $sourceFiles = Get-ChildItem 'src\core', 'src\application', 'src\adapters', 'src\agent' `

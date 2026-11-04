@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(testtools_host_tests LANGUAGES CXX)
+project(testtools_host_tests LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 enable_testing()
@@ -19,6 +19,7 @@ add_executable(testtools-core-tests
     ${TESTTOOLS_ROOT}/src/application/serial/serial_port_claims.cpp
     ${TESTTOOLS_ROOT}/src/application/serial/at_command_library.cpp
     ${TESTTOOLS_ROOT}/src/application/serial/serial_workspace_state.cpp
+    ${TESTTOOLS_ROOT}/src/application/serial/serial_preferences_writer.cpp
     ${TESTTOOLS_ROOT}/src/application/serial/serial_terminal.cpp
     ${TESTTOOLS_ROOT}/src/application/support/background_task_group.cpp
     ${TESTTOOLS_ROOT}/src/core/protocol/agent_protocol.cpp
@@ -88,3 +89,18 @@ if(MSVC)
 endif()
 add_test(NAME board-info-contract COMMAND testtools-board-info-tests)
 set_tests_properties(board-info-contract PROPERTIES TIMEOUT 15)
+
+file(GLOB VTERM_SOURCES CONFIGURE_DEPENDS "${TESTTOOLS_ROOT}/third_party/libvterm/src/*.c")
+add_library(testtools-vterm STATIC ${VTERM_SOURCES})
+set_target_properties(testtools-vterm PROPERTIES C_STANDARD 17)
+target_include_directories(testtools-vterm PUBLIC ${TESTTOOLS_ROOT}/third_party/libvterm/include)
+add_executable(testtools-terminal-tests terminal_engine_tests.cpp
+    ${TESTTOOLS_ROOT}/src/application/terminal/terminal_engine.cpp)
+target_compile_features(testtools-terminal-tests PRIVATE cxx_std_17)
+target_include_directories(testtools-terminal-tests PRIVATE ${TESTTOOLS_ROOT}/src)
+target_link_libraries(testtools-terminal-tests PRIVATE testtools-vterm Threads::Threads)
+if(MSVC)
+    target_compile_options(testtools-terminal-tests PRIVATE /utf-8)
+endif()
+add_test(NAME terminal-engine-contract COMMAND testtools-terminal-tests)
+set_tests_properties(terminal-engine-contract PROPERTIES TIMEOUT 15)

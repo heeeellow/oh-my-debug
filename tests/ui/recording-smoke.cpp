@@ -1,6 +1,7 @@
 #include "application/serial/serial_session.h"
 #include "application/serial/serial_receive_queue.h"
 #include "application/serial/serial_terminal.h"
+#include "ui/widgets/terminal_grid_widget.h"
 #include "application/serial/serial_workspace_state.h"
 #include "application/device/file_transfer_service.h"
 #include "ui/widgets/serial_keyword_highlighter.h"
@@ -130,7 +131,7 @@ int main(int argc, char** argv)
         check(await([&] { return channel.receiveEdit->toPlainText().contains("ERROR"); }), "render received text");
         const auto source = channel.receiveEdit->toPlainText();
         const auto originalBytes = channel.logBuffer.totalBytes();
-        channel.highlightButton->click();
+        check(channel.highlightButton->isChecked(), "automatic highlighting is enabled by default");
         check(await([&] { return highlightCount(channel.receiveEdit, QColor("#F7E9E8")) == 3; }), "error keywords overlay including lowercase failed");
         check(highlightCount(channel.receiveEdit, QColor("#F6EFE2")) == 1, "warning keywords overlay");
         channel.searchButton->click(); channel.searchEdit->setText("ERROR");
@@ -183,6 +184,10 @@ int main(int argc, char** argv)
         check(channel.session.startRecording(options, generation, error), "start bad path asynchronously");
         check(await([&] { return !channel.session.recordingSnapshot().busy && channel.recordButton->text().contains(QStringLiteral("失败")); }), "persistent failure UI");
         window.navigateTo("serial");
+        check(channel.feedbackPanel->isVisible() &&
+                  channel.feedbackLabel->text().contains(QStringLiteral("录制失败")) &&
+                  channel.feedbackRetry->text() == QStringLiteral("重选录制文件"),
+              "recording error reason and recovery are visible in the workspace");
         capture(window, "recording-failure", "打开文件失败，串口仍连接，错误入口保持可见");
         options.path = std::filesystem::path(storage.path().toStdWString()) / L"next.bin";
         check(channel.session.startRecording(options, generation, error), "restart after failure");
@@ -216,20 +221,38 @@ int main(int argc, char** argv)
         term.portCombo->setEditText("COM_TERMINAL");
         check(window.setSerialModeForDiagnostics("terminal"), "terminal page");
         termTransport->receive("\x1b[32mERROR\x1b[0m boot warning\nERROR second block\n");
-        check(await([&] { return term.receiveEdit->toPlainText().contains("ERROR"); }), "ANSI fixture rendered");
-        QTextCursor ansi(term.receiveEdit->document()); ansi.setPosition(1);
-        const auto ansiColor = ansi.charFormat().foreground().color();
-        const auto termSource = terminal->terminalBuffer_.plainText();
+        auto* grid = terminal->terminalGrid_;
+        check(await([&] { return grid->toPlainText().contains("ERROR"); }),
+              "ANSI grid fixture rendered");
+        const auto sourceText = grid->toPlainText();
+        const auto ansiColor = grid->frame()->screen[0]->cells[0].foreground;
+        const auto countPixels = [grid](const QColor& color) {
+            const auto image = grid->viewport()->grab().toImage();
+            int count = 0;
+            for (int y = 0; y < image.height(); ++y)
+                for (int x = 0; x < image.width(); ++x)
+                    if (image.pixelColor(x, y) == color)
+                        ++count;
+            return count;
+        };
         term.highlightButton->setChecked(true);
-        check(await([&] { return highlightCount(term.receiveEdit, QColor("#F7E9E8")) == 2; }), "terminal incremental keywords");
-        term.searchButton->click(); term.searchEdit->setText("ERROR");
-        check(!term.receiveEdit->extraSelections().empty(), "terminal search overlay");
+        QTest::qWait(40);
+        check(countPixels(QColor("#412c31")) > 20, "grid keyword overlay painted");
+        term.searchButton->click();
+        term.searchEdit->setText("ERROR");
+        QTest::qWait(80);
+        QTest::keyClick(term.searchEdit, Qt::Key_Return);
+        check(grid->currentMatch() >= 0, "grid search overlay");
         term.highlightButton->setChecked(false);
-        check(await([&] { return highlightCount(term.receiveEdit, QColor("#F7E9E8")) == 0; }) &&
-              ansi.charFormat().foreground().color() == ansiColor && terminal->terminalBuffer_.plainText() == termSource,
-              "off restores ANSI, parser text unchanged");
+        QTest::qWait(40);
+        check(grid->frame()->screen[0]->cells[0].foreground.green == ansiColor.green &&
+                  grid->toPlainText() == sourceText,
+              "overlays preserve VT cells and export");
         term.highlightButton->setChecked(true);
         testtools::SerialWorkspacePreferences prefs;
+        terminal->flushPreferences();
+        check(await([&] { return !terminal->hasPendingPreferences(); }),
+              "background terminal settings saved");
         check(testtools::SerialPreferencesStore::load(terminal->preferencesStorePath_, prefs, error) && prefs.channels[1].highlightKeywords,
               "highlight preference persisted independently");
         options.path = std::filesystem::path(storage.path().toStdWString()) / L"terminal.bin";

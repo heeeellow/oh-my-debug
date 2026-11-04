@@ -10,12 +10,13 @@
 #include <QtWidgets>
 #define private public
 #define protected public
-#include "ui/pages/serial_workspace.h"
 #include "ui/pages/serial_terminal_workspace.h"
+#include "ui/pages/serial_workspace.h"
 #undef protected
 #undef private
 #include "ui/main_window.h"
 #include "ui/widgets/serial_shortcut_sidebar.h"
+#include "ui/widgets/terminal_grid_widget.h"
 #include <atomic>
 #include <iostream>
 #include <mutex>
@@ -110,7 +111,6 @@ int main(int argc, char** argv)
     });
     try {
         const QString work = QString::fromLocal8Bit(argv[1]);
-        const bool live = argc > 2 && std::string(argv[2]) == "--com5";
         QTemporaryDir preferences;
         require(preferences.isValid(), "isolated serial preferences");
         qputenv("TESTTOOLS_DATA_DIR", preferences.path().toUtf8());
@@ -119,8 +119,11 @@ int main(int argc, char** argv)
         initialPreferences.channels[1].lineEnding = 3;
         std::string preferencesError;
         require(testtools::SerialPreferencesStore::save(
-                    std::filesystem::path(preferences.path().toStdWString()) / L"serial-preferences.json",
-                    initialPreferences, preferencesError), "seed isolated serial preferences");
+                    std::filesystem::path(preferences.path().toStdWString()) /
+                        L"serial-preferences.json",
+                    initialPreferences,
+                    preferencesError),
+                "seed isolated serial preferences");
         MainWindow window;
         window.resize(1366, 768);
         window.show();
@@ -128,86 +131,43 @@ int main(int argc, char** argv)
         pump();
         // Key/render regression for the reusable workspace component. Separate
         // application page ownership is covered by iteration-smoke.
+        {
+            testtools::TerminalEngine selectionEngine;
+            selectionEngine.resize(4, 8);
+            const std::string text = "abcdefghijk\r\n12中文34\r\nend";
+            selectionEngine.receive(1, {text.begin(), text.end()});
+            selectionEngine.waitIdle();
+            TerminalGridWidget sample;
+            sample.setFrame(selectionEngine.snapshot());
+            sample.selectRange(0, 0, 1, 3);
+            require(sample.selectedText() == "abcdefghijk", "soft wrap copy rejoins logical line");
+            sample.selectRange(0, 1, 1, 3, true);
+            require(sample.selectedText() == "bc\njk", "rectangular copy keeps columns");
+            sample.selectRange(2, 2, 2, 6);
+            require(sample.selectedText() == QStringLiteral("中文"),
+                    "wide-cell copy has no padding or duplicate glyphs");
+        }
         auto* serial = window.findChild<SerialTerminalWorkspace*>("serialTerminalWorkspace");
         require(serial, "workspace");
         auto& channel = serial->channels_[0];
-        auto* edit = channel.receiveEdit;
-        if (!live)
-            channel.autoScrollCheck->setChecked(false);
+        auto* edit = serial->terminalGrid_;
         require(window.setSerialModeForDiagnostics("terminal"), "terminal page");
-        window.findChild<SerialWorkspace*>("serialDebugWorkspace")->channels_[1].autoScrollCheck->setChecked(false);
-        const int normalEndingBefore = window.findChild<SerialWorkspace*>("serialDebugWorkspace")
-                                           ->channels_[1].lineEndingCombo->currentIndex();
         pump();
-        require(!channel.manualSendArea && !channel.sendEdit && serial->terminalOptionsButton_->isVisible(),
-                "direct terminal without composer or shortcut strip");
-        require(window.focusWidget() == edit, "enter mode focuses terminal");
-        channel.sourceCombo->setCurrentIndex(0);
-        channel.baudCombo->setCurrentText("115200");
-        if (live) {
-            channel.portCombo->setCurrentIndex(channel.portCombo->findData("COM5"));
-            channel.portCombo->setEditText("COM5");
-            channel.connectButton->click();
-            pump(350);
-            if (!channel.session.isOpen()) {
-                window.grab().save(work + "/com5-open-error.png");
-                std::cout << "LIVE_COM5: not opened; button_enabled="
-                          << channel.connectButton->isEnabled()
-                          << " status=" << channel.statusLabel->toolTip().toUtf8().constData()
-                          << " no data sent\n";
-                return 2;
-            }
-            require(window.focusWidget() == edit, "real connect automatically focuses terminal");
-            QTest::keyClick(edit, Qt::Key_U, Qt::ControlModifier);
-            QTest::keyClick(edit, Qt::Key_Return);
-            pump(1200);
-            if (!edit->toPlainText().contains('#')) {
-                serial->terminalEndingActions_[2]->trigger();
-                QTest::keyClick(edit, Qt::Key_U, Qt::ControlModifier);
-                QTest::keyClick(edit, Qt::Key_Return);
-                pump(1400);
-            }
-            const QString before = edit->toPlainText();
-            const QRegularExpression prompt(QStringLiteral("(?:^|\\n)[^\\n]{0,100}[#$] *$"));
-            const bool hasPrompt = prompt.match(before).hasMatch();
-            bool printfPassed = false, interruptPassed = false;
-            if (hasPrompt) {
-                QTest::keyClicks(edit, "printf '__TT_COM5_STANDARD__\\n'");
-                QTest::keyClick(edit, Qt::Key_Return);
-                pump(500);
-                printfPassed = QRegularExpression(QStringLiteral("^__TT_COM5_STANDARD__$"),
-                                                  QRegularExpression::MultilineOption)
-                                   .match(edit->toPlainText())
-                                   .hasMatch();
-                if (printfPassed) {
-                    QTest::keyClicks(edit, "sleep 5");
-                    QTest::keyClick(edit, Qt::Key_Return);
-                    pump(150);
-                    QTest::keyClick(edit, Qt::Key_C, Qt::ControlModifier);
-                    pump(450);
-                    interruptPassed = prompt.match(edit->toPlainText()).hasMatch();
-                }
-            }
-            QByteArray raw;
-            for (const auto& entry : channel.logBuffer.entries())
-                if (entry.direction == testtools::SerialLogDirection::Rx)
-                    raw.append(reinterpret_cast<const char*>(entry.bytes.data()),
-                               static_cast<qsizetype>(entry.bytes.size()));
-            QFile output(work + "/com5-product-rx.bin");
-            require(output.open(QIODevice::WriteOnly), "open raw fixture log");
-            require(output.write(raw) == raw.size(), "save raw fixture log");
-            output.close();
-            const auto snapshot = channel.session.snapshot();
-            window.grab().save(work + "/com5-product-1366.png");
-            std::cout << "LIVE_COM5: open=1 baud=115200 adb=0 auto_focus=1 tx="
-                      << snapshot.sentBytes << " rx=" << snapshot.receivedBytes
-                      << " shell_prompt=" << hasPrompt << " printf=" << printfPassed
-                      << " interrupt=" << interruptPassed << std::endl;
-            channel.connectButton->click();
-            pump(250);
-            window.close();
-            return 0;
-        }
+        require(!channel.receiveEdit && !channel.manualSendArea && !channel.sendEdit &&
+                    edit->isVisible(),
+                "native grid without text document/composer");
+        require(window.focusWidget() == edit, "terminal autofocus");
+        require(channel.highlightButton->isChecked(), "automatic keyword highlight defaults on");
+        channel.timestampCheck->setChecked(true);
+        pump();
+        for (const auto& line : edit->frame()->screen)
+            require(line->timestampMs == 0, "empty disconnected view has no timestamps");
+        window.grab().save(work + "/terminal-empty-timestamps.png");
+        channel.clearReceiveButton->click();
+        pump();
+        for (const auto& line : edit->frame()->screen)
+            require(line->timestampMs == 0, "local clear cannot invent timestamps");
+
         auto state = std::make_shared<FixtureState>();
         auto fixture = std::make_unique<FixtureTransport>(state);
         auto* device = fixture.get();
@@ -216,119 +176,159 @@ int main(int argc, char** argv)
         channel.portCombo->setEditText("COM_TEST");
         channel.session.open(std::move(fixture), config);
         pump();
-        require(window.focusWidget() == edit, "connect focuses terminal");
         device->receive("\x1b[32mBoot OK\x1b[0m\r\nroot# echo test");
         pump();
-        const auto end = edit->textCursor().position();
+        require(edit->frame()->screen[0]->timestampMs > 0 &&
+                    edit->frame()->screen[2]->timestampMs == 0,
+                "receive timestamps only on text rows");
+        window.grab().save(work + "/terminal-received-timestamps.png");
+        const int end = edit->frame()->cursorColumn;
         device->receive("\x1b[2D");
         pump();
-        require(edit->textCursor().position() == end - 2, "cursor-only CSI moves visible cursor");
-        device->receive("\b");
-        pump();
-        require(edit->textCursor().position() == end - 3,
-                "cursor-only backspace moves visible cursor");
+        require(edit->frame()->cursorColumn == end - 2, "cursor-only CSI");
         QTest::keyClicks(edit, "abc");
         QTest::keyClick(edit, Qt::Key_Tab);
         QTest::keyClick(edit, Qt::Key_Up);
         QTest::keyClick(edit, Qt::Key_Backspace);
         QTest::keyClick(edit, Qt::Key_Return);
         pump();
-        require(state->take() == "abc\t\x1b[A\x7f\r", "direct key bytes");
-        auto selection = edit->document()->find("Boot");
-        edit->setTextCursor(selection);
-        QTest::keyClick(edit, Qt::Key_C, Qt::ControlModifier | Qt::ShiftModifier);
-        pump();
-        require(state->take().empty(), "copy never sends");
+        require(state->take() == "abc\t\x1b[A\x7f\r", "mode-aware direct keys");
+        const int bootRow = int(edit->frame()->history->size());
+        edit->selectRange(bootRow, 0, bootRow, 4);
         QTest::keyClick(edit, Qt::Key_C, Qt::ControlModifier);
         pump();
-        require(state->take() == std::string(1, 3), "Ctrl+C always interrupts even with selection");
-        QTest::keyClick(edit, Qt::Key_F, Qt::ControlModifier);
+        require(state->take().empty() && QApplication::clipboard()->text() == "Boot" &&
+                    !edit->hasSelection(),
+                "smart Ctrl+C copies without interrupt");
+        QTest::keyClick(edit, Qt::Key_C, Qt::ControlModifier);
+        pump();
+        require(state->take() == std::string(1, 3), "Ctrl+C interrupts without selection");
+        QApplication::clipboard()->setText("paste");
         QTest::keyClick(edit, Qt::Key_V, Qt::ControlModifier);
         pump();
-        require(state->take() == std::string("\x06\x16", 2) && !channel.searchArea->isVisible(),
-                "readline Ctrl+F and Ctrl+V reach device");
+        require(state->take() == "paste", "smart Ctrl+V");
+        QAction* smart = nullptr;
+        for (auto* action : serial->terminalOptionsButton_->menu()->actions())
+            if (action->text().startsWith(QStringLiteral("智能")))
+                smart = action;
+        require(smart, "traditional key option");
+        smart->setChecked(false);
+        QTest::keyClick(edit, Qt::Key_V, Qt::ControlModifier);
+        pump();
+        require(state->take() == std::string(1, 22), "traditional Ctrl+V");
+        smart->setChecked(true);
+        auto acceptPaste = [] {
+            for (auto* w : QApplication::topLevelWidgets())
+                if (auto* box = qobject_cast<QMessageBox*>(w))
+                    box->done(QMessageBox::Ok);
+        };
         QApplication::clipboard()->setText("one\r\ntwo\n");
+        device->receive("\x1b[?2004h");
+        pump();
+        QTimer::singleShot(50, acceptPaste);
         QTest::keyClick(edit, Qt::Key_V, Qt::ControlModifier | Qt::ShiftModifier);
         pump();
-        require(state->take() == "one\rtwo\r", "standard paste shortcut");
+        require(state->take() == "\x1b[200~one\rtwo\r\x1b[201~",
+                "multiline preview and bracketed paste");
         serial->terminalBackspaceActions_[1]->trigger();
         QTest::keyClick(edit, Qt::Key_Backspace);
         pump();
-        require(state->take() == std::string(1, 8), "BS option");
-        serial->terminalBackspaceActions_[0]->trigger();
+        require(state->take() == std::string(1, 8), "BS preference");
         serial->terminalEndingActions_[2]->trigger();
         QTest::keyClick(edit, Qt::Key_Return);
         pump();
-        require(state->take() == "\r\n" && serial->preferences_.terminalLineEnding == 3 &&
-                    window.findChild<SerialWorkspace*>("serialDebugWorkspace")
-                        ->channels_[1].lineEndingCombo->currentIndex() == normalEndingBefore,
-                "terminal return option independent of normal sender");
+        require(state->take() == "\r\n", "CRLF preference");
         serial->terminalEndingActions_[0]->trigger();
+        QInputMethodEvent preedit(QStringLiteral("zhong"), {});
+        QApplication::sendEvent(edit, &preedit);
+        pump();
+        require(state->take().empty(), "IME preedit stays local");
+        QInputMethodEvent commit;
+        commit.setCommitString(QStringLiteral("中文"));
+        QApplication::sendEvent(edit, &commit);
+        pump();
+        require(state->take() == QStringLiteral("中文").toUtf8().toStdString(), "IME commit UTF8");
+        const auto bytesBefore = channel.session.snapshot().sentBytes;
+        const auto resizeAction = serial->terminalOptionsButton_->menu()->actions()[1];
+        resizeAction->trigger();
+        require(QApplication::clipboard()->text().startsWith("stty rows "),
+                "copy dimensions command");
+        window.resize(1920, 1080);
+        pump();
+        require(channel.session.snapshot().sentBytes == bytesBefore, "resize never sends stty");
+        window.grab().save(work + "/terminal-grid-1920.png");
+        window.resize(1366, 768);
+        pump();
         std::string lines = "\r\n";
         for (int i = 0; i < 90; ++i)
             lines += "trace " + std::to_string(i) + "\r\n";
-        lines += "root@board:~# ";
         device->receive(lines);
         pump();
-        const QPoint position(80, 80);
-        QWheelEvent wheel(QPointF(position),
-                          QPointF(edit->viewport()->mapToGlobal(position)),
-                          QPoint(),
-                          QPoint(0, 120),
-                          Qt::NoButton,
-                          Qt::NoModifier,
-                          Qt::NoScrollPhase,
-                          false);
-        QApplication::sendEvent(edit->viewport(), &wheel);
+        edit->verticalScrollBar()->setValue(2);
         pump();
-        require(!channel.autoScrollCheck->isChecked() &&
-                    edit->verticalScrollBar()->value() < edit->verticalScrollBar()->maximum(),
-                "wheel pauses output following");
-        const int scrollback = edit->verticalScrollBar()->value();
-        device->receive(" echoed\r\nroot@board:~# ");
+        const int top = edit->verticalScrollBar()->value();
+        device->receive("tail\r\n");
         pump();
-        require(edit->verticalScrollBar()->value() == scrollback,
-                "incoming output preserves scrollback");
-        QTest::keyClick(edit, Qt::Key_PageUp, Qt::ShiftModifier);
-        pump();
-        require(!channel.autoScrollCheck->isChecked() && state->take().empty(),
-                "Shift+PageUp is local scrollback");
+        require(edit->verticalScrollBar()->value() == top, "history anchor preserved");
         QTest::keyClicks(edit, "x");
         pump();
-        require(channel.autoScrollCheck->isChecked() && state->take() == "x",
-                "typing returns to live prompt");
-        selection = edit->document()->find("trace");
-        edit->setTextCursor(selection);
-        device->receive("x");
-        pump();
-        require(edit->textCursor().selectedText() == "trace",
-                "incoming output preserves copy selection");
+        require(state->take() == "x" && edit->following(), "input resumes prompt");
         QTest::keyClick(edit, Qt::Key_F, Qt::ControlModifier | Qt::ShiftModifier);
         pump();
-        require(channel.searchArea->isVisible() && !channel.filterCheck->isVisible(),
-                "standard search without row filtering");
+        require(channel.searchArea->isVisible(), "search shortcut");
         channel.searchEdit->setText("trace");
         pump();
-        require(edit->toPlainText().contains("root@board"), "search keeps screen rows");
+        QTest::keyClick(channel.searchEdit, Qt::Key_Return);
+        pump();
+        require(edit->currentMatch() >= 0, "search finds grid history");
         QTest::keyClick(channel.searchEdit, Qt::Key_Escape);
         pump();
-        require(window.focusWidget() == edit, "close search restores input focus");
-        QTest::keyClick(edit, Qt::Key_L, Qt::ControlModifier);
+        require(window.focusWidget() == edit, "search restores focus");
+        device->receive("\x1b[?1049h\x1b[2J\x1b[Halternate");
         pump();
-        require(state->take() == std::string(1, 12) && edit->toPlainText().contains("root@board"),
-                "Ctrl+L waits for remote redraw");
-        window.grab().save(work + "/terminal-direct-1366.png");
-        window.resize(1920, 1080);
+        require(edit->frame()->alternateScreen && edit->toPlainText().startsWith("alternate"),
+                "alternate screen");
+        device->receive(
+            "\x1b[3;1H┌──────────────────────────┐\r\n│ 中文 / UTF-8   é         "
+            "│\r\n└──────────────────────────┘\r\n\x1b[38;2;95;190;220mTrueColor\x1b[0m  "
+            "\x1b[1mBold\x1b[0m  \x1b[3mItalic\x1b[0m  \x1b[4mUnderline\x1b[0m\r\n\x1b[7m Reverse "
+            "\x1b[0m   █▉▊▋▌▍▎▏ ░▒▓ ▖▗▘▙▚▛▜▝▞▟");
         pump();
-        window.grab().save(work + "/terminal-direct-1920.png");
-        window.resize(1366, 768);
+        const auto screen = edit->frame()->screen;
+        int corner = -1, side = -1;
+        for (int col = 0; col < int(screen[2]->cells.size()); ++col) {
+            if (screen[2]->cells[col].characters[0] == 0x2510)
+                corner = col;
+            if (screen[3]->cells[col].characters[0] == 0x2502)
+                side = col;
+        }
+        require(corner == side && corner > 0,
+                "CJK/combining content stays aligned with box border");
+        window.grab().save(work + "/terminal-grid-alternate.png");
+        edit->setAppearance(1, "Cascadia Mono", 14, 2, 2);
         pump();
-        channel.advancedSettingsButton->click();
-        channel.searchButton->click();
+        window.grab().save(work + "/terminal-grid-light.png");
+        edit->setAppearance(2, "Cascadia Mono", 14, 2, 3);
         pump();
-        window.grab().save(work + "/terminal-expanded-1366.png");
-        channel.advancedSettingsButton->click();
-        channel.searchButton->setChecked(false);
+        window.grab().save(work + "/terminal-grid-high-contrast.png");
+        edit->setAppearance(0, "Cascadia Mono", 14, 2, 0);
+        pump();
+        device->receive("\x1b[?1049l");
+        pump();
+        require(!edit->frame()->alternateScreen && edit->toPlainText().contains("trace"),
+                "restore history");
+        window.grab().save(work + "/terminal-grid-1366.png");
+        if (argc > 2 && std::string(argv[2]) == "--terminal-only") {
+            device->unplug();
+            pump(200);
+            require(!channel.session.isOpen() && !edit->toPlainText().isEmpty(),
+                    "terminal unplug preserves output");
+            std::cout
+                << "PASS terminal-only native grid/input/search/copy/paste/appearance/unplug; DPR="
+                << window.devicePixelRatioF() << std::endl;
+            window.close();
+            return 0;
+        }
         {
             auto* serial = window.findChild<SerialWorkspace*>("serialDebugWorkspace");
             auto& channel = serial->channels_[1];
@@ -420,6 +420,12 @@ int main(int argc, char** argv)
                         channel.manualSendArea->mapTo(serial, QPoint()).y() == composerY,
                     "explicit collapse is remembered without moving the composer vertically");
             testtools::SerialWorkspacePreferences savedPreferences;
+            serial->flushPreferences();
+            QElapsedTimer preferenceWait;
+            preferenceWait.start();
+            while (serial->hasPendingPreferences() && preferenceWait.elapsed() < 3000)
+                pump(5);
+            require(!serial->hasPendingPreferences(), "asynchronous sidebar preferences drained");
             require(testtools::SerialPreferencesStore::load(
                         serial->preferencesStorePath_, savedPreferences, commandError) &&
                         !savedPreferences.shortcutBarVisible &&
@@ -488,8 +494,10 @@ int main(int argc, char** argv)
                 QPushButton* create = nullptr;
                 QPushButton* save = nullptr;
                 for (auto* button : buttons) {
-                    if (button->text() == QStringLiteral("新建")) create = button;
-                    if (button->text() == QStringLiteral("保存指令")) save = button;
+                    if (button->text() == QStringLiteral("新建"))
+                        create = button;
+                    if (button->text() == QStringLiteral("保存指令"))
+                        save = button;
                 }
                 require(create && save, "command manager edit actions");
                 create->click();
@@ -507,10 +515,12 @@ int main(int argc, char** argv)
             require(manageAction, "command manager entry");
             manageAction->trigger();
             testtools::AtCommandLibrary persistedCommands;
-            require(managerEdited && serial->atCommandLibrary_.commands().size() == commandCount + 1 &&
-                        testtools::AtCommandStore::load(serial->atCommandStorePath_, persistedCommands, commandError) &&
-                        persistedCommands.commands().back().command == "AT+P0" && state->take().empty(),
-                    "extracted command manager edits and persists without transmitting");
+            require(
+                managerEdited && serial->atCommandLibrary_.commands().size() == commandCount + 1 &&
+                    testtools::AtCommandStore::load(
+                        serial->atCommandStorePath_, persistedCommands, commandError) &&
+                    persistedCommands.commands().back().command == "AT+P0" && state->take().empty(),
+                "extracted command manager edits and persists without transmitting");
             window.grab().save(work + "/single-regression-1366.png");
             window.setSerialModeForDiagnostics("terminal");
             pump();

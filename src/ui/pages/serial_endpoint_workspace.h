@@ -3,6 +3,7 @@
 #include "application/agent/agent_service_status.h"
 #include "application/serial/at_command_library.h"
 #include "application/serial/serial_port_claims.h"
+#include "application/serial/serial_preferences_writer.h"
 #include "application/serial/serial_receive_queue.h"
 #include "application/serial/serial_session.h"
 #include "application/serial/serial_workspace_state.h"
@@ -16,6 +17,7 @@
 #include <cstdint>
 #include <deque>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -45,6 +47,7 @@ class QVBoxLayout;
 // 两种实际页面共用端点连接、日志、录制与关闭规则；不拥有终端解析或双端测试状态。
 class SerialEndpointWorkspace : public QWidget {
     Q_OBJECT
+    friend class MainWindowUiChecks;
   public:
     ~SerialEndpointWorkspace() override;
     void setAdbDevice(const serialdemo::AdbDevice& device);
@@ -73,6 +76,12 @@ class SerialEndpointWorkspace : public QWidget {
     virtual void stopTask(const BackgroundTask& task);
     void stopRecordings();
     bool hasPendingRecordings() const;
+    void flushPreferences();
+    bool hasPendingPreferences() const;
+    bool hasPendingBackgroundWork() const
+    {
+        return localScanning_ || hasPendingPreferences();
+    }
 
   signals:
     void prepareServiceRequested();
@@ -106,6 +115,7 @@ class SerialEndpointWorkspace : public QWidget {
         QWidget* advancedSettingsArea = nullptr;
         QPushButton* connectButton = nullptr;
         QPlainTextEdit* receiveEdit = nullptr;
+        QWidget* receiveWidget = nullptr;
         QPlainTextEdit* sendEdit = nullptr;
         QCheckBox* receiveHexCheck = nullptr;
         QCheckBox* sendHexCheck = nullptr;
@@ -163,6 +173,12 @@ class SerialEndpointWorkspace : public QWidget {
         std::uint64_t autoTargetCount = 100;
         bool autoEcho = true;
         bool disconnectPending = false;
+        bool endpointManuallyEdited = false;
+        bool connectedOnce = false;
+        QWidget* feedbackPanel = nullptr;
+        QLabel* feedbackLabel = nullptr;
+        QPushButton* feedbackRetry = nullptr;
+        QString portFeedback, connectionFeedback, recordingFeedback;
     };
 
     explicit SerialEndpointWorkspace(QWidget* parent,
@@ -185,9 +201,14 @@ class SerialEndpointWorkspace : public QWidget {
     {
         return isTerminal() ? 0 : 1;
     }
-    void refreshLocalPorts(bool announce = false);
+    void refreshLocalPorts(bool announce = false, int requestedChannel = -1);
     void refreshAgentPorts();
-    void applyPorts(int index, bool preserveEditedEndpoint = true);
+    void applyPorts(int index, bool preserveEditedEndpoint = true,
+                    bool explicitRefresh = false,
+                    const std::vector<serialdemo::PortInfo>* previousPorts = nullptr);
+    void applyLocalPorts(std::vector<serialdemo::PortInfo> ports);
+    void updateChannelFeedback(int index);
+    void showPageNotice(const QString& message);
     void connectChannel(int index);
     void disconnectChannel(int index, bool showClosedStatus = true);
     void completeChannelDisconnect(int index, std::uint64_t generation, bool showClosedStatus);
@@ -216,8 +237,8 @@ class SerialEndpointWorkspace : public QWidget {
     void appendNotice(int index, const QString& message);
     virtual void renderReceiveLog(int index);
     virtual void applyLogAppendResult(int index, const testtools::SerialLogAppendResult& result);
-    void updateSearchMatches(int index);
-    void findLogMatch(int index, int step);
+    virtual void updateSearchMatches(int index);
+    virtual void findLogMatch(int index, int step);
     void scheduleSearchRefresh(int index);
     void updateCounter(int index);
     void resetChannelCounters(int index);
@@ -242,6 +263,10 @@ class SerialEndpointWorkspace : public QWidget {
     virtual void buildSendArea(int, QWidget*, QHBoxLayout*, QVBoxLayout*) {}
     virtual void addChannelBody(QVBoxLayout* layout, int index);
     virtual void buildReceiveOptions(QHBoxLayout*) {}
+    virtual QWidget* createReceiveView(int index, QWidget* parent);
+    virtual QString receiveText(int index) const;
+    virtual void followOutput(int index);
+    virtual void setHighlightEnabled(int index, bool enabled);
     virtual void setupReceiveInput(int) {}
     virtual bool handleReceiveEvent(QObject*, QEvent*)
     {
@@ -260,6 +285,9 @@ class SerialEndpointWorkspace : public QWidget {
     QLabel* pageTitle_ = nullptr;
     QLabel* modeDescriptionLabel_ = nullptr;
     QTimer* recordingTimer_ = nullptr;
+    QTimer* preferenceSaveTimer_ = nullptr;
+    QTimer* pageNoticeTimer_ = nullptr;
+    QString defaultDescription_;
     testtools::AgentServiceState serviceState_ = testtools::AgentServiceState::Disconnected;
     bool maintenanceBlocked_ = false;
     QString serviceDetail_;
@@ -272,10 +300,18 @@ class SerialEndpointWorkspace : public QWidget {
     std::uint64_t agentPortGeneration_ = 0;
     testtools::BackgroundTaskGroup scanTasks_;
     testtools::BackgroundTaskGroup controlTasks_;
+    testtools::BackgroundTaskGroup localScanTasks_;
+    std::function<std::vector<serialdemo::PortInfo>()> enumerateLocalPorts_;
+    std::uint64_t localScanGeneration_ = 0;
+    bool localScanning_ = false;
+    std::array<bool, 2> localRefreshRequested_{};
     bool scanning_ = false;
     bool shuttingDown_ = false;
     testtools::SerialWorkspacePreferences preferences_;
     std::filesystem::path preferencesStorePath_;
+    std::unique_ptr<testtools::SerialPreferencesWriter> preferencesWriter_;
+    QString preferencesError_;
+    bool preferencesDirty_ = false;
     bool preferencesLoaded_ = false;
     bool applyingPreferences_ = false;
     std::shared_ptr<testtools::SerialPortClaims> portClaims_;

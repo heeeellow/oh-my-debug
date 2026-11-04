@@ -1,8 +1,10 @@
 #pragma once
-#include "application/serial/serial_terminal.h"
+#include "application/terminal/terminal_engine.h"
 #include "serial_endpoint_workspace.h"
+#include <atomic>
+#include <QtCore/QElapsedTimer>
 
-// 独立单端点终端宿主；保留现有解析、键盘与偏好契约，后续引擎替换局限于此页。
+class TerminalGridWidget;
 class SerialTerminalWorkspace final : public SerialEndpointWorkspace {
     Q_OBJECT
   public:
@@ -20,26 +22,39 @@ class SerialTerminalWorkspace final : public SerialEndpointWorkspace {
     {
         return true;
     }
+    QWidget* createReceiveView(int index, QWidget* parent) override;
     void buildReceiveOptions(QHBoxLayout* header) override;
     void setupReceiveInput(int index) override;
-    bool handleReceiveEvent(QObject* watched, QEvent* event) override;
     void streamReset(int index) override;
     void clearReceive(int index) override;
     bool historyTruncated(int index) const override;
     void renderReceiveLog(int index) override;
     void applyLogAppendResult(int index, const testtools::SerialLogAppendResult& result) override;
     void appendReceived(int index, const serialdemo::ByteBuffer& data) override;
-    void stopPageTasks() override;
     void focusTerminal() override;
-    void updateTerminalCursor(bool follow);
+    QString receiveText(int index) const override;
+    void followOutput(int index) override;
+    void setHighlightEnabled(int index, bool enabled) override;
+    void updateSearchMatches(int index) override;
+    void findLogMatch(int index, int step) override;
+    void handleTerminalKey(QKeyEvent* event);
+    void pasteClipboard();
+    void renderTerminal();
+    void noteTerminalInput();
+    void applyAppearance();
+    void editAppearance();
     void resumeTerminalInput();
-    bool handleTerminalKey(QKeyEvent* event);
-    serialdemo::LineEnding terminalLineEnding() const;
-    void scheduleTerminalRender();
-    void renderTerminal(bool fullRedraw = false);
     QPushButton* terminalOptionsButton_ = nullptr;
+    QLabel* dimensionsLabel_ = nullptr;
+    TerminalGridWidget* terminalGrid_ = nullptr;
     std::array<QAction*, 3> terminalEndingActions_{};
     std::array<QAction*, 2> terminalBackspaceActions_{};
-    QTimer* terminalRenderTimer_ = nullptr;
-    testtools::SerialTerminalBuffer terminalBuffer_;
+    QElapsedTimer inputEchoClock_;
+    std::uint64_t inputEchoParsedBytes_ = 0;
+    bool awaitingInputEcho_ = false;
+    std::shared_ptr<testtools::TerminalEngine> terminalEngine_;
+    std::shared_ptr<std::atomic<bool>> frameNotice_ = std::make_shared<std::atomic<bool>>(false);
+    std::uint64_t pasteApprovedGeneration_ = UINT64_MAX;
+    std::uint64_t announcedDroppedBytes_ = 0;
+    std::uint64_t announcedRejectedInputs_ = 0;
 };

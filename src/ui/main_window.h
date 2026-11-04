@@ -166,6 +166,7 @@ class MainWindow final : public QMainWindow {
     std::uint64_t agentGeneration_ = 0;
     bool scanning_ = false;
     bool automaticScan_ = false, deviceScanFailed_ = false;
+    bool deviceSelectionEstablished_ = false;
     bool terminalLaunching_ = false;
     bool agentConnecting_ = false;
     bool passiveAgentProbe_ = false;
