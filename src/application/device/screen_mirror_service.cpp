@@ -7,7 +7,7 @@ namespace testtools {
 ScreenMirrorService::ScreenMirrorService(std::unique_ptr<IScreenMirrorBackend> backend)
     : backend_(std::move(backend)) {}
 
-MirrorOperationResult ScreenMirrorService::start(const serialdemo::AdbDevice& device)
+MirrorOperationResult ScreenMirrorService::start(const testtools::AdbDevice& device)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     if (shuttingDown_) return {false, "程序正在关闭"};

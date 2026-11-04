@@ -7,7 +7,7 @@ namespace testtools {
 SerialReceiveQueue::SerialReceiveQueue(std::size_t maxBytes, std::size_t maxChunks)
     : maxBytes_(std::max(std::size_t{1}, maxBytes)), maxChunks_(std::max(std::size_t{1}, maxChunks)) {}
 
-bool SerialReceiveQueue::push(std::uint64_t generation, const serialdemo::ByteBuffer& data)
+bool SerialReceiveQueue::push(std::uint64_t generation, const testtools::ByteBuffer& data)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     if (generation < generation_ || data.empty()) return false;

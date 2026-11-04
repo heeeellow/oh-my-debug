@@ -8,7 +8,7 @@
 #include <atomic>
 #include <mutex>
 
-namespace serialdemo {
+namespace testtools {
 
 // 基于 CSerialPort 的本机串口传输适配器：支持 COM 端口枚举、事件驱动即时接收与 DTR/RTS 控制线调节。
 class CSerialPortTransport final : public ISerialTransport,
@@ -35,4 +35,4 @@ private:
     std::mutex controlMutex_;
 };
 
-} // namespace serialdemo
+} // namespace testtools

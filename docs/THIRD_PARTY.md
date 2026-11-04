@@ -33,3 +33,24 @@ scrcpy 归档摘要、保留文件、依赖源码和补充许可见 [随包版�
 
 libvterm 的归档来源、SHA-256 与提取范围见 [版本记录](../third_party/libvterm/VERSION.md)，逐文件摘要见 [SHA256SUMS](../third_party/libvterm/SHA256SUMS)，许可见 [LICENSE](../third_party/libvterm/LICENSE)。构建不联网，许可复制为 `licenses/libvterm-LICENSE.txt`。
 该目录保留原始行尾及上游空白，不对其执行第一方格式修正；`.gitattributes` 固定原样入库，提交时核对逐文件摘要。
+
+## 源码裁剪与许可
+
+第一方许可由根目录 [LICENSE](../LICENSE) 定义，不能覆盖第三方组件的既有权利。
+CSerialPort 使用 LGPLv3 及上游链接例外，Asio 使用 Boost Software License 1.0，
+tiny-process-library、libvterm 和 Phosphor Icons 使用 MIT；许可原文均保留。
+
+Asio、CSerialPort 和 tiny-process-library 只保留项目构建使用的头文件、实现和许可；
+未使用的示例、绑定、上游 CI、测试和生成配置不进入仓库。
+三者各自的 `VERSION.md` 记录上游提交、裁剪范围和本地适配，`SHA256SUMS` 记录保留文件。
+保留文件以整理前的 Git 内容为准，本地适配和许可均保留；行尾与摘要固定，避免不同检出环境造成校验差异。
+不要对这些目录批量格式化。
+
+Qt 由开发环境提供，当前使用 6.11.2 MSVC x64 动态库（Core、Gui、Widgets、Network、Svg 及插件），
+不把 SDK 纳入 Git。发布脚本从同版本 Qt 源码收集 LGPL/GPL 文本和相关模块内第三方声明，
+随 `licenses/Qt/` 提供；库保持动态可替换。对应源码来源为
+[Qt 6.11.2 官方归档](https://download.qt.io/archive/qt/6.11/6.11.2/single/)。
+MSVC 运行库使用 Visual Studio 随附的可再发行安装程序，不混入开发工具。
+
+预览包包含依赖版本、摘要和许可证，公开分发前仍需按实际包复核对应源码提供方式及各项义务；
+本页是依赖记录，不代替逐项分发审查。打包方式见 [开发手册](DEVELOPMENT.md#5-打包与公开前检查)。

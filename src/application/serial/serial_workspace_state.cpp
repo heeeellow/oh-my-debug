@@ -97,7 +97,7 @@ bool validUtf8Prefix(const std::uint8_t *bytes, std::size_t available, std::size
     return true;
 }
 
-std::string formatUtf8Text(const serialdemo::ByteBuffer &bytes,
+std::string formatUtf8Text(const testtools::ByteBuffer &bytes,
                            std::size_t length,
                            bool escapeLineBreaks)
 {
@@ -205,7 +205,7 @@ SerialLogBuffer::SerialLogBuffer(std::size_t maxEntries,
 {
 }
 
-SerialLogAppendResult SerialLogBuffer::appendTx(const serialdemo::ByteBuffer &data,
+SerialLogAppendResult SerialLogBuffer::appendTx(const testtools::ByteBuffer &data,
                                                 std::int64_t timestampMs,
                                                 std::string timestampText)
 {
@@ -225,7 +225,7 @@ SerialLogAppendResult SerialLogBuffer::appendTx(const serialdemo::ByteBuffer &da
     return result;
 }
 
-SerialLogAppendResult SerialLogBuffer::appendRx(const serialdemo::ByteBuffer &data,
+SerialLogAppendResult SerialLogBuffer::appendRx(const testtools::ByteBuffer &data,
                                                 std::int64_t timestampMs,
                                                 std::string timestampText)
 {
@@ -328,7 +328,7 @@ std::string SerialLogBuffer::formatEntry(const SerialLogEntry &entry,
     line += (entry.direction == SerialLogDirection::Tx) ? "TX  " : "RX  ";
 
     if (hexDisplay) {
-        line += serialdemo::toHex(entry.bytes);
+        line += testtools::toHex(entry.bytes);
     } else if (entry.direction == SerialLogDirection::Tx) {
         line += formatUtf8Text(entry.bytes, entry.bytes.size(), true);
     } else {

@@ -1,3 +1,4 @@
+#include "application/serial/serial_preferences.h"
 #include "serial_endpoint_workspace.h"
 #include "ui/icons.h"
 #include "ui/theme.h"
@@ -62,7 +63,7 @@
 #include <functional>
 #include <utility>
 
-using namespace serialdemo;
+using namespace testtools;
 
 using namespace testtools::ui::serial;
 

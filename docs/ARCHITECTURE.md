@@ -1,282 +1,126 @@
-# TestTools 总体架构
+# 架构说明
 
 [返回项目首页](../README.md)
 
-## 1. 架构目标
+本页说明已经存在的分层、数据流和所有权。当前完成度与验证结果只写在
+[STATUS.md](STATUS.md)，候选方向保留在 `decisions/`，不为方案中的名称预建类或目录。
 
-TestTools 从串口助手演进为设备中心的调试与测试工作台。架构需要同时保证：
+## 1. 分层与源码
 
-- Qt 限于 Windows 表现层和 GUI 线程桥接，核心逻辑可在没有 Qt 的环境复用和测试。
-- ADB 是可替换的发现、部署和隧道通道；用户手动文件传输、投屏与诊断维护由固定主机适配器提供，不承载串口或板级测试业务语义。
-- 用户主动打开的外部 ADB 终端只交给系统终端交互，不进入 Agent RPC、串口数据通道或自动测试执行路径。
-- 板端操作由无 Qt Agent 统一提供，不以 Windows 端拼接任意 shell 命令实现测试项。
-- 简单测试可以使用通用运行页，串口、音频、图像等复杂能力可以绑定专用界面。
-- 长任务最终支持进度、取消、资源互斥、断线恢复、板端重启恢复和产物下载。
-- 演进过程中保持已落地串口能力可用，并通过明确兼容边界逐步替换临时实现。
-
-产品范围见 [`PRODUCT.md`](PRODUCT.md)，当前实现与架构债务见 [`STATUS.md`](STATUS.md)。
-
-## 2. 依赖方向
-
-```text
-┌──────────────────────────────────────────────────────────────┐
-│ Qt Presentation                                             │
-│ MainWindow / Pages / Dialogs / Qt thread dispatch           │
-└──────────────────────────────┬───────────────────────────────┘
-                               │ user intent + view state
-┌──────────────────────────────▼───────────────────────────────┐
-│ Application                                                  │
-│ Device session / serial use cases / jobs / history          │
-└──────────────────────────────┬───────────────────────────────┘
-                               │ interfaces + value objects
-┌──────────────────────────────▼───────────────────────────────┐
-│ Core                                                         │
-│ Protocol / codec / serial model / queues / test engine       │
-└──────────────┬───────────────────────────┬───────────────────┘
-               │                           │
-┌──────────────▼──────────────┐ ┌──────────▼──────────────────┐
-│ Host transports/adapters   │ │ Local device adapters       │
-│ ADB / Agent client         │ │ Windows COM / process       │
-└──────────────┬──────────────┘ └─────────────────────────────┘
-               │ loopback tunnel
-┌──────────────▼───────────────────────────────────────────────┐
-│ Board Agent, standard C++17 + platform APIs                 │
-│ session / capability / resource / job / artifact managers  │
-├──────────────────────────────────────────────────────────────┤
-│ serial and future DDR/storage/audio/network/GPIO runners    │
-├──────────────────────────────────────────────────────────────┤
-│ ARM Android / ARM Linux platform adapters                   │
-└──────────────────────────────────────────────────────────────┘
-```
-
-依赖只能向下。`src/core/`、`src/application/`、`src/adapters/` 和 `src/agent/` 不得出现 `QString`、
-`QByteArray`、`QObject`、Qt 容器或 Qt 线程类型。UI 可以依赖 core/application 接口，反向依赖不允许。
-
-## 3. 源码所有权映射
-
-架构图包含稳定职责和演进目标，不能把目标类名写成当前事实。源码所有权按以下路径划分；具体完成度
-和开放债务只在 [`STATUS.md`](STATUS.md) 维护：
-
-| 层 | 源码所有权 | 边界 |
+| 层 | 目录与代表对象 | 边界 |
 | --- | --- | --- |
-| Presentation | `src/ui/main_window.*`、`src/ui/pages/serial_{endpoint,terminal}_workspace.*`、`src/ui/pages/serial_workspace.*`、`src/ui/theme.*` | Qt 控件、文案和 GUI 线程映射 |
-| Application | `src/application/{agent,device,serial,support,terminal}/` | 设备连接、串口会话、日志录制、终端解析与偏好持久化；Qt 只读取快照 |
-| Core | `src/core/{device,protocol,serial,support}/` | 协议、值对象、接口、编解码、发送与测试逻辑；标准 C++，不得依赖 Qt |
-| Host adapters | `src/adapters/{adb,agent,device,serial}/` | ADB、进程、Agent TCP 和 Windows COM 的具体实现；不保存产品用例状态 |
-| Board Agent | `src/agent/agent_service.*`、`serial_bridge.*`、`board_capability.*`、`board_test_job.*`、`native_board_observations.*` | 固定能力、参数校验和板端资源访问 |
-| 快捷指令与偏好 | `src/application/serial/at_command_library.*` | 无 Qt 的快捷指令（AT/HEX）与串口界面偏好值对象、边界校验和版本化本地 JSON；界面只负责编辑、选择与发送意图 |
-| 串口公共端点 | `src/ui/pages/serial_endpoint_workspace.*` | 两类页面共用的连接栏、异步关闭、显示队列、录制与服务状态桥接；只创建调用方需要的实际端点 |
-| 双端验证与压测 | `src/application/serial/serial_link_verifier.*` | 无 Qt 的探测帧、方向状态、线速间隔、尾部等待和接收统计；普通计划发送仍独立归 `SerialSession` |
-| 串口终端 | `src/application/terminal/terminal_engine.*`、`src/ui/widgets/terminal_grid_widget.*` | 无 Qt 工作线程封装固定 libvterm，有界 RX/回看与不可变快照；Qt 仅画可见网格、桥接输入法和输入，固定 VT 应答经当前会话发送；命令历史由板端拥有 |
-| 串口页面占用 | `src/application/serial/serial_port_claims.*` | 无 Qt 的主机资源登记；Windows 端口别名归一化、按设备保持 Agent 单会话；登记不替代 OS/Agent 裁决 |
-| Android 投屏 | `src/core/device/screen_mirror.h`、`src/application/device/screen_mirror_service.*` | 固定控制接口、会话设备与生命周期；后台操作通过快照返回，不依赖 Qt |
-| 投屏适配与表现 | `src/adapters/device/scrcpy_backend.*`、`src/ui/screen_mirror_panel.*` | 适配器拥有 scrcpy 进程和固定 ADB 命令；Qt 只处理面板、调度和状态反馈 |
-| 文件传输 | `src/core/device/file_transfer.h`、`src/application/device/file_transfer_service.*` | 文件值对象与接口、固定批次设备和路径、取消及逐项结果；无 Qt |
-| 文件适配与表现 | `src/adapters/device/adb_file_transfer_backend.cpp`、`src/ui/pages/file_transfer_workspace.*` | 适配器拥有固定目录/传输/替换命令和临时目录；Qt 负责列表、选择、同名确认与后台调度 |
+| 界面 | `src/ui/`：MainWindow、页面、组件 | Qt 展示、GUI 线程桥接、焦点与输入；不拥有业务协议 |
+| 用例 | `src/application/`：SerialSession、AgentConnectionService、FileTransferService | 会话、取消、超时、连接代次与结果；无 Qt |
+| 基础逻辑 | `src/core/`：协议、串口值对象、编解码与接口 | 平台无关数据和可独立验证的规则；无 Qt |
+| 具体适配 | `src/adapters/`：Windows COM、ADB、TCP、进程、文件 | 实现 core 接口，装配 application 服务；无 Qt |
+| 板端 | `src/agent/`：AgentService、串口桥、固定板级能力 | 标准 C++17 和平台 API，不依赖 Qt |
+| 诊断与测试 | `src/diagnostics/`、`tests/` | 显式诊断入口与独立夹具；测试不是产品启动项 |
 
-`DeviceSession`、`FeatureRegistry`、`JobCoordinator` 等名称只表示规划中的职责，
-不是已经存在的类。新增代码应优先按职责补齐，不为匹配文档一次性创建空类型。
+界面调用 application 用例，用例依赖 core 接口，适配器实现接口。
+默认服务工厂负责组合具体实现，UI 不包含具体适配器头文件。
+`src/main.cpp` 负责 Qt 进程启动和显式诊断参数，品牌常量在 `src/app_info.h`，
+桌面版本来自 `VERSION.txt`。第一方 C++ 命名空间统一为 `testtools`。
+对外名称调整不改变既有 Agent 协议、部署目录或个人设置位置。
 
-### 3.1 终端的数据流与线程所有权
+Visual Studio 筛选器遵循实际目录，桌面解决方案只含一个可构建工程。
+解决方案另保留紧凑的 `agent` 源码导航；Agent 与测试继续独立 CMake 构建，
+见 [开发手册](DEVELOPMENT.md#11-visual-studio-视图)。
 
-```text
-PC / Agent 串口传输
-        ↓
-SerialSession ───────────→ SerialRecorder（后台录制，独立队列）
-        ↓
-TerminalEngine（单个工作线程：libvterm、顺序解析、有界历史）
-        ↓ 不可变 TerminalFrame / 行快照
-SerialTerminalWorkspace（GUI 线程：通知合并、会话状态、输入桥接）
-        ↓
-TerminalGridWidget（可见行与字形缓存、选区、搜索、输入法）
+## 2. 设备与服务
 
-键盘 / 粘贴 → TerminalEngine 编码 → 当前代次发送队列 → 串口传输
-```
+ADB 只作为发现、部署和回环转发通道。串口托管、硬件信息与板级测试通过固定 Agent 协议执行，
+不以 ADB `forward dev:/dev/...` 或任意 Shell RPC 承载业务。
+桌面的文件、维护与投屏适配器可执行各自固定且校验过的 ADB 命令，边界由功能契约定义。
 
-普通单/双串口页继续使用 `SerialWorkspace` 的收发记录和发送工具；两类页面通过
-`SerialEndpointWorkspace` 共用端点连接、占用登记、异步关闭与录制入口，不共用显示缓冲。
-`serial_terminal.*` 仅保留行尾、固定键值与粘贴字节辅助函数，不再拥有旧终端解析器。
+`AgentConnectionService` 拥有版本判断、按需部署、握手、能力发现及失败时的转发清理。
+主窗口在后台执行此用例，并核对当前设备和连接代次再更新控件。
+ADB 在线、选中设备和 Agent 就绪是不同状态，本地 Windows 串口独立可用。
+健康探测使用独立短超时连接，不能占用显式连接操作或在 GUI 线程等待。
 
-源文件的真实目录决定职责；Visual Studio 的筛选器只提供相同分层的导航视图。
-解决方案另列文档、测试、脚本和板端源码，但仍只有桌面 GUI 一个可构建项目。
-分组维护方式见 [开发手册](DEVELOPMENT.md#21-visual-studio-解决方案视图)。
+桌面 `AgentClient`、`AgentSerialTransport` 和板端 `agent_main.cpp` 使用 standalone Asio
+完成 TCP 连接、监听与读写。控制请求和串口数据客户端经 ADB 回环转发连接设备；
+Windows 本地串口由 CSerialPort 适配器负责。Asio 不依赖 Qt，供主机与板端共同使用。
 
-## 4. Windows 端职责
+`AdbTerminalService` 固定用户选中的在线设备，进程适配器启动独立系统终端。
+Shell 生命周期不进入 Agent RPC，不与文件页共享当前目录；内嵌 Shell 仍属候选。
 
-### 4.1 Presentation
-
-- 显示当前设备、连接状态、设备服务兼容性和全局风险。
-- 把用户意图转换为 application 用例，不拥有协议和测试业务状态机。
-- 将异步领域状态映射到 Qt 控件，并只在 GUI 线程更新界面。
-- 为复杂能力提供专用页面；界面模式不应通过隐式端口名称推断。
-
-页面拆分必须先提取状态模型和用例，再按单串口与双端调试拆分视图；不能只把同一逻辑移动到更多
-QWidget 类中。阶段完成度和剩余提取项见 `STATUS.md`。
-
-### 4.2 Application
-
-Application 层负责跨接口用例和生命周期，目标职责包括：
-
-- 设备会话：把一个物理设备、ADB 状态、Agent 状态和能力快照关联起来。
-- 串口会话：连接代次、端点配置、计划发送状态和断线收敛。
-- AT 指令库：保存名称、正文和发送数据区的共享行尾，执行边界校验与本地持久化；不拥有串口连接或第二套发送队列。
-- 任务协调：启动、取消、恢复、进度和资源冲突的上位机映射。
-- 运行历史：保存参数、设备快照、结果摘要和产物索引。
-
-当前 `AgentConnectionService` 集中处理重连、按需部署、协议握手、版本校验、能力和系统信息发现，
-并在失败时回收端口转发。`MainWindow` 只负责把该同步用例放入后台任务，并将结果映射到 Qt 控件。
-连接客户端的具体创建仍由现有工厂完成；只有出现第二种实际传输实现时才把装配继续外移。
-
-`AdbTerminalService` 接收明确的设备快照并校验在线状态；ADB 适配器复用已有路径解析，
-进程适配器启动独立系统终端。Qt 只负责后台调度与反馈，不等待交互式 Shell 的生命周期。
-
-该层只能依赖 core 接口和值对象，不包含 Qt 或具体 ADB 命令。
-投屏服务通过 `IScreenMirrorBackend` 注入适配器；默认构造入口 `createScreenMirrorService` 在桌面适配器中组合，
-UI 不直接创建具体后端。子进程通过私有环境复用 ADB，关闭只针对其拥有的投屏进程。
-文件服务通过 `IFileTransferBackend` 注入适配器，由适配器的 `createFileTransferService` 组合默认实现。
-`prepare` 固定目标并重置取消标志，不执行 I/O；后台 `executePrepared` 顺序传输并逐项汇总。
-目录读取有独立取消和界面代次，传输保持自己的设备快照；切换设备时旧目录回调不能覆盖新界面。
-文件适配器只执行固定的 ADB `push/pull` 与目录、属性、暂存替换、新建、重命名、删除和经纯八进制校验的权限命令，所有路径独立引用；
-不读取外部终端命令，不提供任意命令输入或 Agent shell RPC。暂存、冲突及权限边界见 [文件传输契约](features/FILE_TRANSFER.md)。
-文件管理请求与传输共用 `FileTransferService` 的任务 ID、互斥和逐项结果。本地及设备固定变更由 `adapters/device/file_management` 执行，实际路径、类型、挂载点和不跟随链接的判断保留在执行层，界面确认不替代执行前检查。目录历史/收藏属于界面偏好，按设备限额持久化。
-
-`DeviceMaintenanceService` 管理固定设备、动作、导出路径、超时、取消及分阶段结果；`IDeviceMaintenanceBackend` 由桌面 ADB 适配器实现。
-适配器只执行固定的日志、Android 身份、Root/Remount、状态查询与重启命令；不接入 Agent RPC 或任意 Shell 参数。
-日志标准输出通过受管进程的流式回调写同目录部分文件，成功后提交；标准错误独立限额，GUI 只读取字节和状态快照。
-`MainWindow` 从文件、串口、投屏及服务准备状态建立同设备维护门禁，开始后同步阻止新冲突动作并使旧服务代次失效；各入口仍检查门禁，Windows COM 与本地文件管理独立工作。
-窗口关闭取消并等待所属后台任务收尾，不终止共享 ADB server。详细边界由 [设备维护契约](features/DEVICE_MAINTENANCE.md) 定义。
-`BoardTestJobClient` 继续只拥有请求构造、响应校验和快照。`BoardInfoService` 为三个固定只读信息项提供顺序读取、取消/超时、代次和观察值解码，不引入通用任务引擎或规格判定。
-桌面在后台建立独立控制连接，避免硬件读取与主窗口断开/重连共用 socket；仅固定 `job.start/status/cancel`，不经过 ADB Shell。`BoardInfoPanel` 用 Qt 定时器显示快照并检查设备/会话代次，主窗口复用既有维护门禁与退出收尾。规则见 [硬件信息契约](features/BOARD_INFO.md)。
-
-串口终端与普通监视器各有独立会话。普通监视器 RX 通过有界显示队列与合并通知，在 GUI 核对代次后显示；终端 RX 直接排入自己的后台解析队列，按连续流解析。
-`SerialTerminalWorkspace` 只拥有一个端点，解析放在无 Qt 的 `TerminalEngine` 单工作线程；串口原始录制先于解析队列，不可变快照交给 `TerminalGridWidget` 绘制可见脏行。Qt 处理焦点、选区和输入法，按键及固定 VT 查询应答经过当前代次的 `SerialSession` 异步队列；缩放不发送 Shell 命令。
-`SerialWorkspace` 只负责单/双串口调试；`AtCommandDialog` 负责指令编辑弹窗，`SerialLinkVerifier` 拥有双端测试状态。两类页面经公共端点宿主复用会话生命周期，终端不创建普通发送区、侧栏或链路测试控件。发送调度只在实际发送任务需要时运行，尾部等待沿用既有有界回调。
-终端只显示板端回显，不增加第二个串口连接或在普通日志上按时间推断帧边界。行为见
-[串口终端契约](features/SERIAL_TERMINAL.md)。
-
-PC 串口枚举由端点宿主的独立后台任务执行，Qt 回调核对代次和当前来源/活动状态后更新列表；选择规则由无 Qt 的 `chooseLocalPort` 决定。手工来源单独记录，不能用带描述的显示文字推断。
-`SerialPreferencesWriter` 负责单个偏好文件的串行写入与一份最新待写快照，不依赖 Qt；UI 负责 200 ms 合并和错误映射。主窗口退出先提交最后偏好，再轮询等待扫描、偏好与录制收尾；正常交互不等待文件写入线程。
-
-`SerialSession` 拥有无界面依赖的 `SerialRecorder`，在显示投递之前有界缓存 RX，并记录传输报告成功的 TX。
-录制器独占文件和工作线程；打开、写入、周期刷盘、元数据和关闭均不在串口回调或 GUI 线程执行。
-显示队列满时淘汰旧数据，录制队列满则停止录制并报告不完整，二者分别统计，限额与行为见 [串口契约](features/SERIAL.md)。
-正常关闭窗口先停止任务并异步等待录制收尾；底栏只聚合各用例快照和带任务 ID 的停止意图，不引入通用任务引擎。
-
-### 4.3 Core
-
-- 定义稳定值对象、传输接口、协议帧和可独立测试的状态转换。
-- 错误使用稳定分类和面向人的上下文，不用日志文本前缀推断状态。
-- 所有外部输入均校验长度、枚举、路径、版本和数值范围。
-- 队列有容量、关闭和背压语义；不能把无限缓存当作可靠性。
-
-## 5. 板端 Agent
-
-Agent 使用 C++17 与平台 API 实现，不依赖 Qt。开发期默认只监听板端 `127.0.0.1`。Android 和 Linux
-通过 ADB 动态端口转发；Linux 使用固定 Bundle 和受控版本目录部署。直接 TCP 必须由显式产品配置开启，并先
-补充认证、授权和网络暴露策略。
-
-Agent 产物由“操作系统用户空间 + ARM 架构”确定：Android 使用 NDK/Bionic 的 `armeabi-v7a` 或
-`arm64-v8a`，固定构建矩阵的 Linux 第一阶段使用 glibc 2.31 基线的 `aarch64`。内核版本不作为
-产物目录维度；更换内核后重新验证设备节点、驱动、termios、权限和安全策略。
-
-Agent v1 的最小能力族包含会话握手、能力查询、系统信息、串口枚举、串口托管和静态注册的板级
-能力；实际开放范围见 `STATUS.md`。扩展能力时按需要逐步加入：
-
-- `SessionManager`：协议协商、心跳和会话恢复。
-- `CapabilityRegistry`：稳定能力 ID、参数、风险、资源和版本。
-- `JobManager`：任务状态、超时、取消和结果归一化。
-- `ResourceManager`：UART、音频、摄像头和存储写入等资源裁决。
-- `RunnerSupervisor`：隔离测试进程、管理进程组和输出限流。
-- `ArtifactStore`：管理短期日志、报告、图片和校验信息。
-- `PlatformAdapter`：隔离 Android、Buildroot 和通用 Linux 差异。
-
-Agent 不提供任意 shell RPC。每项能力必须映射到受控实现或允许的测试程序，并声明参数、资源、
-风险、超时和取消能力。
-
-板级能力 ID 只表达稳定语义，Provider 身份只表达当前实现来源。静态 ProviderBinding 把能力定义、
-可用性探测和固定执行函数绑定；边界只允许 `agent_native`、`runner_pack`、`sdk_bsp` 和可选
-`rk_reference` 四类，不建立动态插件或任意路径执行。执行状态与能力专用 observations 分层处理，设备信息仅展示观察值；当前不实现板型规格比较。Provider 的设计取舍见
-[`ADR-0003`](decisions/0003-stable-board-capabilities-and-providers.md)。
-
-## 6. 协议与数据通道
-
-控制连接使用长度前缀帧：
+## 3. 串口与终端
 
 ```text
-4-byte big-endian payload length
-1-byte frame kind
-payload
+PC COM / Agent 数据通道
+          ↓
+    SerialSession ───────→ SerialRecorder（独立线程、文件与队列）
+          ↓
+    TerminalEngine（单工作线程、libvterm、历史与快照）
+          ↓ 不可变 TerminalFrame
+    SerialTerminalWorkspace（GUI 通知、会话状态、输入桥接）
+          ↓
+    TerminalGridWidget（可见行、字形缓存、选区、搜索、输入法）
+
+键盘 / 粘贴 → TerminalEngine 编码 → 当前代次发送队列 → 传输
 ```
 
-控制 JSON 使用 UTF-8，请求至少包含协议版本、请求 ID、方法和参数。Agent 与 application 共享无 Qt、
-有输入/深度/集合/字符串限额的 JSON 值模型，拒绝重复字段、非法 UTF-8、非整数数值和未知契约字段。
-协议和串口数据通道定义以 [`AGENT_PROTOCOL_V1.md`](AGENT_PROTOCOL_V1.md) 为准。
+`SerialSession` 拥有异步收发和普通计划发送，`SerialLinkVerifier` 单独管理双向验证及可靠性压测。
+普通收发与终端通过 `SerialEndpointWorkspace` 复用端点连接、占用登记、录制和异步关闭，
+各自拥有会话、偏好与显示缓冲，不能共享活动 RX 状态。通用行为不按设备名称隐式变化。
 
-串口等持续数据不与控制 JSON 混流：`serial.open` 返回只监听回环地址的临时数据端口，上位机通过
-当前设备连接器建立独立隧道。未来任务事件和产物若共享控制连接，必须使用通道 ID、有界队列和公平调度；
-结果与控制事件不能因日志流量被静默丢弃。
+普通 `SerialWorkspace` 使用文本收发视图和快捷指令侧栏，`AtCommandDialog` 负责指令编辑。
+`AtCommandStore` 只存指令库；`SerialPreferencesStore` 单独存通道和工作区偏好。
+`SerialPreferencesWriter` 串行写入一个文件，只保留最新待写快照；UI 合并短时变更并显示保存错误。
+PC 端口枚举有独立后台任务，选择由 `chooseLocalPort` 处理，手工输入来源单独记录。
 
-ADB `forward dev:/dev/...` 不属于产品串口路径。目标 Android 上的实机证据表明它会在连接后立即
-EOF，即使节点权限满足也不能形成稳定数据流；产品统一通过 Agent 托管串口。
+终端页只装配一个端点，后台按连续字节流解析，不在普通日志上按时间推断帧边界。
+字符网格按实际 DPR 缓存可见行和有限字形，选区、搜索和光标单独叠加；空闲不轮询解析或渲染。
+按键、粘贴和固定 VT 查询应答通过当前代次的发送队列，缩放不隐式发送 Shell 命令。
+`serial_terminal.*` 只保留行尾、键值与粘贴辅助，不再持有旧解析器。
 
-## 7. 任务、资源与能力
+录制位于显示裁剪之前。显示队列满时报告缺口；录制队列满则停止录制并报告不完整。
+录制线程独占文件，关闭时排空已接受数据。窗口退出先提交最后偏好，再等待所属扫描、录制和写入收尾。
+具体限额、时间戳、高亮、粘贴与兼容范围见 [串口契约](features/SERIAL.md)
+和 [终端契约](features/SERIAL_TERMINAL.md)。
 
-目标任务状态模型：
+## 4. 文件、维护、投屏与信息
 
-```text
-created -> queued -> running -> succeeded
-                         |----> failed
-             |----------> cancelling -> cancelled
-             |----------> interrupted -> recovering
-```
+| 用例 | 所有权与执行方式 | 契约 |
+| --- | --- | --- |
+| 文件传输 | FileTransferService 固定设备、路径、任务 ID 与取消；适配器执行固定命令及执行前检查 | [文件](features/FILE_TRANSFER.md) |
+| 设备维护 | DeviceMaintenanceService 拥有动作、阶段、超时与部分日志文件；适配器只允许固定操作 | [维护](features/DEVICE_MAINTENANCE.md) |
+| 投屏 | ScreenMirrorService 固定会话设备，scrcpy 后端只关闭自己拥有的子进程，私有环境指定统一 ADB | [投屏](features/SCREEN_MIRROR.md) |
+| 硬件信息 | BoardInfoService 顺序执行三个固定只读项，独立连接、取消和代次，不进行规格比较 | [信息](features/BOARD_INFO.md) |
 
-任务 ID 独立于 TCP 连接。板端资源管理器是资源冲突的唯一裁决者，Windows 预检查只负责提前提示。
-新增并发测试项前必须具备通用任务和资源管理；当前支持范围见 `STATUS.md`。
+目录读取和传输分别持有设备快照与取消状态，旧目录回调不能覆盖新设备。
+`FileListModel` 只保存显示数据，排序和绘制不访问文件系统；`FilePane` 管理列表、选择和位置。
+Windows Shell 图标后台读取并有界缓存，QPixmap 与模型通知只在 GUI 线程产生。
+目录收藏是按设备限额保存的 UI 偏好，不缓存真实设备目录内容。
 
-能力描述至少包含稳定 ID、显示名称、版本、参数约束、风险、权限、独占资源、默认超时、取消/恢复
-支持、结果字段和产物类型。简单参数测试可使用通用运行页；串口、波形和图像通过同一能力 ID 绑定
-专用页面，不能用自动表单覆盖所有交互。
+`MainWindow` 汇总已有任务快照建立同设备维护门禁，各入口仍自行检查。
+底栏只显示快照并提交带任务 ID 的停止意图，不新增通用任务框架。
+写入、Root/Remount、重启和压力测试与只读信息明确区分；确认界面不能代替执行前检查。
 
-## 8. 线程与生命周期
+## 5. 板端、协议与部署
 
-- GUI 线程只处理界面和轻量状态映射，不执行阻塞式 ADB、网络或串口操作。
-- 每个长连接和线程有明确所有者；关闭顺序为停止新请求、取消读写、等待工作线程、释放回调。
-- 回调携带会话或连接代次，过期结果不得覆盖新状态。
-- 后台回调不能捕获无生命周期保护的 Qt 控件指针。
-- 所有队列和等待都有容量或超时，析构不能依赖无限等待。
+Agent 默认只监听板端回环地址，桌面经当前设备的 ADB 动态转发连接。
+控制连接使用长度前缀帧和有输入限额的 UTF-8 JSON；串口使用独立数据连接，避免持续数据阻塞控制。
+字段、能力、会话与错误定义以 [AGENT_PROTOCOL_V1.md](AGENT_PROTOCOL_V1.md) 为准，不在本页复制协议。
 
-## 9. 部署与安全
+板级能力通过静态 ProviderBinding 关联固定能力 ID、参数、风险、资源与执行函数。
+只使用既定的 `agent_native`、`runner_pack`、`sdk_bsp` 和可选 `rk_reference` 来源，
+不建立动态插件或任意路径执行。资源冲突由板端裁决，桌面预检查用于提前提示。
+读取结果保留 observation，与能力执行成功和规格判断区分。设计取舍见
+[ADR-0003](decisions/0003-stable-board-capabilities-and-providers.md)。
 
-- 开发期：Android 和 Linux 通过同一份版本化 Agent Bundle 部署和转发；Bundle v2 按 Android
-  armeabi-v7a/arm64-v8a 或 Linux aarch64/glibc-2.31 选择目标包。每个包是安全相对 root 下的文件
-  列表，当前只含 role=agent 文件，为未来 runner/config 保留扩展位。
-- 稳定期：Android 使用受控 init/service 集成，Linux/Buildroot 使用 systemd 或包配置安装；ADB
-  部署仍保留为开发与维修入口。
-- 上位机与 Agent 独立版本，握手协商协议范围和能力版本。
-- 升级失败不能破坏 ADB；需要保留版本查询、逐文件产物校验和 current/previous 回退入口。AgentVersion
-  是整个包的唯一版本标识，SHA-256 只用于完整性校验。
-- 当前安全依赖已有 ADB 授权和回环监听；网络认证、包签名和量产权限仍是开放项。
+Bundle v2 按用户空间选择 Android ARMv7/ARM64 或 Linux aarch64/glibc-2.31，
+逐文件校验大小和 SHA-256。AgentVersion 是需要升级的唯一版本标识，桌面版本独立。
+内核版本不是二进制目录维度，更换内核后仍需重验驱动、节点、termios、权限和安全策略。
 
-第一阶段内存容量和存储信息/健康由 Agent 原生读取 `/proc`、`/sys`，不依赖或启动原厂 PCBA server。
-后续确需复用固件单项 Runner 时仍遵守 SDK/BSP 所有权和 Bundle ABI 边界，当前迁移边界见
-[`ADR-0003`](decisions/0003-stable-board-capabilities-and-providers.md)。
+Android 使用受控临时目录部署；Linux 使用 `/opt/testtools-agent/versions/` 的版本目录及
+`current/previous` 回退、独立运行和日志目录。失败不能破坏共享 ADB server。
+当前信任边界依赖已有 ADB 授权和回环监听；直接网络暴露、认证、包签名和量产服务集成需另行设计。
 
-## 10. 演进规则
+## 6. 线程与修改规则
 
-- 先定义用户任务和功能契约，再决定 Qt 页面、application 用例和 Agent 能力。
-- 先在 core/application 建立可测试状态，再连接 Qt；不得把新增业务状态继续堆入 QWidget。
-- 新 Agent 能力先定义固定协议和安全边界，再实现部署与界面。
-- 重大设计决定记录在 `docs/decisions/`；当前进度只写入 `STATUS.md`，历史证据写入 `DEVLOG.md`。
-- 当前优先级、验证和交付状态不得写入本架构文档，以免稳定规则与动态事实混合。
-
-## 11. UI 组件职责
-
-主窗口装配导航、设备上下文和各工作区；串口模式由工作区校验，导航只在成功切换后同步选择。
-普通调试和终端分别装配一个工作区实例，共享连接栏/接收组件实现，各自拥有 `SerialSession`、偏好和缓冲；通过共享端口登记避免同口重复打开。界面复用不共享活动连接或 RX 状态。
-`FileListModel` 只保存条目与显示数据，排序/过滤代理不访问文件系统；`FilePane` 负责列表、目录历史、选择与位置恢复，
-工作区拥有异步加载代次、固定目标和任务调度。`FileIconProvider` 按需后台请求 Windows Shell 图标并有界缓存，先返回回退图标；QImage 在线程间传递，QPixmap 与模型通知只在 GUI 线程创建/发出。绘制行时不阻塞查询设备或系统。
-`SerialConnectionBar` 拥有连接参数控件，`ReceiveConsole` 拥有终端光标绘制与滚动反馈；会话、发送队列和计划发送仍由无 Qt 服务管理。
-这些均是 `src/ui/widgets/` 内的表现组件，不成为 core/application 的依赖，也不复制业务状态机。
-
-调试服务健康检查通过独立短超时连接执行已有只读协议，应用层验证握手、版本与串口能力，GUI 按连接代次接收结果。
-失联清理撤销旧端口，ADB forward 清理在后台完成并阻止清理期间复用连接；本地串口保持独立。
+- GUI 只处理界面和轻量状态映射，阻塞 ADB、串口、网络和文件操作放后台。
+- 每个线程、进程、连接和文件有明确所有者，关闭先拒绝新请求，再取消、等待并释放回调。
+- 回调核对会话或连接代次；不得捕获缺少生命周期保护的 Qt 控件。
+- 队列、输入、等待与历史均有边界；不能以无限缓存代替可靠性。
+- 新功能先补对应契约和无 Qt 的状态逻辑，再装配界面，不为规划中的职责创建空类型。

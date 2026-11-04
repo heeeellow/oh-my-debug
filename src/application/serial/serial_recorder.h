@@ -54,8 +54,8 @@ class SerialRecorder final {
     SerialRecorder& operator=(const SerialRecorder&) = delete;
 
     bool start(const SerialRecordOptions& options, std::uint64_t generation,
-               const serialdemo::SerialConfig& config, std::string& error);
-    void push(std::uint64_t generation, bool transmitted, const serialdemo::ByteBuffer& data);
+               const testtools::SerialConfig& config, std::string& error);
+    void push(std::uint64_t generation, bool transmitted, const testtools::ByteBuffer& data);
     void stop(const std::string& reason = "用户停止");
     void waitIdle();
     SerialRecordSnapshot snapshot() const;
@@ -65,7 +65,7 @@ class SerialRecorder final {
     struct Chunk {
         bool transmitted = false;
         std::int64_t timeMs = 0;
-        serialdemo::ByteBuffer bytes;
+        testtools::ByteBuffer bytes;
     };
     void run();
     void recordOne();
@@ -77,7 +77,7 @@ class SerialRecorder final {
     bool shutdown_ = false, startPending_ = false, stopRequested_ = false;
     std::deque<Chunk> queue_;
     SerialRecordOptions options_;
-    serialdemo::SerialConfig config_;
+    testtools::SerialConfig config_;
     SerialRecordSnapshot status_;
 };
 

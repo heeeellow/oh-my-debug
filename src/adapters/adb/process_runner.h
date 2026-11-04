@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace serialdemo {
+namespace testtools {
 
 struct ManagedCommandResult {
     CommandResult command;
@@ -37,4 +37,4 @@ public:
                                         const std::vector<std::string> &arguments);
 };
 
-} // namespace serialdemo
+} // namespace testtools

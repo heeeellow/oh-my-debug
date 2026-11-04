@@ -2,13 +2,13 @@
 
 namespace testtools {
 
-serialdemo::ByteBuffer terminalKeyBytes(TerminalKey key, serialdemo::LineEnding ending)
+testtools::ByteBuffer terminalKeyBytes(TerminalKey key, testtools::LineEnding ending)
 {
     std::string text;
     switch (key) {
     case TerminalKey::Enter: {
-        serialdemo::ByteBuffer bytes;
-        serialdemo::appendLineEnding(bytes, ending);
+        testtools::ByteBuffer bytes;
+        testtools::appendLineEnding(bytes, ending);
         return bytes;
     }
     case TerminalKey::Tab:
@@ -51,14 +51,14 @@ serialdemo::ByteBuffer terminalKeyBytes(TerminalKey key, serialdemo::LineEnding 
     return {text.begin(), text.end()};
 }
 
-serialdemo::ByteBuffer terminalPasteBytes(const std::string& text, serialdemo::LineEnding ending)
+testtools::ByteBuffer terminalPasteBytes(const std::string& text, testtools::LineEnding ending)
 {
-    serialdemo::ByteBuffer bytes;
+    testtools::ByteBuffer bytes;
     for (std::size_t i = 0; i < text.size(); ++i) {
         if (text[i] == '\r' || text[i] == '\n') {
             if (text[i] == '\r' && i + 1 < text.size() && text[i + 1] == '\n')
                 ++i;
-            serialdemo::appendLineEnding(bytes, ending);
+            testtools::appendLineEnding(bytes, ending);
         } else
             bytes.push_back(static_cast<std::uint8_t>(text[i]));
     }

@@ -192,7 +192,7 @@ int MainWindowUiChecks::run(int argc, char** argv)
         serial->channels_[0].sourceCombo->setCurrentIndex(0);
         check(await([&] { return !serial->localScanning_; }), "initial PC enumeration complete");
         serial->enumerateLocalPorts_ = [] {
-            return std::vector<serialdemo::PortInfo>{{"COM_UI_FIXTURE", "fixture", ""}};
+            return std::vector<testtools::PortInfo>{{"COM_UI_FIXTURE", "fixture", ""}};
         };
         serial->channels_[0].refreshPortsButton->click();
         check(await([&] { return !serial->localScanning_; }) &&

@@ -29,7 +29,7 @@ inline bool disruptive(MaintenanceAction action)
            action == MaintenanceAction::Loader;
 }
 struct MaintenanceRequest {
-    serialdemo::AdbDevice device;
+    testtools::AdbDevice device;
     MaintenanceAction action = MaintenanceAction::Dmesg;
     std::filesystem::path output;
     bool overwrite = false;
@@ -66,7 +66,7 @@ class IDeviceMaintenanceBackend {
   public:
     virtual ~IDeviceMaintenanceBackend() = default;
     // 本地已核实配置查询，不进行设备 I/O；不得仅根据 Rockchip 名称猜测支持。
-    virtual bool loaderSupported(const serialdemo::AdbDevice&) const
+    virtual bool loaderSupported(const testtools::AdbDevice&) const
     {
         return false;
     }

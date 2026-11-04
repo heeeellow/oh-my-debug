@@ -21,7 +21,7 @@
 #include <condition_variable>
 #include <mutex>
 
-namespace serialdemo {
+namespace testtools {
 
 namespace {
 
@@ -515,4 +515,4 @@ int runAgentAtSmokeTest(const std::string &serial, const std::string &endpoint)
     return 0;
 }
 
-} // namespace serialdemo
+} // namespace testtools

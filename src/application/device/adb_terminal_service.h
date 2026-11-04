@@ -16,8 +16,8 @@ struct AdbTerminalResult {
 
 class AdbTerminalService {
 public:
-  int shellUid(const serialdemo::AdbDevice& device) const;
-  AdbTerminalResult open(const serialdemo::AdbDevice& device) const;
+  int shellUid(const testtools::AdbDevice& device) const;
+  AdbTerminalResult open(const testtools::AdbDevice& device) const;
 };
 
 } // namespace testtools

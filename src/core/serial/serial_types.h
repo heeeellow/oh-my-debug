@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace serialdemo {
+namespace testtools {
 
 // 通用串口帧参数与设备元数据值类型。
 enum class Parity {
@@ -64,4 +64,4 @@ struct CommandResult {
 
 using ByteBuffer = std::vector<std::uint8_t>;
 
-} // namespace serialdemo
+} // namespace testtools

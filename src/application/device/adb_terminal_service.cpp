@@ -5,11 +5,11 @@
 
 namespace testtools {
 
-int AdbTerminalService::shellUid(const serialdemo::AdbDevice& device) const
+int AdbTerminalService::shellUid(const testtools::AdbDevice& device) const
 {
     if (device.serial.empty() || device.state != "device")
         return -1;
-    serialdemo::AdbTransport transport;
+    testtools::AdbTransport transport;
     const auto result =
         transport.runCommand(device.serial, {"shell", "-T", "id -u"}, std::chrono::seconds(2));
     if (result.exitCode != 0 || result.timedOut)
@@ -26,7 +26,7 @@ int AdbTerminalService::shellUid(const serialdemo::AdbDevice& device) const
                : -1;
 }
 
-AdbTerminalResult AdbTerminalService::open(const serialdemo::AdbDevice &device) const
+AdbTerminalResult AdbTerminalService::open(const testtools::AdbDevice &device) const
 {
     AdbTerminalResult result;
     if (device.serial.empty() || device.state != "device") {
@@ -34,7 +34,7 @@ AdbTerminalResult AdbTerminalService::open(const serialdemo::AdbDevice &device) 
         return result;
     }
     // 打开交互式 Shell 终端无需准备或依赖板端 Agent。
-    serialdemo::AdbTransport transport;
+    testtools::AdbTransport transport;
     result.effectiveUid = shellUid(device);
     result.started = transport.openShellTerminal(device.serial, result.host, result.error);
     return result;

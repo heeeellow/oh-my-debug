@@ -29,7 +29,7 @@ public:
     SerialBridge(const SerialBridge &) = delete;
     SerialBridge &operator=(const SerialBridge &) = delete;
 
-    bool start(const serialdemo::SerialConfig &config, std::uint16_t &port,
+    bool start(const testtools::SerialConfig &config, std::uint16_t &port,
                std::string &sessionId, int &effectiveBaudRate,
                bool &baudRateApplied, std::string &error);
     void stop();
@@ -39,7 +39,7 @@ private:
     void workerMain();
 
     mutable std::mutex mutex_;
-    serialdemo::SerialConfig config_;
+    testtools::SerialConfig config_;
     std::string sessionId_;
     std::thread worker_;
     std::atomic<bool> stopping_{false};

@@ -13,7 +13,7 @@
 #include <windows.h>
 #endif
 
-namespace serialdemo {
+namespace testtools {
 
 namespace {
 
@@ -303,4 +303,4 @@ bool ProcessRunner::openTerminal(const std::string &program,
 #endif
 }
 
-} // namespace serialdemo
+} // namespace testtools

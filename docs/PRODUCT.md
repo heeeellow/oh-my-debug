@@ -1,10 +1,10 @@
-# TestTools 产品设计
+# Oh My Debug 产品设计
 
 [返回项目首页](../README.md)
 
 ## 1. 产品定位
 
-TestTools 是面向 Rockchip 板卡与通用硬件研发、测试和现场排障的轻量级 Windows 调试工作台。产品围绕串口调试（单串口、双端链路、Debug 串口终端）、ADB 调试（文件传输、投屏控制）和设备连接诊断组织工作流，不把底层协议字段或设备侧内部实现直接暴露给普通使用者。
+Oh My Debug 是面向 Rockchip 板卡与通用硬件研发、测试和现场排障的轻量级 Windows 调试工作台。产品围绕串口调试（单串口、双端链路、Debug 串口终端）、ADB 调试（文件传输、投屏控制）和设备连接诊断组织工作流，不把底层协议字段或设备侧内部实现直接暴露给普通使用者。
 
 首版优先保证高频任务完整、结果可信和异常可恢复。当前实现与验证范围以 [`STATUS.md`](STATUS.md) 为准，具体行为由对应的 `features/` 功能契约定义，后续候选方案见 [ADR-0005](decisions/0005-adb-workspace-terminal-and-files.md)。
 

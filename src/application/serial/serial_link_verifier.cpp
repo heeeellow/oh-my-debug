@@ -3,9 +3,9 @@
 
 namespace testtools {
 
-std::array<serialdemo::ByteBuffer, 2>
+std::array<testtools::ByteBuffer, 2>
 SerialLinkVerifier::startProbe(const std::string& token,
-                               const std::array<serialdemo::LineEnding, 2>& endings)
+                               const std::array<testtools::LineEnding, 2>& endings)
 {
     stopProbe();
     probe_.running = true;
@@ -14,10 +14,10 @@ SerialLinkVerifier::startProbe(const std::string& token,
                                             "SERIAL_POC_B_TO_A_" + token};
     expectedFrames_[1] = frames[0];
     expectedFrames_[0] = frames[1];
-    std::array<serialdemo::ByteBuffer, 2> bytes;
+    std::array<testtools::ByteBuffer, 2> bytes;
     for (std::size_t i = 0; i < bytes.size(); ++i) {
         bytes[i].assign(frames[i].begin(), frames[i].end());
-        serialdemo::appendLineEnding(bytes[i], endings[i]);
+        testtools::appendLineEnding(bytes[i], endings[i]);
     }
     return bytes;
 }
@@ -40,7 +40,7 @@ bool SerialLinkVerifier::expireProbe(std::uint64_t generation)
     return true;
 }
 
-bool SerialLinkVerifier::receive(int receiver, const serialdemo::ByteBuffer& bytes)
+bool SerialLinkVerifier::receive(int receiver, const testtools::ByteBuffer& bytes)
 {
     if (receiver < 0 || receiver >= 2)
         return false;
@@ -51,7 +51,7 @@ bool SerialLinkVerifier::receive(int receiver, const serialdemo::ByteBuffer& byt
         return false;
     }
     if (!probe_.running || expectedFrames_[receiver].empty() ||
-        !serialdemo::appendAndMatchFrame(
+        !testtools::appendAndMatchFrame(
             detectionBuffers_[receiver], bytes, expectedFrames_[receiver]))
         return false;
     if (receiver == 0)
@@ -66,17 +66,17 @@ bool SerialLinkVerifier::receive(int receiver, const serialdemo::ByteBuffer& byt
 int SerialLinkVerifier::stressInterval(int direction,
                                        std::size_t payloadSize,
                                        int requestedIntervalMs,
-                                       const std::array<serialdemo::SerialConfig, 2>& configs)
+                                       const std::array<testtools::SerialConfig, 2>& configs)
 {
     if (direction < 0 || direction > 2 || payloadSize == 0 ||
-        payloadSize > serialdemo::IntegrityStreamVerifier::MaximumPayloadSize ||
+        payloadSize > testtools::IntegrityStreamVerifier::MaximumPayloadSize ||
         requestedIntervalMs < 10 || requestedIntervalMs > 60000)
         return 0;
     int interval = requestedIntervalMs;
     if (direction == 0 || direction == 2)
-        interval = serialdemo::minimumStressIntervalMs(configs[0], payloadSize, interval);
+        interval = testtools::minimumStressIntervalMs(configs[0], payloadSize, interval);
     if (direction == 1 || direction == 2)
-        interval = serialdemo::minimumStressIntervalMs(configs[1], payloadSize, interval);
+        interval = testtools::minimumStressIntervalMs(configs[1], payloadSize, interval);
     return interval;
 }
 
@@ -84,7 +84,7 @@ int SerialLinkVerifier::startStress(int direction,
                                     std::uint64_t frameCount,
                                     std::size_t payloadSize,
                                     int requestedIntervalMs,
-                                    const std::array<serialdemo::SerialConfig, 2>& configs,
+                                    const std::array<testtools::SerialConfig, 2>& configs,
                                     Clock::time_point now)
 {
     const int interval = stressInterval(direction, payloadSize, requestedIntervalMs, configs);
@@ -120,7 +120,7 @@ SerialLinkVerifier::nextStressFrame(std::size_t slot, Clock::time_point now) con
     if (!state.active || !state.sendPlan.isDue(now))
         return std::nullopt;
     return StressFrame{state.transmitter,
-                       serialdemo::encodeIntegrityFrame(state.nextSequence, state.payloadSize)};
+                       testtools::encodeIntegrityFrame(state.nextSequence, state.payloadSize)};
 }
 
 void SerialLinkVerifier::recordStressAttempt(std::size_t slot,

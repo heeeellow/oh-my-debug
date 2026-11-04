@@ -1,5 +1,7 @@
 #pragma once
 
+#include "application/serial/serial_preferences.h"
+
 #include "application/agent/agent_service_status.h"
 #include "application/serial/at_command_library.h"
 #include "application/serial/serial_port_claims.h"
@@ -50,7 +52,7 @@ class SerialEndpointWorkspace : public QWidget {
     friend class MainWindowUiChecks;
   public:
     ~SerialEndpointWorkspace() override;
-    void setAdbDevice(const serialdemo::AdbDevice& device);
+    void setAdbDevice(const testtools::AdbDevice& device);
     void setAgentConnection(const std::string& adbSerial, std::uint16_t localControlPort);
     void refreshTargets();
     void setServiceStatus(testtools::AgentServiceState state,
@@ -205,8 +207,8 @@ class SerialEndpointWorkspace : public QWidget {
     void refreshAgentPorts();
     void applyPorts(int index, bool preserveEditedEndpoint = true,
                     bool explicitRefresh = false,
-                    const std::vector<serialdemo::PortInfo>* previousPorts = nullptr);
-    void applyLocalPorts(std::vector<serialdemo::PortInfo> ports);
+                    const std::vector<testtools::PortInfo>* previousPorts = nullptr);
+    void applyLocalPorts(std::vector<testtools::PortInfo> ports);
     void updateChannelFeedback(int index);
     void showPageNotice(const QString& message);
     void connectChannel(int index);
@@ -229,11 +231,11 @@ class SerialEndpointWorkspace : public QWidget {
     bool resourceConflict() const;
     bool validateChannel(int index, QString& error) const;
     testtools::SerialEndpointSelection endpointSelection(int index) const;
-    serialdemo::SerialConfig channelConfig(int index) const;
-    bool sendBytes(int index, const serialdemo::ByteBuffer& data, bool echo = true);
-    void setControlLine(int index, serialdemo::SerialControlLine line, bool enabled);
-    void appendTransmitted(int index, const serialdemo::ByteBuffer& data);
-    virtual void appendReceived(int index, const serialdemo::ByteBuffer& data);
+    testtools::SerialConfig channelConfig(int index) const;
+    bool sendBytes(int index, const testtools::ByteBuffer& data, bool echo = true);
+    void setControlLine(int index, testtools::SerialControlLine line, bool enabled);
+    void appendTransmitted(int index, const testtools::ByteBuffer& data);
+    virtual void appendReceived(int index, const testtools::ByteBuffer& data);
     void appendNotice(int index, const QString& message);
     virtual void renderReceiveLog(int index);
     virtual void applyLogAppendResult(int index, const testtools::SerialLogAppendResult& result);
@@ -292,16 +294,16 @@ class SerialEndpointWorkspace : public QWidget {
     bool maintenanceBlocked_ = false;
     QString serviceDetail_;
     bool serviceCleanupPending_ = false;
-    serialdemo::AdbDevice currentAdbDevice_;
-    std::vector<serialdemo::PortInfo> localPorts_;
-    std::vector<serialdemo::AgentSerialPort> agentPorts_;
+    testtools::AdbDevice currentAdbDevice_;
+    std::vector<testtools::PortInfo> localPorts_;
+    std::vector<testtools::AgentSerialPort> agentPorts_;
     std::string agentAdbSerial_;
     std::uint16_t agentControlPort_ = 0;
     std::uint64_t agentPortGeneration_ = 0;
     testtools::BackgroundTaskGroup scanTasks_;
     testtools::BackgroundTaskGroup controlTasks_;
     testtools::BackgroundTaskGroup localScanTasks_;
-    std::function<std::vector<serialdemo::PortInfo>()> enumerateLocalPorts_;
+    std::function<std::vector<testtools::PortInfo>()> enumerateLocalPorts_;
     std::uint64_t localScanGeneration_ = 0;
     bool localScanning_ = false;
     std::array<bool, 2> localRefreshRequested_{};

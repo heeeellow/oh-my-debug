@@ -19,7 +19,7 @@ enum class TerminalKey {
     PageDown,
     Escape
 };
-serialdemo::ByteBuffer terminalKeyBytes(TerminalKey key, serialdemo::LineEnding ending);
-serialdemo::ByteBuffer terminalPasteBytes(const std::string& text, serialdemo::LineEnding ending);
+testtools::ByteBuffer terminalKeyBytes(TerminalKey key, testtools::LineEnding ending);
+testtools::ByteBuffer terminalPasteBytes(const std::string& text, testtools::LineEnding ending);
 
 } // namespace testtools

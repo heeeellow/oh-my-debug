@@ -15,7 +15,7 @@
 #include <thread>
 #include <vector>
 
-namespace serialdemo {
+namespace testtools {
 
 // 板端 Agent 托管串口传输适配器：通过控制通道执行 serial.list/open/close，
 // 并建立独立的本地 ADB TCP 转发流承载原始串口字节收发。
@@ -46,4 +46,4 @@ private:
     std::unique_ptr<asio::ip::tcp::socket> socket_;
 };
 
-} // namespace serialdemo
+} // namespace testtools

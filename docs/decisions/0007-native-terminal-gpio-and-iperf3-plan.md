@@ -50,7 +50,7 @@
 
 | 目标文件 | 现状问题 | 处理方式 |
 | --- | --- | --- |
-| `src/application/agent/board_profile.h`<br>`src/application/agent/board_profile.cpp`（原基线约 770 行） | 为早期“板型规格 JSON 比对与 PASS/VERIFY/FAIL 自动判定”编写；按 2026-11-01 用户决策，设备信息页只做只读展示、不做规格判定，当前产品代码零引用，仅测试文件仍在编译 | 从源码、[`TestTools.vcxproj`](../../TestTools.vcxproj)、[`TestTools.vcxproj.filters`](../../TestTools.vcxproj.filters)、[`tests/CMakeLists.txt`](../../tests/CMakeLists.txt) 与 [`tests/core_application_tests.cpp`](../../tests/core_application_tests.cpp) 中移除（Git 历史可随时追溯） |
+| `src/application/agent/board_profile.h`<br>`src/application/agent/board_profile.cpp`（原基线约 770 行） | 为早期“板型规格 JSON 比对与 PASS/VERIFY/FAIL 自动判定”编写；按 2026-11-01 用户决策，设备信息页只做只读展示、不做规格判定，当前产品代码零引用，仅测试文件仍在编译 | 从源码、[`OhMyDebug.vcxproj`](../../OhMyDebug.vcxproj)、[`OhMyDebug.vcxproj.filters`](../../OhMyDebug.vcxproj.filters)、[`tests/CMakeLists.txt`](../../tests/CMakeLists.txt) 与 [`tests/core_application_tests.cpp`](../../tests/core_application_tests.cpp) 中移除（Git 历史可随时追溯） |
 | `src/agent/TestToolsAgent.vcxproj`<br>`src/agent/TestToolsAgent.vcxproj.user` | 早期 Windows 本地调试 Agent 的 VS 工程；当前本机契约测试与三端交叉编译均以 [`src/agent/CMakeLists.txt`](../../src/agent/CMakeLists.txt) 为唯一入口，保留会导致新增模块需双写工程文件 | 删除该 `.vcxproj` 及 `.user`，同步更新 [`docs/DEVELOPMENT.md`](../DEVELOPMENT.md) 第 1 节说明 |
 
 ### 2.2 代码架构前置解耦（P0-1 ～ P0-4）

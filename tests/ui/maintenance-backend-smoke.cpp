@@ -107,7 +107,7 @@ int main(int argc, char** argv)
         std::atomic<bool> cancel{false};
         scene("big-log");
         auto streamed =
-            serialdemo::ProcessRunner::runManaged(program,
+            testtools::ProcessRunner::runManaged(program,
                                                   {"-s", "device-A", "logcat", "-d"},
                                                   std::chrono::seconds(2),
                                                   cancel,

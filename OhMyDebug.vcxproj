@@ -1,0 +1,397 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{8E035381-B87B-4EFC-9A06-B5F10FCEE4DE}</ProjectGuid>
+    <ProjectName>OhMyDebug</ProjectName>
+    <RootNamespace>OhMyDebug</RootNamespace>
+    <VCToolsVersion Condition="'$(VCToolsVersion)' == ''">14.44.35207</VCToolsVersion>
+    <Keyword>QtVS_v304</Keyword>
+    <WindowsTargetPlatformVersion Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">10.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">10.0</WindowsTargetPlatformVersion>
+    <QtMsBuild Condition="'$(QtMsBuild)'=='' OR !Exists('$(QtMsBuild)\qt.targets')">$(MSBuildProjectDirectory)\QtMsBuild</QtMsBuild>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v145</PlatformToolset>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v145</PlatformToolset>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Condition="Exists('$(QtMsBuild)\qt_defaults.props')">
+    <Import Project="$(QtMsBuild)\qt_defaults.props" />
+  </ImportGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
+    <QtInstall>6.11.2_msvc2022_64</QtInstall>
+    <QtModules>core;gui;widgets;svg</QtModules>
+    <QtBuildConfig>debug</QtBuildConfig>
+    <QtDeploy>true</QtDeploy>
+    <QtDeployDebugRelease>debug</QtDeployDebugRelease>
+    <QtDeployNoTranslations>true</QtDeployNoTranslations>
+    <QtDeployNoSystemD3dCompiler>true</QtDeployNoSystemD3dCompiler>
+    <QtDeployNoOpenglSw>true</QtDeployNoOpenglSw>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
+    <QtInstall>6.11.2_msvc2022_64</QtInstall>
+    <QtModules>core;gui;widgets;svg</QtModules>
+    <QtBuildConfig>release</QtBuildConfig>
+    <QtDeploy>true</QtDeploy>
+    <QtDeployDebugRelease>release</QtDeployDebugRelease>
+    <QtDeployNoTranslations>true</QtDeployNoTranslations>
+    <QtDeployNoSystemD3dCompiler>true</QtDeployNoSystemD3dCompiler>
+    <QtDeployNoOpenglSw>true</QtDeployNoOpenglSw>
+  </PropertyGroup>
+  <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') or !Exists('$(QtMsBuild)\qt.props')">
+    <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
+  </Target>
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(QtMsBuild)\Qt.props" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(QtMsBuild)\Qt.props" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <OutDir>$(ProjectDir)build\windows\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)build\intermediate\desktop\$(Platform)\$(Configuration)\</IntDir>
+    <TargetName>OhMyDebug</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
+    <ClCompile>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)third_party\libvterm\include;$(ProjectDir)src;$(IntDir);$(ProjectDir)third_party\CSerialPort\include;$(ProjectDir)third_party\asio\include;$(ProjectDir)third_party\tiny-process-library;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>ASIO_STANDALONE;CSERIALPORT_USE_UTF8;NOMINMAX;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>shell32.lib;ole32.lib;setupapi.lib;advapi32.lib;user32.lib;ws2_32.lib;mswsock.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
+    <ClCompile>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)third_party\libvterm\include;$(ProjectDir)src;$(IntDir);$(ProjectDir)third_party\CSerialPort\include;$(ProjectDir)third_party\asio\include;$(ProjectDir)third_party\tiny-process-library;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>ASIO_STANDALONE;CSERIALPORT_USE_UTF8;NOMINMAX;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalDependencies>shell32.lib;ole32.lib;setupapi.lib;advapi32.lib;user32.lib;ws2_32.lib;mswsock.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <QtMoc Include="src\ui\main_window.h" />
+    <QtMoc Include="src\ui\screen_mirror_panel.h" />
+    <QtMoc Include="src\ui\pages\file_transfer_workspace.h" />
+    <QtMoc Include="src\ui\pages\serial_workspace.h" />
+    <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\application\agent\adb_agent_deployment.cpp" />
+    <ClCompile Include="src\application\agent\android_agent_deployment.cpp" />
+    <ClCompile Include="src\application\agent\agent_service_status.cpp" />
+    <ClCompile Include="src\application\agent\agent_connection_service.cpp" />
+    <ClCompile Include="src\application\agent\agent_target.cpp" />
+    <ClCompile Include="src\application\agent\agent_bundle.cpp" />
+    <ClCompile Include="src\application\agent\board_test_job_client.cpp" />
+    <ClCompile Include="src\application\agent\linux_agent_deployment.cpp" />
+    <ClCompile Include="src\application\device\device_discovery.cpp" />
+    <ClCompile Include="src\application\device\adb_terminal_service.cpp" />
+    <ClCompile Include="src\application\device\screen_mirror_service.cpp" />
+    <ClCompile Include="src\application\device\file_transfer_service.cpp" />
+    <ClCompile Include="src\adapters\device\adb_file_transfer_backend.cpp" />
+    <ClCompile Include="src\adapters\device\file_management.cpp" />
+    <ClCompile Include="src\ui\pages\file_transfer_workspace.cpp" />
+    <ClCompile Include="src\adapters\device\scrcpy_backend.cpp" />
+    <ClCompile Include="src\ui\screen_mirror_panel.cpp" />
+      <ClCompile Include="src\application\serial\serial_session.cpp" />
+    <ClCompile Include="src\application\serial\serial_port_claims.cpp" />
+      <ClCompile Include="src\application\serial\at_command_library.cpp" />
+      <ClCompile Include="src\application\serial\serial_transport_service.cpp" />
+    <ClCompile Include="src\application\serial\serial_workspace_state.cpp" />
+    <ClCompile Include="src\application\serial\serial_preferences_writer.cpp" />
+    <ClCompile Include="src\application\serial\serial_preferences.cpp" />
+    <ClCompile Include="src\application\serial\serial_terminal.cpp" />
+    <ClCompile Include="src\application\serial\serial_recorder.cpp" />
+    <ClCompile Include="src\application\serial\serial_receive_queue.cpp" />
+    <ClCompile Include="src\application\support\background_task_group.cpp" />
+    <ClCompile Include="src\adapters\adb\adb_transport.cpp" />
+    <ClCompile Include="src\adapters\adb\process_runner.cpp" />
+    <ClCompile Include="src\adapters\agent\agent_client.cpp" />
+    <ClCompile Include="src\adapters\agent\agent_serial_transport.cpp" />
+    <ClCompile Include="src\adapters\serial\cserialport_transport.cpp" />
+    <ClCompile Include="src\core\protocol\agent_protocol.cpp" />
+    <ClCompile Include="src\core\protocol\json_value.cpp" />
+    <ClCompile Include="src\core\serial\async_serial_sender.cpp" />
+    <ClCompile Include="src\core\serial\codec.cpp" />
+    <ClCompile Include="src\core\serial\serial_test_engine.cpp" />
+    <ClCompile Include="src\core\support\command_line.cpp" />
+    <ClCompile Include="src\diagnostics\self_test.cpp" />
+    <ClCompile Include="src\ui\main_window.cpp" />
+    <ClCompile Include="src\ui\pages\serial_workspace.cpp" />
+    <ClCompile Include="src\ui\widgets\file_icon_provider.cpp" />
+    <ClCompile Include="src\ui\widgets\file_pane.cpp" />
+    <ClCompile Include="src\ui\widgets\file_permissions_dialog.cpp" />
+    <ClCompile Include="src\ui\widgets\serial_connection_bar.cpp" />
+    <ClCompile Include="src\ui\widgets\serial_shortcut_sidebar.cpp" />
+    <ClCompile Include="src\ui\widgets\serial_keyword_highlighter.cpp" />
+    <ClCompile Include="src\ui\theme.cpp" />
+    <ClCompile Include="src\ui\icons.cpp" />
+    <ClCompile Include="third_party\CSerialPort\src\SerialPort.cpp" />
+    <ClCompile Include="third_party\CSerialPort\src\SerialPortAsyncBase.cpp" />
+    <ClCompile Include="third_party\CSerialPort\src\SerialPortBase.cpp" />
+    <ClCompile Include="third_party\CSerialPort\src\SerialPortInfo.cpp" />
+    <ClCompile Include="third_party\CSerialPort\src\SerialPortInfoBase.cpp" />
+    <ClCompile Include="third_party\CSerialPort\src\SerialPortInfoWinBase.cpp" />
+    <ClCompile Include="third_party\CSerialPort\src\SerialPortWinBase.cpp" />
+    <ClCompile Include="third_party\tiny-process-library\process.cpp" />
+    <ClCompile Include="third_party\tiny-process-library\process_win.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\application\agent\android_agent_deployment.h" />
+    <ClInclude Include="src\application\agent\adb_agent_deployment.h" />
+    <ClInclude Include="src\application\agent\agent_service_status.h" />
+    <ClInclude Include="src\application\agent\agent_connection_service.h" />
+    <ClInclude Include="src\application\agent\agent_target.h" />
+    <ClInclude Include="src\application\agent\agent_bundle.h" />
+    <ClInclude Include="src\application\agent\board_test_job_client.h" />
+    <ClInclude Include="src\application\agent\linux_agent_deployment.h" />
+    <ClInclude Include="src\application\device\device_discovery.h" />
+    <ClInclude Include="src\application\device\adb_terminal_service.h" />
+    <ClInclude Include="src\application\device\screen_mirror_service.h" />
+    <ClInclude Include="src\application\device\file_transfer_service.h" />
+    <ClInclude Include="src\core\device\file_transfer.h" />
+    <ClInclude Include="src\adapters\device\file_management.h" />
+    <ClInclude Include="src\adapters\device\scrcpy_backend.h" />
+    <ClInclude Include="src\core\device\screen_mirror.h" />
+      <ClInclude Include="src\application\serial\serial_session.h" />
+    <ClInclude Include="src\application\serial\serial_port_claims.h" />
+      <ClInclude Include="src\application\serial\at_command_library.h" />
+      <ClInclude Include="src\application\serial\serial_transport_service.h" />
+    <ClInclude Include="src\application\serial\serial_workspace_state.h" />
+    <ClInclude Include="src\application\serial\serial_preferences_writer.h" />
+    <ClInclude Include="src\application\serial\serial_preferences.h" />
+    <ClInclude Include="src\app_info.h" />
+    <ClInclude Include="src\application\serial\serial_terminal.h" />
+    <ClInclude Include="src\application\serial\serial_recorder.h" />
+    <ClInclude Include="src\application\serial\serial_receive_queue.h" />
+    <ClInclude Include="src\application\support\background_task_group.h" />
+    <ClInclude Include="src\adapters\adb\adb_transport.h" />
+    <ClInclude Include="src\adapters\adb\process_runner.h" />
+    <ClInclude Include="src\adapters\agent\agent_client.h" />
+    <ClInclude Include="src\adapters\agent\agent_serial_transport.h" />
+    <ClInclude Include="src\adapters\serial\cserialport_transport.h" />
+    <ClInclude Include="src\core\protocol\agent_protocol.h" />
+    <ClInclude Include="src\core\protocol\agent_connection.h" />
+    <ClInclude Include="src\core\protocol\agent_version.h" />
+    <ClInclude Include="src\core\protocol\json_value.h" />
+    <ClInclude Include="src\core\serial\async_serial_sender.h" />
+    <ClInclude Include="src\core\serial\codec.h" />
+    <ClInclude Include="src\core\serial\serial_test_engine.h" />
+    <ClInclude Include="src\core\serial\serial_transport.h" />
+    <ClInclude Include="src\core\serial\serial_types.h" />
+    <ClInclude Include="src\core\support\command_line.h" />
+    <ClInclude Include="src\diagnostics\self_test.h" />
+    <ClInclude Include="src\ui\widgets\file_icon_provider.h" />
+    <ClInclude Include="src\ui\widgets\file_pane.h" />
+    <ClInclude Include="src\ui\widgets\file_permissions_dialog.h" />
+    <ClInclude Include="src\ui\widgets\serial_connection_bar.h" />
+    <ClInclude Include="src\ui\widgets\serial_shortcut_sidebar.h" />
+    <ClInclude Include="src\ui\widgets\serial_keyword_highlighter.h" />
+    <ClInclude Include="src\ui\widgets\serial_receive_view.h" />
+    <ClInclude Include="src\ui\theme.h" />
+    <ClInclude Include="src\ui\icons.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtRcc Include="src\ui\resources\icons.qrc" />
+  </ItemGroup>
+  <ItemDefinitionGroup>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions Condition="'$(Configuration)' == 'Debug'">_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ResourceCompile Include="src\ui\resources\app.rc" />
+    <None Include="src\ui\resources\app.svg" />
+    <Image Include="src\ui\resources\app.ico" />
+  </ItemGroup>
+  <Target Name="GenerateAppVersion" BeforeTargets="ClCompile;ResourceCompile"
+          Inputs="$(ProjectDir)VERSION.txt;$(ProjectDir)scripts\generate-version.ps1"
+          Outputs="$(IntDir)app_version.h">
+    <MakeDir Directories="$(IntDir)" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)scripts\generate-version.ps1&quot; -VersionFile &quot;$(ProjectDir)VERSION.txt&quot; -OutputFile &quot;$(IntDir)app_version.h&quot;" />
+  </Target>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ItemGroup>
+    <TestToolsPlatformTools Include="$(ProjectDir)third_party\platform-tools\*" />
+  </ItemGroup>
+  <Target Name="CopyTestToolsPlatformTools" AfterTargets="Build">
+    <Error Condition="!Exists('$(ProjectDir)third_party\platform-tools\adb.exe') OR !Exists('$(ProjectDir)third_party\platform-tools\AdbWinApi.dll') OR !Exists('$(ProjectDir)third_party\platform-tools\AdbWinUsbApi.dll')"
+           Text="Bundled ADB is incomplete. Restore third_party/platform-tools from the pinned upstream archive in docs/THIRD_PARTY.md." />
+    <MakeDir Directories="$(OutDir)platform-tools" />
+    <Copy SourceFiles="@(TestToolsPlatformTools)"
+          DestinationFolder="$(OutDir)platform-tools" SkipUnchangedFiles="true" />
+  </Target>
+  <ItemGroup>
+    <TestToolsScrcpyFiles Include="$(ProjectDir)third_party\scrcpy\**\*" />
+  </ItemGroup>
+  <Target Name="CopyTestToolsScrcpy" AfterTargets="Build">
+    <Error Condition="!Exists('$(ProjectDir)third_party\scrcpy\scrcpy.exe') OR !Exists('$(ProjectDir)third_party\scrcpy\scrcpy-server')"
+           Text="Bundled scrcpy is incomplete. Restore the pinned upstream package described in docs/THIRD_PARTY.md." />
+    <Copy SourceFiles="@(TestToolsScrcpyFiles)"
+          DestinationFiles="@(TestToolsScrcpyFiles->'$(OutDir)scrcpy\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+  <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">
+    <Import Project="$(QtMsBuild)\qt.targets" />
+  </ImportGroup>
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+  <ItemGroup Condition="Exists('$(ProjectDir)build\agent-bundle\manifest.json')">
+    <TestToolsAgentBundleFiles Include="$(ProjectDir)build\agent-bundle\**\*" />
+  </ItemGroup>
+  <Target Name="CopyTestToolsAgentBundleForRun" AfterTargets="Build"
+          Condition="Exists('$(ProjectDir)build\agent-bundle\manifest.json')">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)scripts\validate-agent-bundle.ps1&quot; -BundleDirectory &quot;$(ProjectDir)build\agent-bundle&quot;" />
+    <MakeDir Directories="$(OutDir)agent-bundle" />
+    <Copy SourceFiles="@(TestToolsAgentBundleFiles)"
+          DestinationFiles="@(TestToolsAgentBundleFiles->'$(OutDir)agent-bundle\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="CopyTestToolsIconLicense" AfterTargets="Build">
+    <MakeDir Directories="$(OutDir)licenses" />
+    <Copy SourceFiles="$(ProjectDir)third_party\phosphor-icons\LICENSE"
+          DestinationFiles="$(OutDir)licenses\Phosphor-Icons-LICENSE.txt" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="WarnMissingTestToolsAgentBundle" AfterTargets="Build"
+          Condition="'$(DesignTimeBuild)'!='true' AND !Exists('$(ProjectDir)build\agent-bundle\manifest.json')">
+    <Warning Text="Agent Bundle not found; TestTools can reconnect to an existing Agent but cannot install or upgrade one. Run scripts\build-agent-matrix.ps1 to build all Android and Linux Agent targets." />
+  </Target>
+  <ItemGroup>
+    <ClCompile Include="src\application\device\device_maintenance_service.cpp" />
+    <ClCompile Include="src\adapters\device\adb_device_maintenance.cpp" />
+    <ClCompile Include="src\ui\widgets\device_maintenance_panel.cpp" />
+    <ClInclude Include="src\core\device\device_maintenance.h" />
+    <ClInclude Include="src\application\device\device_maintenance_service.h" />
+    <ClInclude Include="src\adapters\device\adb_device_maintenance.h" />
+    <QtMoc Include="src\ui\widgets\device_maintenance_panel.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\application\agent\board_info_service.cpp" />
+    <ClCompile Include="src\ui\widgets\board_info_panel.cpp" />
+    <ClInclude Include="src\application\agent\board_info_service.h" />
+    <QtMoc Include="src\ui\widgets\board_info_panel.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\application\serial\serial_link_verifier.cpp" />
+    <ClCompile Include="src\ui\pages\serial_endpoint_workspace.cpp" />
+    <ClCompile Include="src\ui\pages\serial_terminal_workspace.cpp" />
+    <ClCompile Include="src\ui\widgets\at_command_dialog.cpp" />
+    <ClInclude Include="src\application\serial\serial_link_verifier.h" />
+    <ClInclude Include="src\ui\widgets\serial_workspace_helpers.h" />
+    <ClInclude Include="src\ui\widgets\at_command_dialog.h" />
+    <QtMoc Include="src\ui\pages\serial_endpoint_workspace.h" />
+    <QtMoc Include="src\ui\pages\serial_terminal_workspace.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\application\terminal\terminal_engine.cpp" />
+    <ClCompile Include="src\ui\widgets\terminal_grid_widget.cpp" />
+    <ClInclude Include="src\application\terminal\terminal_engine.h" />
+    <QtMoc Include="src\ui\widgets\terminal_grid_widget.h" />
+    <ClCompile Include="third_party\libvterm\src\encoding.c">
+      <CompileAs>CompileAsC</CompileAs>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <SDLCheck>false</SDLCheck>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="third_party\libvterm\src\keyboard.c">
+      <CompileAs>CompileAsC</CompileAs>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <SDLCheck>false</SDLCheck>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="third_party\libvterm\src\mouse.c">
+      <CompileAs>CompileAsC</CompileAs>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <SDLCheck>false</SDLCheck>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="third_party\libvterm\src\parser.c">
+      <CompileAs>CompileAsC</CompileAs>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <SDLCheck>false</SDLCheck>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="third_party\libvterm\src\pen.c">
+      <CompileAs>CompileAsC</CompileAs>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <SDLCheck>false</SDLCheck>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="third_party\libvterm\src\screen.c">
+      <CompileAs>CompileAsC</CompileAs>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <SDLCheck>false</SDLCheck>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="third_party\libvterm\src\state.c">
+      <CompileAs>CompileAsC</CompileAs>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <SDLCheck>false</SDLCheck>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="third_party\libvterm\src\unicode.c">
+      <CompileAs>CompileAsC</CompileAs>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <SDLCheck>false</SDLCheck>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="third_party\libvterm\src\vterm.c">
+      <CompileAs>CompileAsC</CompileAs>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <SDLCheck>false</SDLCheck>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemGroup>
+  <Target Name="CopyTestToolsTerminalLicense" AfterTargets="Build">
+    <MakeDir Directories="$(OutDir)licenses" />
+    <Copy SourceFiles="$(ProjectDir)third_party\libvterm\LICENSE" DestinationFiles="$(OutDir)licenses\libvterm-LICENSE.txt" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

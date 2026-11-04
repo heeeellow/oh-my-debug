@@ -16,6 +16,3 @@ indent_size = 2
 
 [*.md]
 trim_trailing_whitespace = false
-
-[scripts/sync-vs-layout.ps1]
-charset = utf-8-bom

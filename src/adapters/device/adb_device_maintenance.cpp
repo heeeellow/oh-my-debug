@@ -10,7 +10,7 @@
 namespace testtools {
 namespace {
 using Clock = std::chrono::steady_clock;
-using Command = serialdemo::ManagedCommandResult;
+using Command = testtools::ManagedCommandResult;
 std::string trim(std::string text)
 {
     const auto start = text.find_first_not_of(" \r\n\t");
@@ -140,10 +140,10 @@ class AdbDeviceMaintenance final : public IDeviceMaintenanceBackend {
 
   public:
     AdbDeviceMaintenance(const std::string& program, std::set<std::string> loaders)
-        : program_(serialdemo::AdbTransport(program).program()), loaders_(std::move(loaders))
+        : program_(testtools::AdbTransport(program).program()), loaders_(std::move(loaders))
     {
     }
-    bool loaderSupported(const serialdemo::AdbDevice& device) const override
+    bool loaderSupported(const testtools::AdbDevice& device) const override
     {
         return loaders_.count(device.serial) != 0;
     }
@@ -160,7 +160,7 @@ class AdbDeviceMaintenance final : public IDeviceMaintenanceBackend {
                        std::chrono::milliseconds timeout) {
             std::vector<std::string> args{"-s", request.device.serial};
             args.insert(args.end(), arguments.begin(), arguments.end());
-            return serialdemo::ProcessRunner::runManaged(program_, args, timeout, cancel);
+            return testtools::ProcessRunner::runManaged(program_, args, timeout, cancel);
         };
         if (!disruptive(request.action)) {
             LogArtifact artifact;
@@ -176,7 +176,7 @@ class AdbDeviceMaintenance final : public IDeviceMaintenanceBackend {
                     ? std::vector<std::string>{"-s", request.device.serial, "logcat", "-d"}
                     : std::vector<std::string>{"-s", request.device.serial, "shell", "-T", "dmesg"};
             const auto command =
-                serialdemo::ProcessRunner::runManaged(program_,
+                testtools::ProcessRunner::runManaged(program_,
                                                       args,
                                                       request.commandTimeout,
                                                       cancel,

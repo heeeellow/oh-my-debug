@@ -296,14 +296,14 @@
 | 测试 | 关注内容 |
 | --- | --- |
 | [`service-icons-smoke.cpp`](../../tests/ui/service-icons-smoke.cpp) | 顶栏服务文案、失败/重试、内联提示与服务连接入口；保留本地 COM 独立工作路径 |
-| [`iteration-smoke.cpp`](../../tests/ui/iteration-smoke.cpp) | 服务详情入口、独立页面与偏好、端口占用交接、万行增量显示 |
+| [`serial-workspace-smoke.cpp`](../../tests/ui/serial-workspace-smoke.cpp) | 服务详情入口、独立页面与偏好、端口占用交接、万行增量显示 |
 | [`serial-smoke.cpp`](../../tests/ui/serial-smoke.cpp) | 快捷指令填入/发送/折叠、共享行尾、连接/断开与精确发送字节 |
 
 测试应随新组件结构访问正确入口；移除的控件不必仅为旧成员名保留。验证操作含义和结果，不能只把旧文案断言替换为新文案。
 
 ### 6.2 文件后端接口与假实现
 
-扩展 [`IFileTransferBackend`](../../src/core/device/file_transfer.h) 时，同步检查 [`tests/file_transfer_tests.cpp`](../../tests/file_transfer_tests.cpp)、[`ui-smoke.cpp`](../../tests/ui/ui-smoke.cpp) 和 [`iteration-smoke.cpp`](../../tests/ui/iteration-smoke.cpp) 中的假实现。新增方法同时约定取消与结果，更新真实适配器和假实现。可选能力若返回“不支持”，UI 也应有对应状态；默认失败实现不能充当新增操作的验证。
+扩展 [`IFileTransferBackend`](../../src/core/device/file_transfer.h) 时，同步检查 [`tests/file_transfer_tests.cpp`](../../tests/file_transfer_tests.cpp)、[`ui-smoke.cpp`](../../tests/ui/ui-smoke.cpp) 和 [`serial-workspace-smoke.cpp`](../../tests/ui/serial-workspace-smoke.cpp) 中的假实现。新增方法同时约定取消与结果，更新真实适配器和假实现。可选能力若返回“不支持”，UI 也应有对应状态；默认失败实现不能充当新增操作的验证。
 
 ### 6.3 无 Qt 边界与静态扫描
 
@@ -311,7 +311,7 @@
 
 ### 6.4 项目登记与对象文件依赖
 
-- 新增桌面源码登记到 [`TestTools.vcxproj`](../../TestTools.vcxproj) 和 [工程筛选器](../../TestTools.vcxproj.filters)；无 Qt 测试按实际目标依赖更新 [`tests/CMakeLists.txt`](../../tests/CMakeLists.txt)，不把平台适配器无差别加入所有测试。
+- 新增桌面源码登记到 [`OhMyDebug.vcxproj`](../../OhMyDebug.vcxproj) 和 [工程筛选器](../../OhMyDebug.vcxproj.filters)；无 Qt 测试按实际目标依赖更新 [`tests/CMakeLists.txt`](../../tests/CMakeLists.txt)，不把平台适配器无差别加入所有测试。
 - [`tests/ui/CMakeLists.txt`](../../tests/ui/CMakeLists.txt) 直接链接产品的 Release `.obj`。产品源码变化后先重建 Release，再配置、构建 UI 测试；新增/移除 `.cpp` 必须重新配置，因为当前 `file(GLOB HOST_OBJECTS ...)` 未启用 `CONFIGURE_DEPENDS`。
 - 文件删除或改名后复核对象列表；生成目录中遗留的旧 `.obj` 也可能被通配符拾取，需要定向清理或重建相关产物。旧对象与旧测试结果不能用于本批验收。
 - 本轮复用现有板端能力，桌面变更不联动递增 Agent 版本；若实施中确需修改 Agent，另按开发手册递增其版本并重建固定矩阵。

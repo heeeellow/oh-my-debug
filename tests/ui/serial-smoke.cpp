@@ -1,3 +1,4 @@
+#include "application/serial/serial_preferences.h"
 #include "application/serial/at_command_library.h"
 #include "application/serial/serial_session.h"
 #include "application/serial/serial_terminal.h"
@@ -25,7 +26,7 @@
 struct FixtureState {
     std::mutex mutex;
     std::string writes;
-    void record(const serialdemo::ByteBuffer& bytes)
+    void record(const testtools::ByteBuffer& bytes)
     {
         std::lock_guard<std::mutex> lock(mutex);
         writes.append(bytes.begin(), bytes.end());
@@ -38,19 +39,19 @@ struct FixtureState {
         return result;
     }
 };
-class FixtureTransport final : public serialdemo::ISerialTransport {
+class FixtureTransport final : public testtools::ISerialTransport {
   public:
     explicit FixtureTransport(std::shared_ptr<FixtureState> value) : state(std::move(value)) {}
-    void open(const serialdemo::SerialConfig&) override
+    void open(const testtools::SerialConfig&) override
     {
         opened = true;
-        publishStatus(serialdemo::TransportState::Connected, "已连接（测试夹具）");
+        publishStatus(testtools::TransportState::Connected, "已连接（测试夹具）");
     }
     void close() override
     {
         opened = false;
     }
-    bool write(const serialdemo::ByteBuffer& bytes) override
+    bool write(const testtools::ByteBuffer& bytes) override
     {
         if (!opened)
             return false;
@@ -68,7 +69,7 @@ class FixtureTransport final : public serialdemo::ISerialTransport {
     void unplug()
     {
         opened = false;
-        publishStatus(serialdemo::TransportState::Error, "fixture disconnected");
+        publishStatus(testtools::TransportState::Error, "fixture disconnected");
     }
     std::shared_ptr<FixtureState> state;
     std::atomic<bool> opened{false};
@@ -130,7 +131,7 @@ int main(int argc, char** argv)
         QApplication::setActiveWindow(&window);
         pump();
         // Key/render regression for the reusable workspace component. Separate
-        // application page ownership is covered by iteration-smoke.
+        // application page ownership is covered by serial-workspace-smoke.
         {
             testtools::TerminalEngine selectionEngine;
             selectionEngine.resize(4, 8);
@@ -171,7 +172,7 @@ int main(int argc, char** argv)
         auto state = std::make_shared<FixtureState>();
         auto fixture = std::make_unique<FixtureTransport>(state);
         auto* device = fixture.get();
-        serialdemo::SerialConfig config;
+        testtools::SerialConfig config;
         config.endpoint = "COM_TEST";
         channel.portCombo->setEditText("COM_TEST");
         channel.session.open(std::move(fixture), config);
@@ -438,7 +439,7 @@ int main(int argc, char** argv)
             channel.toggleAtBarButton->click();
             pump();
             require(serial->shortcutSidebar_->isVisible(), "toolbar reopens sidebar");
-            serialdemo::PeriodicSendConfig plan;
+            testtools::PeriodicSendConfig plan;
             plan.interval = std::chrono::milliseconds(10);
             plan.targetCount = 3;
             require(!serial->scheduleTimer_->isActive(), "idle send scheduler stopped");

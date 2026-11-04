@@ -329,7 +329,7 @@ void FileTransferWorkspace::loadRemote(const std::string& requestedDirectory)
     });
 }
 
-void FileTransferWorkspace::setDevice(const serialdemo::AdbDevice& device)
+void FileTransferWorkspace::setDevice(const testtools::AdbDevice& device)
 {
     if (device_.serial == device.serial && device_.state == device.state)
         return;

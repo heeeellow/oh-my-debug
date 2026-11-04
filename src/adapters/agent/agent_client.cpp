@@ -98,7 +98,7 @@ bool AgentClient::request(const std::string &json, std::string &responseJson, st
                 error = std::string("Agent receive failed: ") + errorCode.message();
                 return false;
             }
-            serialdemo::ByteBuffer chunk(buffer.begin(), buffer.begin()
+            testtools::ByteBuffer chunk(buffer.begin(), buffer.begin()
                                          + static_cast<std::ptrdiff_t>(received));
             std::vector<AgentFrame> frames;
             if (!decoder_.push(chunk, frames, error)) {

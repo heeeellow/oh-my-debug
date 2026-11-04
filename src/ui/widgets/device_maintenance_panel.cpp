@@ -141,7 +141,7 @@ DeviceMaintenancePanel::~DeviceMaintenancePanel()
     service_->cancel();
     tasks_.wait();
 }
-void DeviceMaintenancePanel::setDevice(const serialdemo::AdbDevice& device)
+void DeviceMaintenancePanel::setDevice(const testtools::AdbDevice& device)
 {
     device_ = device;
     updateControls();

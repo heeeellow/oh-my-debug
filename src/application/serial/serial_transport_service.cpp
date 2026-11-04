@@ -7,26 +7,26 @@
 
 namespace testtools {
 
-std::vector<serialdemo::PortInfo> SerialTransportService::localPorts()
+std::vector<testtools::PortInfo> SerialTransportService::localPorts()
 {
-    return serialdemo::CSerialPortTransport::availablePorts();
+    return testtools::CSerialPortTransport::availablePorts();
 }
 
-std::vector<serialdemo::AgentSerialPort> SerialTransportService::agentPorts(
+std::vector<testtools::AgentSerialPort> SerialTransportService::agentPorts(
     std::uint16_t controlPort, std::string &error)
 {
-    return serialdemo::AgentSerialTransport::availablePorts(controlPort, error);
+    return testtools::AgentSerialTransport::availablePorts(controlPort, error);
 }
 
-std::unique_ptr<serialdemo::ISerialTransport> SerialTransportService::createLocal()
+std::unique_ptr<testtools::ISerialTransport> SerialTransportService::createLocal()
 {
-    return std::make_unique<serialdemo::CSerialPortTransport>();
+    return std::make_unique<testtools::CSerialPortTransport>();
 }
 
-std::unique_ptr<serialdemo::ISerialTransport> SerialTransportService::createAgent(
+std::unique_ptr<testtools::ISerialTransport> SerialTransportService::createAgent(
     std::string adbSerial, std::uint16_t controlPort)
 {
-    return std::make_unique<serialdemo::AgentSerialTransport>(std::move(adbSerial), controlPort);
+    return std::make_unique<testtools::AgentSerialTransport>(std::move(adbSerial), controlPort);
 }
 
 } // namespace testtools

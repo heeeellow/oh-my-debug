@@ -34,7 +34,7 @@ bool validSerial(const std::string& serial)
     return std::regex_match(serial, pattern);
 }
 
-std::string commandDetail(const serialdemo::CommandResult& result)
+std::string commandDetail(const testtools::CommandResult& result)
 {
     if (result.timedOut) {
         return "command timed out";
@@ -44,7 +44,7 @@ std::string commandDetail(const serialdemo::CommandResult& result)
     return detail.empty() ? "exit code " + std::to_string(result.exitCode) : detail;
 }
 
-LinuxAgentDeploymentResult createForward(serialdemo::AdbTransport& adb,
+LinuxAgentDeploymentResult createForward(testtools::AdbTransport& adb,
                                          const std::string& serial,
                                          const std::string& binaryPath,
                                          const std::string& buildId,
@@ -111,7 +111,7 @@ LinuxAgentDeployment::deployAndForward(const std::string& serial,
     result.binaryPath = agentFile->sourcePath.string();
     const std::string remoteAgent = std::string(RemoteCurrent) + "/" + agentFile->path;
 
-    serialdemo::AdbTransport adb;
+    testtools::AdbTransport adb;
     if (progress) {
         progress("正在识别 Linux 板端架构与 glibc...");
     }
@@ -298,7 +298,7 @@ LinuxAgentDeploymentResult LinuxAgentDeployment::reconnect(const std::string& se
         result.error = "ADB 设备序列号格式不合法";
         return result;
     }
-    serialdemo::AdbTransport adb;
+    testtools::AdbTransport adb;
     if (progress) {
         progress("正在探测已运行的 Linux Agent...");
     }
@@ -322,7 +322,7 @@ void LinuxAgentDeployment::removeForward(const std::string& serial, std::uint16_
     if (!validSerial(serial) || localPort == 0) {
         return;
     }
-    serialdemo::AdbTransport adb;
+    testtools::AdbTransport adb;
     adb.runCommand(serial,
                    {"forward", "--remove", "tcp:" + std::to_string(localPort)},
                    std::chrono::seconds(3));
@@ -333,7 +333,7 @@ void LinuxAgentDeployment::removeControlForwards(const std::string& serial) cons
     if (!validSerial(serial)) {
         return;
     }
-    serialdemo::AdbTransport adb;
+    testtools::AdbTransport adb;
     const auto list = adb.runCommand({}, {"forward", "--list"}, std::chrono::seconds(3));
     if (list.exitCode != 0 || list.timedOut) {
         return;
@@ -359,7 +359,7 @@ bool LinuxAgentDeployment::stopRemote(const std::string& serial, std::string& er
         error = "ADB 设备序列号格式不合法";
         return false;
     }
-    serialdemo::AdbTransport adb;
+    testtools::AdbTransport adb;
     const std::string command = "if [ -r " + std::string(RemotePid) + " ]; then kill \"$(cat " +
                                 RemotePid + ")\" 2>/dev/null || true; fi; rm -f " + RemotePid;
     const auto result = adb.runCommand(serial, {"shell", command}, std::chrono::seconds(4));

@@ -43,7 +43,7 @@ foreach ($package in $manifest.packages) {
     $rule = $expected[$id]
     if ([string]$package.platform -ne $rule.platform -or [string]$package.architecture -ne $rule.architecture -or [string]$package.root -ne $rule.root) { throw "Package identity or root mismatch: $id" }
     if ([string]$package.root -notmatch '^[A-Za-z0-9._/-]+$' -or [string]$package.root -match '(^|[\/])\.\.([\/]|$)' -or [System.IO.Path]::IsPathRooted([string]$package.root)) { throw "Unsafe package root: $id" }
-    if ($rule.abi) {
+    if ($rule.ContainsKey('abi')) {
         if ([string]$package.android.abi -ne $rule.abi -or [int]$package.android.minimum_api -ne 23) { throw "Android package metadata mismatch: $id" }
     } elseif ([string]$package.linux.libc -ne 'glibc' -or [string]$package.linux.minimum_version -ne '2.31') { throw "Linux package metadata mismatch: $id" }
     if ($package.files.Count -lt 1 -or $package.files.Count -gt 128) {

@@ -35,7 +35,7 @@ endif()
 option(TESTTOOLS_BUILD_FAKE_AGENT "Build the protocol-only local test fixture" OFF)
 if(TESTTOOLS_BUILD_FAKE_AGENT)
     add_executable(testtools-agent-fixture
-        fake_agent_main.cpp
+        ../../tests/agent/fake_agent_main.cpp
         ../core/support/command_line.cpp
         ../core/protocol/agent_protocol.cpp
     )
@@ -65,7 +65,7 @@ option(TESTTOOLS_BUILD_TESTS "Build host-side Agent contract tests"
 if(TESTTOOLS_BUILD_TESTS)
     enable_testing()
     add_executable(testtools-agent-tests
-        agent_service_test.cpp
+        ../../tests/agent/agent_service_test.cpp
         board_capability.cpp
         board_test_job.cpp
         agent_service.cpp

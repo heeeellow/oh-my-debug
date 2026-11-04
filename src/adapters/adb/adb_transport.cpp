@@ -15,7 +15,7 @@
 #include <windows.h>
 #endif
 
-namespace serialdemo {
+namespace testtools {
 
 namespace {
 
@@ -569,4 +569,4 @@ bool AdbTransport::isOpen() const
     return open_.load();
 }
 
-} // namespace serialdemo
+} // namespace testtools

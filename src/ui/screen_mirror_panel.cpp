@@ -152,7 +152,7 @@ void ScreenMirrorPanel::reject()
         QDialog::reject();
 }
 
-void ScreenMirrorPanel::setDevice(const serialdemo::AdbDevice& device)
+void ScreenMirrorPanel::setDevice(const testtools::AdbDevice& device)
 {
     selected_ = device;
     updateControls();

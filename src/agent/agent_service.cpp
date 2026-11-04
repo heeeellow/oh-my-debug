@@ -602,7 +602,7 @@ std::string AgentService::serialListResponse(const std::string& requestId) const
 
 std::string AgentService::serialOpenResponse(const std::string& requestId, const JsonValue& params)
 {
-    serialdemo::SerialConfig config;
+    testtools::SerialConfig config;
     if (!hasOnlyMembers(
             params,
             {"endpoint", "baud_rate", "data_bits", "stop_bits", "parity", "flow_control"}) ||
@@ -631,10 +631,10 @@ std::string AgentService::serialOpenResponse(const std::string& requestId, const
     if (!parity.empty() && parity != "none" && parity != "odd" && parity != "even") {
         return errorResponse(requestId, "invalid_params", "unsupported parity value");
     }
-    config.parity = parity == "odd"    ? serialdemo::Parity::Odd
-                    : parity == "even" ? serialdemo::Parity::Even
-                                       : serialdemo::Parity::None;
-    config.stopBits = stopBits == 2 ? serialdemo::StopBits::Two : serialdemo::StopBits::One;
+    config.parity = parity == "odd"    ? testtools::Parity::Odd
+                    : parity == "even" ? testtools::Parity::Even
+                                       : testtools::Parity::None;
+    config.stopBits = stopBits == 2 ? testtools::StopBits::Two : testtools::StopBits::One;
     std::string flow;
     if (member(params, "flow_control") && !stringMember(params, "flow_control", flow)) {
         return errorResponse(requestId, "invalid_params", "flow_control must be a string");
@@ -642,9 +642,9 @@ std::string AgentService::serialOpenResponse(const std::string& requestId, const
     if (!flow.empty() && flow != "none" && flow != "hardware" && flow != "software") {
         return errorResponse(requestId, "invalid_params", "unsupported flow_control value");
     }
-    config.flowControl = flow == "hardware"   ? serialdemo::FlowControl::Hardware
-                         : flow == "software" ? serialdemo::FlowControl::Software
-                                              : serialdemo::FlowControl::None;
+    config.flowControl = flow == "hardware"   ? testtools::FlowControl::Hardware
+                         : flow == "software" ? testtools::FlowControl::Software
+                                              : testtools::FlowControl::None;
 
     std::lock_guard<std::mutex> lock(serialMutex_);
     if (serialBridge_.isRunning()) {

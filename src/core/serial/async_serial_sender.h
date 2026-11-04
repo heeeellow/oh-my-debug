@@ -10,7 +10,7 @@
 #include <mutex>
 #include <thread>
 
-namespace serialdemo {
+namespace testtools {
 
 // 有界异步串口发送器：由独立工作线程执行底层写入并回报完成状态，避免阻塞界面线程。
 class AsyncSerialSender {
@@ -51,4 +51,4 @@ private:
     bool drain_ = false;
 };
 
-} // namespace serialdemo
+} // namespace testtools

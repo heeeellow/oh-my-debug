@@ -30,8 +30,8 @@ void SerialSession::setSendCallback(SendCallback callback)
     sendCallback_ = std::move(callback);
 }
 
-std::uint64_t SerialSession::open(std::unique_ptr<serialdemo::ISerialTransport> transport,
-                                  const serialdemo::SerialConfig& config)
+std::uint64_t SerialSession::open(std::unique_ptr<testtools::ISerialTransport> transport,
+                                  const testtools::SerialConfig& config)
 {
     close();
     if (!transport) {
@@ -39,7 +39,7 @@ std::uint64_t SerialSession::open(std::unique_ptr<serialdemo::ISerialTransport> 
     }
 
     const auto sharedTransport =
-        std::shared_ptr<serialdemo::ISerialTransport>(std::move(transport));
+        std::shared_ptr<testtools::ISerialTransport>(std::move(transport));
     std::uint64_t currentGeneration = 0;
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -50,17 +50,17 @@ std::uint64_t SerialSession::open(std::unique_ptr<serialdemo::ISerialTransport> 
         closing_ = false;
     }
 
-    sharedTransport->setDataCallback([this, currentGeneration](const serialdemo::ByteBuffer& data) {
+    sharedTransport->setDataCallback([this, currentGeneration](const testtools::ByteBuffer& data) {
         handleData(currentGeneration, data);
     });
     sharedTransport->setStatusCallback(
-        [this, currentGeneration](serialdemo::TransportState state, const std::string& message) {
+        [this, currentGeneration](testtools::TransportState state, const std::string& message) {
             handleStatus(currentGeneration, state, message);
         });
 
     sender_.start(
-        [this, currentGeneration](const serialdemo::ByteBuffer& data) {
-            std::shared_ptr<serialdemo::ISerialTransport> currentTransport;
+        [this, currentGeneration](const testtools::ByteBuffer& data) {
+            std::shared_ptr<testtools::ISerialTransport> currentTransport;
             {
                 std::lock_guard<std::mutex> lock(mutex_);
                 if (generation_ != currentGeneration) {
@@ -71,7 +71,7 @@ std::uint64_t SerialSession::open(std::unique_ptr<serialdemo::ISerialTransport> 
             return currentTransport && currentTransport->isOpen() && currentTransport->write(data);
         },
         [this,
-         currentGeneration](const serialdemo::ByteBuffer& data, std::uint64_t tag, bool succeeded) {
+         currentGeneration](const testtools::ByteBuffer& data, std::uint64_t tag, bool succeeded) {
             handleSendCompletion(currentGeneration, data, tag, succeeded);
         });
 
@@ -85,7 +85,7 @@ std::uint64_t SerialSession::closeAsync(CloseCallback callback)
         closeWorker_.join();
     }
 
-    std::shared_ptr<serialdemo::ISerialTransport> transport;
+    std::shared_ptr<testtools::ISerialTransport> transport;
     std::uint64_t closeGeneration = 0;
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -134,7 +134,7 @@ void SerialSession::close()
         closeWorker_.join();
     }
 
-    std::shared_ptr<serialdemo::ISerialTransport> transport;
+    std::shared_ptr<testtools::ISerialTransport> transport;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!transport_) {
@@ -161,12 +161,12 @@ void SerialSession::close()
     }
 }
 
-bool SerialSession::send(serialdemo::ByteBuffer data, std::uint64_t tag)
+bool SerialSession::send(testtools::ByteBuffer data, std::uint64_t tag)
 {
     if (data.empty()) {
         return true;
     }
-    std::shared_ptr<serialdemo::ISerialTransport> transport;
+    std::shared_ptr<testtools::ISerialTransport> transport;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         transport = transport_;
@@ -177,9 +177,9 @@ bool SerialSession::send(serialdemo::ByteBuffer data, std::uint64_t tag)
     return sender_.enqueue(std::move(data), tag);
 }
 
-bool SerialSession::supportsControlLine(serialdemo::SerialControlLine line) const
+bool SerialSession::supportsControlLine(testtools::SerialControlLine line) const
 {
-    std::shared_ptr<serialdemo::ISerialTransport> transport;
+    std::shared_ptr<testtools::ISerialTransport> transport;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (state_ != SerialSessionState::Connected || closing_) return false;
@@ -189,10 +189,10 @@ bool SerialSession::supportsControlLine(serialdemo::SerialControlLine line) cons
 }
 
 bool SerialSession::setControlLine(std::uint64_t expectedGeneration,
-                                   serialdemo::SerialControlLine line, bool enabled,
+                                   testtools::SerialControlLine line, bool enabled,
                                    std::string &error)
 {
-    std::shared_ptr<serialdemo::ISerialTransport> transport;
+    std::shared_ptr<testtools::ISerialTransport> transport;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         // 排队到达的点击操作绝不能作用到随后替换的新连接代次上。
@@ -211,10 +211,10 @@ bool SerialSession::setControlLine(std::uint64_t expectedGeneration,
     return transport->setControlLine(line, enabled, error);
 }
 
-bool SerialSession::startScheduledSend(serialdemo::ByteBuffer payload,
-                                       const serialdemo::PeriodicSendConfig& config,
+bool SerialSession::startScheduledSend(testtools::ByteBuffer payload,
+                                       const testtools::PeriodicSendConfig& config,
                                        std::uint64_t tag,
-                                       serialdemo::PeriodicSendPlan::Clock::time_point now)
+                                       testtools::PeriodicSendPlan::Clock::time_point now)
 {
     if (payload.empty() || !isOpen()) {
         return false;
@@ -242,9 +242,9 @@ ScheduledSendSnapshot SerialSession::stopScheduledSend()
 }
 
 ScheduledSendTick
-SerialSession::processScheduledSend(serialdemo::PeriodicSendPlan::Clock::time_point now)
+SerialSession::processScheduledSend(testtools::PeriodicSendPlan::Clock::time_point now)
 {
-    serialdemo::ByteBuffer payload;
+    testtools::ByteBuffer payload;
     std::uint64_t tag = 0;
     std::uint64_t currentGeneration = 0;
     {
@@ -278,7 +278,7 @@ SerialSession::processScheduledSend(serialdemo::PeriodicSendPlan::Clock::time_po
 
 SerialSessionSnapshot SerialSession::snapshot() const
 {
-    std::shared_ptr<serialdemo::ISerialTransport> transport;
+    std::shared_ptr<testtools::ISerialTransport> transport;
     SerialSessionSnapshot result;
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -318,7 +318,7 @@ bool SerialSession::isActive() const
 
 bool SerialSession::isOpen() const
 {
-    std::shared_ptr<serialdemo::ISerialTransport> transport;
+    std::shared_ptr<testtools::ISerialTransport> transport;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         transport = transport_;
@@ -351,7 +351,7 @@ void SerialSession::stopRecording(const std::string& reason, std::uint64_t expec
 
 SerialRecordSnapshot SerialSession::recordingSnapshot() const { return recorder_.snapshot(); }
 
-void SerialSession::handleData(std::uint64_t generation, const serialdemo::ByteBuffer& data)
+void SerialSession::handleData(std::uint64_t generation, const testtools::ByteBuffer& data)
 {
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -372,7 +372,7 @@ void SerialSession::handleData(std::uint64_t generation, const serialdemo::ByteB
 }
 
 void SerialSession::handleStatus(std::uint64_t generation,
-                                 serialdemo::TransportState state,
+                                 testtools::TransportState state,
                                  const std::string& message)
 {
     {
@@ -380,9 +380,9 @@ void SerialSession::handleStatus(std::uint64_t generation,
         if (generation_ != generation) {
             return;
         }
-        if (state == serialdemo::TransportState::Connected) {
+        if (state == testtools::TransportState::Connected) {
             state_ = SerialSessionState::Connected;
-        } else if (state != serialdemo::TransportState::Progress) {
+        } else if (state != testtools::TransportState::Progress) {
             recorder_.stop("串口断开");
             state_ = SerialSessionState::Disconnected;
             scheduledSendPlan_.stop();
@@ -400,7 +400,7 @@ void SerialSession::handleStatus(std::uint64_t generation,
 }
 
 void SerialSession::handleSendCompletion(std::uint64_t generation,
-                                         const serialdemo::ByteBuffer& data,
+                                         const testtools::ByteBuffer& data,
                                          std::uint64_t tag,
                                          bool succeeded)
 {

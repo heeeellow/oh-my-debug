@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string>
 
-namespace serialdemo {
+namespace testtools {
 
 // 命令行自检与实机/板端冒烟测试入口集合。
 int runSelfTest();
@@ -16,4 +16,4 @@ int runAgentDeploymentSmokeTest(const std::string &serial,
 int runAgentReconnectSmokeTest(const std::string &serial);
 int runAgentAtSmokeTest(const std::string &serial, const std::string &endpoint);
 
-} // namespace serialdemo
+} // namespace testtools

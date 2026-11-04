@@ -1,4 +1,5 @@
 #include "ui/icons.h"
+#include "app_info.h"
 #include "main_window.h"
 
 #include "application/agent/adb_agent_deployment.h"
@@ -50,7 +51,7 @@ QString nonEmptyOr(const std::string& text, const QString& fallback = {})
     return text.empty() ? fallback : fromUtf8(text);
 }
 
-QString deviceDisplayName(const serialdemo::AdbDevice& device)
+QString deviceDisplayName(const testtools::AdbDevice& device)
 {
     const QString description = fromUtf8(device.description);
     const QStringList fields = description.split(QLatin1Char(' '), Qt::SkipEmptyParts);
@@ -273,7 +274,7 @@ bool MainWindow::setSerialModeForDiagnostics(const QString& modeName)
 
 void MainWindow::buildUi()
 {
-    setWindowTitle(QStringLiteral("TestTools"));
+    setWindowTitle(QStringLiteral(OMD_APP_NAME));
     resize(1440, 900);
     setMinimumSize(1120, 720);
     setStyleSheet(testtools::ui::applicationStyleSheet());
@@ -343,7 +344,7 @@ QWidget* MainWindow::buildTopBar()
 
     auto* brand = new QHBoxLayout;
     brand->setSpacing(8);
-    auto* title = new QLabel(QStringLiteral("TestTools"), bar);
+    auto* title = new QLabel(QStringLiteral(OMD_APP_NAME), bar);
     title->setObjectName(QStringLiteral("appTitle"));
     auto* subtitle = new QLabel(QStringLiteral("调试工作台"), bar);
     subtitle->setObjectName(QStringLiteral("appSubtitle"));
@@ -534,7 +535,7 @@ QWidget* MainWindow::buildMirrorPage()
     shellLayout->addWidget(adbShellIdentity_);
     layout->addWidget(shell);
     maintenancePanel_ = new DeviceMaintenancePanel(left,maintenanceService_);
-    maintenancePanel_->conflicts = [this](const serialdemo::AdbDevice& device){return maintenanceConflicts(device);};
+    maintenancePanel_->conflicts = [this](const testtools::AdbDevice& device){return maintenanceConflicts(device);};
     connect(maintenancePanel_,&DeviceMaintenancePanel::activityChanged,this,&MainWindow::setActivity);
     connect(maintenancePanel_,&DeviceMaintenancePanel::taskChanged,this,&MainWindow::updateMaintenanceState);
     connect(maintenancePanel_,&DeviceMaintenancePanel::shutdownFinished,this,[this]{maintenanceShutdownComplete_=true;});
@@ -1475,9 +1476,9 @@ void MainWindow::applyDeviceScan(testtools::DeviceScanResult result, bool automa
     updateDeviceControls();
 }
 
-serialdemo::AdbDevice MainWindow::selectedDevice() const
+testtools::AdbDevice MainWindow::selectedDevice() const
 {
-    serialdemo::AdbDevice device;
+    testtools::AdbDevice device;
     if (!deviceCombo_ || deviceCombo_->currentData().toString().isEmpty()) {
         return device;
     }
@@ -1718,7 +1719,7 @@ void MainWindow::updateDeviceControls()
     deviceCombo_->setEnabled(enabled && hasDevice);
 }
 
-testtools::MaintenanceConflicts MainWindow::maintenanceConflicts(const serialdemo::AdbDevice& device) const
+testtools::MaintenanceConflicts MainWindow::maintenanceConflicts(const testtools::AdbDevice& device) const
 {
     testtools::MaintenanceConflicts result;
     if(fileWorkspace_) {

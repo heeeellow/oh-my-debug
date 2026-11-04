@@ -1,8 +1,0 @@
-build
-bin
-
-# nodejs
-node_modules
-
-# rust
-target

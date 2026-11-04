@@ -9,7 +9,7 @@ namespace testtools {
 // 双端验证和可靠性压测各自拥有状态；普通计划发送仍由 SerialSession 管理。
 class SerialLinkVerifier {
   public:
-    using Clock = serialdemo::PeriodicSendPlan::Clock;
+    using Clock = testtools::PeriodicSendPlan::Clock;
     struct ProbeStatus {
         bool running = false;
         bool aToBPassed = false;
@@ -22,16 +22,16 @@ class SerialLinkVerifier {
         int receiver = 1;
         std::size_t payloadSize = 256;
         std::uint32_t nextSequence = 0;
-        serialdemo::PeriodicSendPlan sendPlan;
-        serialdemo::IntegrityStreamVerifier verifier;
+        testtools::PeriodicSendPlan sendPlan;
+        testtools::IntegrityStreamVerifier verifier;
     };
     struct StressFrame {
         int transmitter = 0;
-        serialdemo::ByteBuffer bytes;
+        testtools::ByteBuffer bytes;
     };
 
-    std::array<serialdemo::ByteBuffer, 2>
-    startProbe(const std::string& token, const std::array<serialdemo::LineEnding, 2>& endings);
+    std::array<testtools::ByteBuffer, 2>
+    startProbe(const std::string& token, const std::array<testtools::LineEnding, 2>& endings);
     const ProbeStatus& probe() const
     {
         return probe_;
@@ -39,17 +39,17 @@ class SerialLinkVerifier {
     bool expireProbe(std::uint64_t generation);
     void stopProbe();
     // 接收状态变化时返回 true，供界面更新双向结果；压测字节不进入普通日志。
-    bool receive(int receiver, const serialdemo::ByteBuffer& bytes);
+    bool receive(int receiver, const testtools::ByteBuffer& bytes);
 
     static int stressInterval(int direction,
                               std::size_t payloadSize,
                               int requestedIntervalMs,
-                              const std::array<serialdemo::SerialConfig, 2>& configs);
+                              const std::array<testtools::SerialConfig, 2>& configs);
     int startStress(int direction,
                     std::uint64_t frameCount,
                     std::size_t payloadSize,
                     int requestedIntervalMs,
-                    const std::array<serialdemo::SerialConfig, 2>& configs,
+                    const std::array<testtools::SerialConfig, 2>& configs,
                     Clock::time_point now = Clock::now());
     bool stressRunning() const
     {

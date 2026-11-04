@@ -86,7 +86,7 @@ class MainWindow final : public QMainWindow {
     void prepareForShutdown();
     void applyDeviceScan(testtools::DeviceScanResult result, bool automatic);
     void applySelectedDevice();
-    serialdemo::AdbDevice selectedDevice() const;
+    testtools::AdbDevice selectedDevice() const;
     void showPage(int pageIndex);
     void setAdbStatus(const QString& text, StatusTone tone = StatusTone::Good);
     void setActivity(const QString& message);
@@ -94,7 +94,7 @@ class MainWindow final : public QMainWindow {
     bool recordingsPending() const;
     void updateDeviceControls();
     void updateMaintenanceState();
-    testtools::MaintenanceConflicts maintenanceConflicts(const serialdemo::AdbDevice&) const;
+    testtools::MaintenanceConflicts maintenanceConflicts(const testtools::AdbDevice&) const;
 
     QComboBox* deviceCombo_ = nullptr;
     QLabel* adbStatusLabel_ = nullptr;
@@ -160,7 +160,7 @@ class MainWindow final : public QMainWindow {
     testtools::BackgroundTaskGroup terminalTasks_;
     QString agentSummary_ = QStringLiteral("未连接");
     QString lastDeviceScanSignature_;
-    serialdemo::AdbDevice appliedDevice_;
+    testtools::AdbDevice appliedDevice_;
     std::string agentAdbSerial_;
     std::uint16_t agentForwardPort_ = 0;
     std::uint64_t agentGeneration_ = 0;

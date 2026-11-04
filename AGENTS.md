@@ -1,4 +1,4 @@
-# TestTools 开发接手规则
+# Oh My Debug 开发接手规则
 
 本文是开发者和自动化编码工具进入仓库时的首要入口。规则保持工具无关；当前实现状态以
 [`docs/STATUS.md`](docs/STATUS.md) 为准，不能根据历史日志猜测。

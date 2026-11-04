@@ -17,7 +17,7 @@
 #undef protected
 #undef private
 
-class Stream final : public serialdemo::ISerialTransport {
+class Stream final : public testtools::ISerialTransport {
   public:
     std::atomic<bool> open_{false};
     std::atomic<int> writes{0};
@@ -28,10 +28,10 @@ class Stream final : public serialdemo::ISerialTransport {
         return std::chrono::duration_cast<std::chrono::microseconds>(
                    std::chrono::steady_clock::now().time_since_epoch()).count();
     }
-    void open(const serialdemo::SerialConfig&) override
+    void open(const testtools::SerialConfig&) override
     {
         open_ = true;
-        publishStatus(serialdemo::TransportState::Connected, "replay");
+        publishStatus(testtools::TransportState::Connected, "replay");
     }
     void close() override
     {
@@ -41,7 +41,7 @@ class Stream final : public serialdemo::ISerialTransport {
     {
         return open_;
     }
-    bool write(const serialdemo::ByteBuffer& bytes) override
+    bool write(const testtools::ByteBuffer& bytes) override
     {
         writtenAtUs = nowUs();
         ++writes;
@@ -99,7 +99,7 @@ int main(int argc, char** argv)
         auto* grid = terminal->terminalGrid_;
         auto owned = std::make_unique<Stream>();
         auto* stream = owned.get();
-        serialdemo::SerialConfig config;
+        testtools::SerialConfig config;
         config.endpoint = "REPLAY";
         terminal->channels_[0].session.open(std::move(owned), config);
         QTest::qWait(100);

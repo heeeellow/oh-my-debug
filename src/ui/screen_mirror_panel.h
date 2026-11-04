@@ -18,7 +18,7 @@ public:
     explicit ScreenMirrorPanel(QWidget* parent = nullptr,
         std::shared_ptr<testtools::ScreenMirrorService> service = {}, bool embedded = false);
     ~ScreenMirrorPanel() override;
-    void setDevice(const serialdemo::AdbDevice& device);
+    void setDevice(const testtools::AdbDevice& device);
     void setMaintenanceDevice(const std::string& serial);
     bool busyForDevice(const std::string& serial) const;
     void startCurrentDevice();
@@ -34,7 +34,7 @@ private:
     void submit(const QString& activity, std::function<testtools::MirrorOperationResult()> operation);
     std::shared_ptr<testtools::ScreenMirrorService> service_;
     testtools::BackgroundTaskGroup tasks_;
-    serialdemo::AdbDevice selected_;
+    testtools::AdbDevice selected_;
     testtools::ScreenMirrorSnapshot state_;
     QLabel* target_ = nullptr;
     QLabel* status_ = nullptr;

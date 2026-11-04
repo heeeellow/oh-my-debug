@@ -82,7 +82,7 @@ SerialTerminalWorkspace::SerialTerminalWorkspace(
     // SerialSession records original bytes before this callback, independently of display loss.
     const auto engine = terminalEngine_;
     c.session.setDataCallback(
-        [engine](std::uint64_t generation, const serialdemo::ByteBuffer& bytes) {
+        [engine](std::uint64_t generation, const testtools::ByteBuffer& bytes) {
             engine->receive(generation, bytes);
         });
     applyAppearance();
@@ -158,7 +158,7 @@ void SerialTerminalWorkspace::renderReceiveLog(int)
         updateSearchMatches(0);
 }
 void SerialTerminalWorkspace::applyLogAppendResult(int, const testtools::SerialLogAppendResult&) {}
-void SerialTerminalWorkspace::appendReceived(int, const serialdemo::ByteBuffer& b)
+void SerialTerminalWorkspace::appendReceived(int, const testtools::ByteBuffer& b)
 {
     terminalEngine_->receive(channels_[0].session.generation(), b);
 }

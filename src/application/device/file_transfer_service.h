@@ -6,7 +6,7 @@
 namespace testtools {
 
 struct FileTransferRequest {
-    serialdemo::AdbDevice device;
+    testtools::AdbDevice device;
     TransferDirection direction = TransferDirection::Download;
     std::filesystem::path localDirectory;
     std::string remoteDirectory;
@@ -22,7 +22,7 @@ struct FileTransferRecord {
 struct FileManagementRequest {
     FileOperation operation = FileOperation::CreateFolder;
     bool remote = false;
-    serialdemo::AdbDevice device;
+    testtools::AdbDevice device;
     std::string parent;
     std::vector<FileEntry> entries;
     std::string newName;
@@ -49,7 +49,7 @@ struct FileTransferSnapshot {
 class FileTransferService {
   public:
     explicit FileTransferService(std::shared_ptr<IFileTransferBackend> backend);
-    FileListing listRemote(const serialdemo::AdbDevice& device,
+    FileListing listRemote(const testtools::AdbDevice& device,
                            const std::string& directory,
                            const std::atomic<bool>& cancel) const;
     static FileListing listLocal(const std::filesystem::path& directory,

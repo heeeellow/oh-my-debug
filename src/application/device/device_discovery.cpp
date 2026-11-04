@@ -7,7 +7,7 @@ namespace testtools {
 DeviceScanResult DeviceDiscovery::scanAdbDevices() const
 {
     DeviceScanResult result;
-    serialdemo::AdbTransport transport;
+    testtools::AdbTransport transport;
     result.devices = transport.availableDevices(result.error);
     return result;
 }

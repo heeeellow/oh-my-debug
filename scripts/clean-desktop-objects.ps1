@@ -14,7 +14,7 @@ if (-not $objectDirectory.StartsWith($intermediateRoot + [System.IO.Path]::Direc
 }
 if (-not (Test-Path -LiteralPath $objectDirectory -PathType Container)) { return }
 
-[xml]$project = Get-Content -LiteralPath (Join-Path $repositoryRoot 'TestTools.vcxproj') -Raw
+[xml]$project = Get-Content -LiteralPath (Join-Path $repositoryRoot 'OhMyDebug.vcxproj') -Raw
 $expected = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 foreach ($item in $project.SelectNodes('//*[@Include]')) {
     if ($item.LocalName -notin @('ClCompile', 'QtMoc', 'QtRcc')) { continue }

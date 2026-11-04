@@ -25,7 +25,7 @@ struct MirrorOperationResult {
 class ScreenMirrorService {
 public:
     explicit ScreenMirrorService(std::unique_ptr<IScreenMirrorBackend> backend);
-    MirrorOperationResult start(const serialdemo::AdbDevice& device);
+    MirrorOperationResult start(const testtools::AdbDevice& device);
     void stop();
     void requestShutdown() noexcept;
     ScreenMirrorSnapshot poll();

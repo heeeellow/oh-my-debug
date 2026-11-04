@@ -30,7 +30,7 @@ void serveClient(asio::ip::tcp::socket socket,
             return;
         }
 
-        serialdemo::ByteBuffer chunk(buffer.begin(), buffer.begin()
+        testtools::ByteBuffer chunk(buffer.begin(), buffer.begin()
                                      + static_cast<std::ptrdiff_t>(received));
         std::vector<testtools::AgentFrame> frames;
         std::string decodeError;

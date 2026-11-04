@@ -4,7 +4,7 @@
 #include <array>
 #include <limits>
 
-namespace serialdemo {
+namespace testtools {
 
 namespace {
 
@@ -315,4 +315,4 @@ StressDirectionReport evaluateStressDirection(const PeriodicSendPlan &sendPlan,
     return report;
 }
 
-} // namespace serialdemo
+} // namespace testtools

@@ -89,7 +89,7 @@ struct SerialLogEntry {
     SerialLogDirection direction = SerialLogDirection::Rx;
     std::int64_t timestampMs = 0;
     std::string timestampText;
-    serialdemo::ByteBuffer bytes;
+    testtools::ByteBuffer bytes;
 };
 
 struct SerialLogAppendResult {
@@ -102,10 +102,10 @@ public:
     explicit SerialLogBuffer(std::size_t maxEntries = 2000,
                              std::size_t maxBytes = 512 * 1024);
 
-    SerialLogAppendResult appendTx(const serialdemo::ByteBuffer &data,
+    SerialLogAppendResult appendTx(const testtools::ByteBuffer &data,
                                    std::int64_t timestampMs,
                                    std::string timestampText);
-    SerialLogAppendResult appendRx(const serialdemo::ByteBuffer &data,
+    SerialLogAppendResult appendRx(const testtools::ByteBuffer &data,
                                    std::int64_t timestampMs,
                                    std::string timestampText);
     SerialLogAppendResult appendNotice(const std::string &text,

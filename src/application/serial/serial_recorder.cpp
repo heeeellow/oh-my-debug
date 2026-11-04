@@ -64,7 +64,7 @@ std::string prefix(std::int64_t milliseconds, bool transmitted)
 }
 
 // 只保留不足四字节的 UTF-8 尾部；非法字节和控制字节可读转义，正文不等待换行。
-std::string decode(const serialdemo::ByteBuffer& bytes, std::string& carry, bool finish = false)
+std::string decode(const testtools::ByteBuffer& bytes, std::string& carry, bool finish = false)
 {
     std::string input = std::move(carry);
     carry.clear();
@@ -122,7 +122,7 @@ std::filesystem::path SerialRecorder::metadataPath(const std::filesystem::path& 
 }
 
 bool SerialRecorder::start(const SerialRecordOptions& options, std::uint64_t generation,
-                           const serialdemo::SerialConfig& config, std::string& error)
+                           const testtools::SerialConfig& config, std::string& error)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     error.clear();
@@ -153,7 +153,7 @@ bool SerialRecorder::start(const SerialRecordOptions& options, std::uint64_t gen
     return true;
 }
 
-void SerialRecorder::push(std::uint64_t generation, bool transmitted, const serialdemo::ByteBuffer& data)
+void SerialRecorder::push(std::uint64_t generation, bool transmitted, const testtools::ByteBuffer& data)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!status_.busy || stopRequested_ || generation != status_.generation || data.empty() ||

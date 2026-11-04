@@ -6,7 +6,7 @@ namespace testtools {
 
 namespace {
 
-std::uint32_t readU32(const serialdemo::ByteBuffer &data)
+std::uint32_t readU32(const testtools::ByteBuffer &data)
 {
     return (static_cast<std::uint32_t>(data[0]) << 24)
            | (static_cast<std::uint32_t>(data[1]) << 16)
@@ -16,13 +16,13 @@ std::uint32_t readU32(const serialdemo::ByteBuffer &data)
 
 } // namespace
 
-serialdemo::ByteBuffer encodeAgentFrame(const AgentFrame &frame)
+testtools::ByteBuffer encodeAgentFrame(const AgentFrame &frame)
 {
     if (frame.payload.size() > AgentFrameDecoder::MaximumPayloadSize) {
         return {};
     }
     const std::uint32_t length = static_cast<std::uint32_t>(frame.payload.size() + 1);
-    serialdemo::ByteBuffer encoded;
+    testtools::ByteBuffer encoded;
     encoded.reserve(static_cast<std::size_t>(length) + 4);
     encoded.push_back(static_cast<std::uint8_t>((length >> 24) & 0xFF));
     encoded.push_back(static_cast<std::uint8_t>((length >> 16) & 0xFF));
@@ -33,7 +33,7 @@ serialdemo::ByteBuffer encodeAgentFrame(const AgentFrame &frame)
     return encoded;
 }
 
-bool AgentFrameDecoder::push(const serialdemo::ByteBuffer &data, std::vector<AgentFrame> &frames,
+bool AgentFrameDecoder::push(const testtools::ByteBuffer &data, std::vector<AgentFrame> &frames,
                              std::string &error)
 {
     frames.clear();

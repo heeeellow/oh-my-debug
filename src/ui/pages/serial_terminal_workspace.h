@@ -30,7 +30,7 @@ class SerialTerminalWorkspace final : public SerialEndpointWorkspace {
     bool historyTruncated(int index) const override;
     void renderReceiveLog(int index) override;
     void applyLogAppendResult(int index, const testtools::SerialLogAppendResult& result) override;
-    void appendReceived(int index, const serialdemo::ByteBuffer& data) override;
+    void appendReceived(int index, const testtools::ByteBuffer& data) override;
     void focusTerminal() override;
     QString receiveText(int index) const override;
     void followOutput(int index) override;

@@ -8,7 +8,7 @@
 #include <string>
 #include <unordered_set>
 
-namespace serialdemo {
+namespace testtools {
 
 // 周期发送计划配置，用于定时发送或固定帧数压测。
 struct PeriodicSendConfig {
@@ -104,4 +104,4 @@ bool appendAndMatchFrame(std::string &buffer,
 StressDirectionReport evaluateStressDirection(const PeriodicSendPlan &sendPlan,
                                               const IntegrityStreamVerifier &verifier);
 
-} // namespace serialdemo
+} // namespace testtools

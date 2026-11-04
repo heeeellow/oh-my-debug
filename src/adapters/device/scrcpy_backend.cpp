@@ -106,7 +106,7 @@ public:
         auto environment = childEnvironment(std::wstring(adbPath, adbSize), program.parent_path());
         const std::vector<std::string> arguments = {"--serial=" + serial, "--window-title=TestTools - " + serial,
             "--no-audio", "--max-size=1920", "--max-fps=60", "--no-clipboard-autosync", "--no-terminal-title"};
-        auto command = wide(serialdemo::ProcessRunner::buildCommandLine(program.u8string(), arguments));
+        auto command = wide(testtools::ProcessRunner::buildCommandLine(program.u8string(), arguments));
         SECURITY_ATTRIBUTES security{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
         Handle read, write, input;
         if (!CreatePipe(&read.value, &write.value, &security, 0) || !SetHandleInformation(read.value, HANDLE_FLAG_INHERIT, 0)) {
@@ -231,7 +231,7 @@ public:
 private:
     std::string output() const { std::lock_guard<std::mutex> lock(logMutex_); return log_; }
     std::string requested_, serial_;
-    serialdemo::AdbTransport adb_;
+    testtools::AdbTransport adb_;
     HANDLE process_ = nullptr, readerHandle_ = nullptr;
     DWORD pid_ = 0;
     std::thread reader_;

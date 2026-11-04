@@ -9,7 +9,7 @@
 #include <thread>
 
 using namespace testtools;
-using serialdemo::ByteBuffer;
+using testtools::ByteBuffer;
 namespace {
 void check(bool result, const char* message) { if (!result) throw std::runtime_error(message); }
 bool await(const std::function<bool()>& predicate)
@@ -24,16 +24,16 @@ std::string read(const std::filesystem::path& path)
     std::ifstream in(path, std::ios::binary);
     return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
 }
-class Transport final : public serialdemo::ISerialTransport {
+class Transport final : public testtools::ISerialTransport {
   public:
     std::atomic<bool> opened{false}, failWrites{false};
-    void open(const serialdemo::SerialConfig&) override
-    { opened = true; publishStatus(serialdemo::TransportState::Connected, "fixture"); }
+    void open(const testtools::SerialConfig&) override
+    { opened = true; publishStatus(testtools::TransportState::Connected, "fixture"); }
     void close() override { opened = false; }
     bool write(const ByteBuffer&) override { return opened && !failWrites; }
     bool isOpen() const override { return opened; }
     void receive(const ByteBuffer& data) { publishData(data); }
-    void unplug() { opened = false; publishStatus(serialdemo::TransportState::Error, "unplug"); }
+    void unplug() { opened = false; publishStatus(testtools::TransportState::Error, "unplug"); }
 };
 struct SinkState {
     std::mutex mutex;
@@ -97,7 +97,7 @@ void testFiles(const std::filesystem::path& root)
     std::string error;
     check(!session.startRecording(options, 0, error), "requires open session");
     auto owned = std::make_unique<Transport>(); auto* transport = owned.get();
-    serialdemo::SerialConfig config; config.endpoint = "COM_FIXTURE";
+    testtools::SerialConfig config; config.endpoint = "COM_FIXTURE";
     const auto generation = session.open(std::move(owned), config);
     check(session.startRecording(options, generation, error), "start raw");
     // 不消费界面回调，验证超过显示缓冲容量的数据仍按原始顺序落盘。

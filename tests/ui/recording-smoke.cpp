@@ -1,3 +1,4 @@
+#include "application/serial/serial_preferences.h"
 #include "application/serial/serial_session.h"
 #include "application/serial/serial_receive_queue.h"
 #include "application/serial/serial_terminal.h"
@@ -31,13 +32,13 @@ bool await(const std::function<bool()>& predicate, int timeout = 6000)
     while (timer.elapsed() < timeout) { if (predicate()) return true; QTest::qWait(5); }
     return predicate();
 }
-class Transport final : public serialdemo::ISerialTransport {
+class Transport final : public testtools::ISerialTransport {
   public:
     std::atomic<bool> opened{false};
-    void open(const serialdemo::SerialConfig&) override
-    { opened = true; publishStatus(serialdemo::TransportState::Connected, "已连接（离线夹具）"); }
+    void open(const testtools::SerialConfig&) override
+    { opened = true; publishStatus(testtools::TransportState::Connected, "已连接（离线夹具）"); }
     void close() override { opened = false; }
-    bool write(const serialdemo::ByteBuffer&) override { return opened; }
+    bool write(const testtools::ByteBuffer&) override { return opened; }
     bool isOpen() const override { return opened; }
     void receive(const std::string& text) { publishData({text.begin(), text.end()}); }
 };
@@ -101,7 +102,7 @@ int main(int argc, char** argv)
         auto& channel = normal->channels_[1];
         channel.portCombo->setEditText("COM_FIXTURE");
         auto owned = std::make_unique<Transport>(); auto* transport = owned.get();
-        serialdemo::SerialConfig config; config.endpoint = "COM_FIXTURE";
+        testtools::SerialConfig config; config.endpoint = "COM_FIXTURE";
         const auto generation = channel.session.open(std::move(owned), config);
         check(await([&] { return channel.recordButton->isEnabled(); }), "record enabled after connection");
         const auto rawPath = std::filesystem::path(storage.path().toStdWString()) / L"连续录制.bin";
@@ -203,7 +204,7 @@ int main(int argc, char** argv)
 
         options.path = std::filesystem::path(storage.path().toStdWString()) / L"dual.bin";
         check(channel.session.startRecording(options, generation, error), "dual record");
-        serialdemo::PeriodicSendConfig scheduled;
+        testtools::PeriodicSendConfig scheduled;
         check(channel.session.startScheduledSend({'Q'}, scheduled), "scheduled task for aggregation");
         auto tasks = normal->activeTasks();
         check(tasks.size() == 2, "record and scheduled send independently counted");

@@ -112,7 +112,7 @@ int wmain(int argc, wchar_t** argv)
             return 0;
         }
         if (_wgetenv(L"TESTTOOLS_FILE_LEGACY_LISTING")) args[4] = "find() { return 1; }\n" + args[4];
-        auto result = serialdemo::ProcessRunner::run(
+        auto result = testtools::ProcessRunner::run(
             "C:/Program Files/Git/bin/bash.exe", {"-c", args[4]}, std::chrono::seconds(15));
         std::cout.write(result.standardOutput.data(), result.standardOutput.size());
         std::cerr.write(result.standardError.data(), result.standardError.size());

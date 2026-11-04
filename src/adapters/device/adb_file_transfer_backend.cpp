@@ -243,9 +243,9 @@ done)TTFS";
     }
 
   private:
-    serialdemo::AdbTransport adb_;
+    testtools::AdbTransport adb_;
 
-    serialdemo::ManagedCommandResult
+    testtools::ManagedCommandResult
     run(const std::string& serial,
         std::vector<std::string> arguments,
         const std::atomic<bool>& cancel,
@@ -253,11 +253,11 @@ done)TTFS";
         std::chrono::milliseconds timeout = std::chrono::minutes(10)) const
     {
         arguments.insert(arguments.begin(), {"-s", serial});
-        return serialdemo::ProcessRunner::runManaged(
+        return testtools::ProcessRunner::runManaged(
             adb_.program(), arguments, timeout, cancel, progress);
     }
 
-    static bool success(const serialdemo::ManagedCommandResult& command, std::string& error)
+    static bool success(const testtools::ManagedCommandResult& command, std::string& error)
     {
         if (command.cancelled)
             error = "已取消";
@@ -276,7 +276,7 @@ done)TTFS";
         return false;
     }
 
-    static FileTransferResult failure(const serialdemo::ManagedCommandResult& command)
+    static FileTransferResult failure(const testtools::ManagedCommandResult& command)
     {
         std::string error;
         success(command, error);

@@ -25,7 +25,7 @@ SerialBridge::~SerialBridge()
     stop();
 }
 
-bool SerialBridge::start(const serialdemo::SerialConfig &, std::uint16_t &,
+bool SerialBridge::start(const testtools::SerialConfig &, std::uint16_t &,
                          std::string &, int &, bool &, std::string &error)
 {
     error = "Managed serial streams are only available on Linux and Android agents";
@@ -182,7 +182,7 @@ void readEffectiveBaud(int descriptor, int requested, int &effective, bool &appl
     }
 }
 
-bool configureSerial(int descriptor, const serialdemo::SerialConfig &config,
+bool configureSerial(int descriptor, const testtools::SerialConfig &config,
                      int &effectiveBaudRate, bool &baudRateApplied, std::string &error)
 {
     termios original{};
@@ -203,29 +203,29 @@ bool configureSerial(int descriptor, const serialdemo::SerialConfig &config,
         error = "data_bits must be between 5 and 8";
         return false;
     }
-    if (config.parity == serialdemo::Parity::None) {
+    if (config.parity == testtools::Parity::None) {
         settings.c_cflag &= ~PARENB;
     } else {
         settings.c_cflag |= PARENB;
-        if (config.parity == serialdemo::Parity::Odd) {
+        if (config.parity == testtools::Parity::Odd) {
             settings.c_cflag |= PARODD;
         } else {
             settings.c_cflag &= ~PARODD;
         }
     }
-    if (config.stopBits == serialdemo::StopBits::Two) {
+    if (config.stopBits == testtools::StopBits::Two) {
         settings.c_cflag |= CSTOPB;
     } else {
         settings.c_cflag &= ~CSTOPB;
     }
 #ifdef CRTSCTS
-    if (config.flowControl == serialdemo::FlowControl::Hardware) {
+    if (config.flowControl == testtools::FlowControl::Hardware) {
         settings.c_cflag |= CRTSCTS;
     } else {
         settings.c_cflag &= ~CRTSCTS;
     }
 #endif
-    if (config.flowControl == serialdemo::FlowControl::Software) {
+    if (config.flowControl == testtools::FlowControl::Software) {
         settings.c_iflag |= IXON | IXOFF;
     } else {
         settings.c_iflag &= ~(IXON | IXOFF);
@@ -314,7 +314,7 @@ SerialBridge::~SerialBridge()
     stop();
 }
 
-bool SerialBridge::start(const serialdemo::SerialConfig &config, std::uint16_t &port,
+bool SerialBridge::start(const testtools::SerialConfig &config, std::uint16_t &port,
                          std::string &sessionId, int &effectiveBaudRate,
                          bool &baudRateApplied, std::string &error)
 {

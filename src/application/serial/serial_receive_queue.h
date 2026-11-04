@@ -9,7 +9,7 @@ namespace testtools {
 
 struct SerialReceiveBatch {
     std::uint64_t generation = 0;
-    std::vector<serialdemo::ByteBuffer> chunks;
+    std::vector<testtools::ByteBuffer> chunks;
     std::uint64_t droppedBytes = 0, droppedChunks = 0;
     bool more = false;
 };
@@ -19,7 +19,7 @@ class SerialReceiveQueue final {
   public:
     explicit SerialReceiveQueue(std::size_t maxBytes = 1024 * 1024,
                                 std::size_t maxChunks = 2048);
-    bool push(std::uint64_t generation, const serialdemo::ByteBuffer& data);
+    bool push(std::uint64_t generation, const testtools::ByteBuffer& data);
     SerialReceiveBatch take(std::size_t maxBytes = 128 * 1024, std::size_t maxChunks = 128);
   private:
     std::mutex mutex_;
@@ -27,7 +27,7 @@ class SerialReceiveQueue final {
     std::size_t bytes_ = 0;
     std::uint64_t generation_ = 0, droppedBytes_ = 0, droppedChunks_ = 0;
     bool pending_ = false;
-    std::deque<serialdemo::ByteBuffer> queue_;
+    std::deque<testtools::ByteBuffer> queue_;
 };
 
 }

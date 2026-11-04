@@ -132,7 +132,7 @@ BoardInfoPanel::~BoardInfoPanel()
     service_->cancel();
     tasks_.wait();
 }
-void BoardInfoPanel::setTarget(const serialdemo::AdbDevice& device)
+void BoardInfoPanel::setTarget(const testtools::AdbDevice& device)
 {
     const bool changed = target_.serial != device.serial || device.state != "device";
     target_ = device;

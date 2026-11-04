@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <utility>
 
-namespace serialdemo {
+namespace testtools {
 
 AsyncSerialSender::~AsyncSerialSender()
 {
@@ -138,4 +138,4 @@ void AsyncSerialSender::workerMain()
     }
 }
 
-} // namespace serialdemo
+} // namespace testtools

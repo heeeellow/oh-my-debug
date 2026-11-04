@@ -1,6 +1,6 @@
 #pragma once
 
-#include "application/serial/at_command_library.h"
+#include "application/serial/serial_preferences.h"
 #include <functional>
 #include <memory>
 

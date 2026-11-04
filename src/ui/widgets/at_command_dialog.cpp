@@ -62,7 +62,7 @@
 #include <functional>
 #include <utility>
 
-using namespace serialdemo;
+using namespace testtools;
 
 using namespace testtools::ui::serial;
 

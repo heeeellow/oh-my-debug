@@ -41,11 +41,11 @@ enum class ScheduledSendTick { Idle, Queued, Completed, Failed };
 class SerialSession {
   public:
     using DataCallback =
-        std::function<void(std::uint64_t generation, const serialdemo::ByteBuffer& data)>;
+        std::function<void(std::uint64_t generation, const testtools::ByteBuffer& data)>;
     using StatusCallback = std::function<void(
-        std::uint64_t generation, serialdemo::TransportState state, const std::string& message)>;
+        std::uint64_t generation, testtools::TransportState state, const std::string& message)>;
     using SendCallback = std::function<void(std::uint64_t generation,
-                                            const serialdemo::ByteBuffer& data,
+                                            const testtools::ByteBuffer& data,
                                             std::uint64_t tag,
                                             bool succeeded,
                                             bool scheduledSendStopped)>;
@@ -60,23 +60,23 @@ class SerialSession {
     void setStatusCallback(StatusCallback callback);
     void setSendCallback(SendCallback callback);
 
-    std::uint64_t open(std::unique_ptr<serialdemo::ISerialTransport> transport,
-                       const serialdemo::SerialConfig& config);
+    std::uint64_t open(std::unique_ptr<testtools::ISerialTransport> transport,
+                       const testtools::SerialConfig& config);
     std::uint64_t closeAsync(CloseCallback callback = {});
     void close();
 
-    bool send(serialdemo::ByteBuffer data, std::uint64_t tag = 0);
-    bool supportsControlLine(serialdemo::SerialControlLine line) const;
-    bool setControlLine(std::uint64_t expectedGeneration, serialdemo::SerialControlLine line,
+    bool send(testtools::ByteBuffer data, std::uint64_t tag = 0);
+    bool supportsControlLine(testtools::SerialControlLine line) const;
+    bool setControlLine(std::uint64_t expectedGeneration, testtools::SerialControlLine line,
                          bool enabled, std::string &error);
-    bool startScheduledSend(serialdemo::ByteBuffer payload,
-                            const serialdemo::PeriodicSendConfig& config,
+    bool startScheduledSend(testtools::ByteBuffer payload,
+                            const testtools::PeriodicSendConfig& config,
                             std::uint64_t tag = 0,
-                            serialdemo::PeriodicSendPlan::Clock::time_point now =
-                                serialdemo::PeriodicSendPlan::Clock::now());
+                            testtools::PeriodicSendPlan::Clock::time_point now =
+                                testtools::PeriodicSendPlan::Clock::now());
     ScheduledSendSnapshot stopScheduledSend();
-    ScheduledSendTick processScheduledSend(serialdemo::PeriodicSendPlan::Clock::time_point now =
-                                               serialdemo::PeriodicSendPlan::Clock::now());
+    ScheduledSendTick processScheduledSend(testtools::PeriodicSendPlan::Clock::time_point now =
+                                               testtools::PeriodicSendPlan::Clock::now());
 
     SerialSessionSnapshot snapshot() const;
     void resetCounters();
@@ -91,20 +91,20 @@ class SerialSession {
 
   private:
     bool isCurrentGeneration(std::uint64_t generation) const;
-    void handleData(std::uint64_t generation, const serialdemo::ByteBuffer& data);
+    void handleData(std::uint64_t generation, const testtools::ByteBuffer& data);
     void handleStatus(std::uint64_t generation,
-                      serialdemo::TransportState state,
+                      testtools::TransportState state,
                       const std::string& message);
     void handleSendCompletion(std::uint64_t generation,
-                              const serialdemo::ByteBuffer& data,
+                              const testtools::ByteBuffer& data,
                               std::uint64_t tag,
                               bool succeeded);
 
     mutable std::mutex mutex_;
-    std::shared_ptr<serialdemo::ISerialTransport> transport_;
-    serialdemo::AsyncSerialSender sender_;
-    serialdemo::PeriodicSendPlan scheduledSendPlan_;
-    serialdemo::ByteBuffer scheduledSendPayload_;
+    std::shared_ptr<testtools::ISerialTransport> transport_;
+    testtools::AsyncSerialSender sender_;
+    testtools::PeriodicSendPlan scheduledSendPlan_;
+    testtools::ByteBuffer scheduledSendPayload_;
     std::uint64_t scheduledSendTag_ = 0;
     std::uint64_t scheduledSendId_ = 0;
     std::uint64_t generation_ = 0;
@@ -113,7 +113,7 @@ class SerialSession {
     std::uint64_t sentBytes_ = 0;
     bool closing_ = false;
     std::thread closeWorker_;
-    serialdemo::SerialConfig config_;
+    testtools::SerialConfig config_;
     SerialRecorder recorder_;
 
     mutable std::mutex callbackMutex_;

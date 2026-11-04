@@ -67,7 +67,7 @@ std::string FileTransferService::normalizeRemoteDirectory(const std::string& dir
     return result.empty() ? "/" : result;
 }
 
-FileListing FileTransferService::listRemote(const serialdemo::AdbDevice& device,
+FileListing FileTransferService::listRemote(const testtools::AdbDevice& device,
                                             const std::string& directory,
                                             const std::atomic<bool>& cancel) const
 {

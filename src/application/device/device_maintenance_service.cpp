@@ -9,7 +9,7 @@ DeviceMaintenanceService::DeviceMaintenanceService(
 {
 }
 
-bool DeviceMaintenanceService::loaderSupported(const serialdemo::AdbDevice& device) const
+bool DeviceMaintenanceService::loaderSupported(const testtools::AdbDevice& device) const
 {
     return backend_ && backend_->loaderSupported(device);
 }

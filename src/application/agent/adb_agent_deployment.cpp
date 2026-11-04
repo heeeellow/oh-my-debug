@@ -35,7 +35,7 @@ bool validSerial(const std::string& serial)
     return std::regex_match(serial, pattern);
 }
 
-std::string commandDetail(const serialdemo::CommandResult& result)
+std::string commandDetail(const testtools::CommandResult& result)
 {
     if (result.timedOut) {
         return "command timed out";
@@ -47,7 +47,7 @@ std::string commandDetail(const serialdemo::CommandResult& result)
 
 enum class Platform { Android, Linux, Unknown };
 
-Platform detectPlatform(serialdemo::AdbTransport& adb,
+Platform detectPlatform(testtools::AdbTransport& adb,
                         const std::string& serial,
                         std::string& detail)
 {
@@ -120,7 +120,7 @@ AdbAgentDeploymentResult AdbAgentDeployment::deployAndForward(
         result.error = "ADB 设备序列号格式不合法";
         return result;
     }
-    serialdemo::AdbTransport adb;
+    testtools::AdbTransport adb;
     std::string detectionError;
     switch (detectPlatform(adb, serial, detectionError)) {
     case Platform::Android:
@@ -145,7 +145,7 @@ AdbAgentDeploymentResult AdbAgentDeployment::reconnect(
         result.error = "ADB 设备序列号格式不合法";
         return result;
     }
-    serialdemo::AdbTransport adb;
+    testtools::AdbTransport adb;
     std::string detectionError;
     switch (detectPlatform(adb, serial, detectionError)) {
     case Platform::Android:
@@ -165,7 +165,7 @@ void AdbAgentDeployment::removeForward(const std::string& serial, std::uint16_t 
     if (!validSerial(serial) || localPort == 0) {
         return;
     }
-    serialdemo::AdbTransport adb;
+    testtools::AdbTransport adb;
     adb.runCommand(serial,
                    {"forward", "--remove", "tcp:" + std::to_string(localPort)},
                    std::chrono::seconds(3));
@@ -176,7 +176,7 @@ void AdbAgentDeployment::removeControlForwards(const std::string& serial) const
     if (!validSerial(serial)) {
         return;
     }
-    serialdemo::AdbTransport adb;
+    testtools::AdbTransport adb;
     const auto list = adb.runCommand({}, {"forward", "--list"}, std::chrono::seconds(3));
     if (list.exitCode != 0 || list.timedOut) {
         return;
@@ -201,7 +201,7 @@ bool AdbAgentDeployment::stopRemote(const std::string& serial, std::string& erro
         error = "ADB 设备序列号格式不合法";
         return false;
     }
-    serialdemo::AdbTransport adb;
+    testtools::AdbTransport adb;
     std::string detectionError;
     switch (detectPlatform(adb, serial, detectionError)) {
     case Platform::Android: {

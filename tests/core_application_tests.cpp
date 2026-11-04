@@ -1,3 +1,4 @@
+#include "application/serial/serial_preferences.h"
 #include "application/agent/agent_bundle.h"
 #include "application/agent/agent_service_status.h"
 #include "application/device/screen_mirror_service.h"
@@ -49,12 +50,12 @@ public:
     bool cancelled = false;
 };
 
-class FakeSerialTransport final : public serialdemo::ISerialTransport {
+class FakeSerialTransport final : public testtools::ISerialTransport {
   public:
-    void open(const serialdemo::SerialConfig&) override
+    void open(const testtools::SerialConfig&) override
     {
         open_.store(true);
-        publishStatus(serialdemo::TransportState::Connected, "fake connected");
+        publishStatus(testtools::TransportState::Connected, "fake connected");
     }
 
     void close() override
@@ -65,11 +66,11 @@ class FakeSerialTransport final : public serialdemo::ISerialTransport {
         }
         const bool wasOpen = open_.exchange(false);
         if (wasOpen) {
-            publishStatus(serialdemo::TransportState::Closed, "fake closed");
+            publishStatus(testtools::TransportState::Closed, "fake closed");
         }
     }
 
-    bool write(const serialdemo::ByteBuffer& data) override
+    bool write(const testtools::ByteBuffer& data) override
     {
         if (!open_.load() || failWrites.load()) {
             return false;
@@ -84,8 +85,8 @@ class FakeSerialTransport final : public serialdemo::ISerialTransport {
         return open_.load();
     }
 
-    bool supportsControlLine(serialdemo::SerialControlLine) const override { return controlsSupported; }
-    bool setControlLine(serialdemo::SerialControlLine, bool enabled, std::string &error) override
+    bool supportsControlLine(testtools::SerialControlLine) const override { return controlsSupported; }
+    bool setControlLine(testtools::SerialControlLine, bool enabled, std::string &error) override
     {
         if (failControls) { error = "fake control failure"; return false; }
         controlValues.push_back(enabled);
@@ -95,7 +96,7 @@ class FakeSerialTransport final : public serialdemo::ISerialTransport {
     bool failControls = false;
     std::vector<bool> controlValues;
 
-    void emitData(const serialdemo::ByteBuffer& data)
+    void emitData(const testtools::ByteBuffer& data)
     {
         publishData(data);
     }
@@ -103,13 +104,13 @@ class FakeSerialTransport final : public serialdemo::ISerialTransport {
     void emitDisconnect()
     {
         open_.store(false);
-        publishStatus(serialdemo::TransportState::Error, "fake disconnected");
+        publishStatus(testtools::TransportState::Error, "fake disconnected");
     }
 
     std::atomic<bool> failWrites{false};
     std::atomic<int> closeDelayMs{0};
     std::mutex mutex_;
-    std::vector<serialdemo::ByteBuffer> writes;
+    std::vector<testtools::ByteBuffer> writes;
 
   private:
     std::atomic<bool> open_{false};
@@ -557,20 +558,20 @@ int main()
         return fail("TCP port parsing");
     }
 
-    serialdemo::ByteBuffer bytes;
+    testtools::ByteBuffer bytes;
     std::string error;
-    if (!serialdemo::parseHex("55 AA 01 0d 0A", bytes, error) ||
-        serialdemo::toHex(bytes) != "55 AA 01 0D 0A") {
+    if (!testtools::parseHex("55 AA 01 0d 0A", bytes, error) ||
+        testtools::toHex(bytes) != "55 AA 01 0D 0A") {
         return fail("HEX codec");
     }
-    serialdemo::ByteBuffer lineEndingProbe{0x41, 0x54};
-    serialdemo::appendLineEnding(lineEndingProbe, serialdemo::LineEnding::CrLf);
-    if (serialdemo::toHex(lineEndingProbe) != "41 54 0D 0A") {
+    testtools::ByteBuffer lineEndingProbe{0x41, 0x54};
+    testtools::appendLineEnding(lineEndingProbe, testtools::LineEnding::CrLf);
+    if (testtools::toHex(lineEndingProbe) != "41 54 0D 0A") {
         return fail("line ending codec");
     }
 
-    serialdemo::PeriodicSendPlan sendPlan;
-    const auto start = serialdemo::PeriodicSendPlan::Clock::now();
+    testtools::PeriodicSendPlan sendPlan;
+    const auto start = testtools::PeriodicSendPlan::Clock::now();
     if (!sendPlan.start({std::chrono::milliseconds(10), 2}, start) || !sendPlan.isDue(start)) {
         return fail("periodic send start");
     }
@@ -580,9 +581,9 @@ int main()
         return fail("periodic send accounting");
     }
 
-    const auto frame0 = serialdemo::encodeIntegrityFrame(0, 32);
-    const auto frame1 = serialdemo::encodeIntegrityFrame(1, 32);
-    serialdemo::IntegrityStreamVerifier verifier;
+    const auto frame0 = testtools::encodeIntegrityFrame(0, 32);
+    const auto frame1 = testtools::encodeIntegrityFrame(1, 32);
+    testtools::IntegrityStreamVerifier verifier;
     verifier.push(frame0);
     verifier.push(frame1);
     if (verifier.stats().uniqueFrames != 2 || verifier.stats().bitErrors != 0) {
@@ -592,12 +593,12 @@ int main()
     std::mutex senderMutex;
     std::condition_variable senderCondition;
     bool senderCompleted = false;
-    serialdemo::AsyncSerialSender sender;
+    testtools::AsyncSerialSender sender;
     sender.start(
-        [](const serialdemo::ByteBuffer& payload) {
-            return payload == serialdemo::ByteBuffer{0x41, 0x54};
+        [](const testtools::ByteBuffer& payload) {
+            return payload == testtools::ByteBuffer{0x41, 0x54};
         },
-        [&](const serialdemo::ByteBuffer&, std::uint64_t, bool succeeded) {
+        [&](const testtools::ByteBuffer&, std::uint64_t, bool succeeded) {
             std::lock_guard<std::mutex> lock(senderMutex);
             senderCompleted = succeeded;
             senderCondition.notify_one();
@@ -622,7 +623,7 @@ int main()
     bool scheduleStoppedByFailure = false;
     testtools::SerialSession session;
     session.setSendCallback([&](std::uint64_t generation,
-                                const serialdemo::ByteBuffer&,
+                                const testtools::ByteBuffer&,
                                 std::uint64_t,
                                 bool succeeded,
                                 bool scheduledSendStopped) {
@@ -642,20 +643,20 @@ int main()
     }
     std::string controlError;
     fakeTransportView->controlsSupported = true;
-    if (!session.supportsControlLine(serialdemo::SerialControlLine::Dtr) ||
-        !session.setControlLine(sessionGeneration, serialdemo::SerialControlLine::Dtr, true, controlError) ||
-        session.setControlLine(sessionGeneration - 1, serialdemo::SerialControlLine::Dtr, false, controlError) ||
+    if (!session.supportsControlLine(testtools::SerialControlLine::Dtr) ||
+        !session.setControlLine(sessionGeneration, testtools::SerialControlLine::Dtr, true, controlError) ||
+        session.setControlLine(sessionGeneration - 1, testtools::SerialControlLine::Dtr, false, controlError) ||
         fakeTransportView->controlValues != std::vector<bool>{true}) {
         return fail("control line stale generation must not reach transport");
     }
     fakeTransportView->failControls = true;
-    if (session.setControlLine(sessionGeneration, serialdemo::SerialControlLine::Rts, false, controlError) ||
+    if (session.setControlLine(sessionGeneration, testtools::SerialControlLine::Rts, false, controlError) ||
         controlError != "fake control failure" || session.snapshot().sentBytes != 0) {
         return fail("control line driver failure must not count as data TX");
     }
     fakeTransportView->failControls = false;
     fakeTransportView->controlsSupported = false;
-    if (session.setControlLine(sessionGeneration, serialdemo::SerialControlLine::Dtr, false, controlError)) {
+    if (session.setControlLine(sessionGeneration, testtools::SerialControlLine::Dtr, false, controlError)) {
         return fail("unsupported control line rejected");
     }
     fakeTransportView->emitData({0x4F, 0x4B});
@@ -679,7 +680,7 @@ int main()
         return fail("serial session counter reset");
     }
 
-    const auto scheduleStart = serialdemo::PeriodicSendPlan::Clock::now();
+    const auto scheduleStart = testtools::PeriodicSendPlan::Clock::now();
     if (!session.startScheduledSend({0x41}, {std::chrono::milliseconds(10), 2}, 1, scheduleStart)) {
         return fail("serial session scheduled send start");
     }
@@ -766,7 +767,7 @@ int main()
     std::vector<testtools::AgentFrame> decoded;
     std::string decodeError;
     if (!decoder.push(
-            serialdemo::ByteBuffer(encoded.begin(), encoded.end()), decoded, decodeError) ||
+            testtools::ByteBuffer(encoded.begin(), encoded.end()), decoded, decodeError) ||
         decoded.size() != 1) {
         return fail("Agent frame codec");
     }
@@ -798,10 +799,10 @@ int main()
     }
 
     using TerminalKey = testtools::TerminalKey;
-    if (testtools::terminalKeyBytes(TerminalKey::Enter, serialdemo::LineEnding::Cr) != serialdemo::ByteBuffer{13}
-        || testtools::terminalKeyBytes(TerminalKey::Up, serialdemo::LineEnding::Cr) != serialdemo::ByteBuffer{27,'[','A'}
-        || testtools::terminalPasteBytes("a\r\nb\nc\rd", serialdemo::LineEnding::CrLf)
-            != serialdemo::ByteBuffer{'a',13,10,'b',13,10,'c',13,10,'d'}) {
+    if (testtools::terminalKeyBytes(TerminalKey::Enter, testtools::LineEnding::Cr) != testtools::ByteBuffer{13}
+        || testtools::terminalKeyBytes(TerminalKey::Up, testtools::LineEnding::Cr) != testtools::ByteBuffer{27,'[','A'}
+        || testtools::terminalPasteBytes("a\r\nb\nc\rd", testtools::LineEnding::CrLf)
+            != testtools::ByteBuffer{'a',13,10,'b',13,10,'c',13,10,'d'}) {
         return fail("terminal keys and pasted line endings");
     }
     testtools::SerialEndpointSelection localA{
@@ -850,13 +851,13 @@ int main()
             "RX  \\xADOK\n" ||
         testtools::SerialLogBuffer::formatEntry(logBuffer.entries().back(), true, true) !=
             "[10:00:00.050] RX  AD 4F 4B 0D 0A\n" ||
-        logBuffer.entries()[3].bytes != serialdemo::ByteBuffer{0xE4, 0xB8}) {
+        logBuffer.entries()[3].bytes != testtools::ByteBuffer{0xE4, 0xB8}) {
         return fail("serial log receive boundaries and original bytes");
     }
 
     const auto lines = logBuffer.appendRx({0xE4, 0xB8, 0xAD, 'O', 'K', '\r', '\n', 'C'},
                                           1051, "10:00:00.051");
-    if (lines.addedEntries != 2 || logBuffer.entries().back().bytes != serialdemo::ByteBuffer{'C'}) {
+    if (lines.addedEntries != 2 || logBuffer.entries().back().bytes != testtools::ByteBuffer{'C'}) {
         return fail("serial log splits embedded newlines within a receive callback");
     }
     const auto unfiltered = logBuffer.formatAll(false, false);
@@ -1033,40 +1034,40 @@ int main()
     }
 
     {
-        serialdemo::SerialConfig config;
+        testtools::SerialConfig config;
         config.baudRate = 9600;
         config.dataBits = 8;
-        config.parity = serialdemo::Parity::None;
-        config.stopBits = serialdemo::StopBits::One;
-        if (serialdemo::minimumStressIntervalMs(config, 256, 10) != 284 ||
-            serialdemo::minimumStressIntervalMs(config, 256, 500) != 500) {
+        config.parity = testtools::Parity::None;
+        config.stopBits = testtools::StopBits::One;
+        if (testtools::minimumStressIntervalMs(config, 256, 10) != 284 ||
+            testtools::minimumStressIntervalMs(config, 256, 500) != 500) {
             return fail("stress test minimum wire-time interval");
         }
 
         std::string detectionBuffer;
         std::string expectedFrame = "SERIAL_POC_A_TO_B_42";
-        const serialdemo::ByteBuffer chunk1{'S', 'E', 'R', 'I', 'A', 'L', '_'};
-        const serialdemo::ByteBuffer chunk2{'P', 'O', 'C', '_', 'A', '_', 'T', 'O', '_', 'B', '_', '4', '2', '\n'};
-        if (serialdemo::appendAndMatchFrame(detectionBuffer, chunk1, expectedFrame) ||
+        const testtools::ByteBuffer chunk1{'S', 'E', 'R', 'I', 'A', 'L', '_'};
+        const testtools::ByteBuffer chunk2{'P', 'O', 'C', '_', 'A', '_', 'T', 'O', '_', 'B', '_', '4', '2', '\n'};
+        if (testtools::appendAndMatchFrame(detectionBuffer, chunk1, expectedFrame) ||
             expectedFrame.empty() ||
-            !serialdemo::appendAndMatchFrame(detectionBuffer, chunk2, expectedFrame) ||
+            !testtools::appendAndMatchFrame(detectionBuffer, chunk2, expectedFrame) ||
             !expectedFrame.empty()) {
             return fail("bidirectional frame sliding buffer match");
         }
 
-        serialdemo::PeriodicSendPlan plan;
+        testtools::PeriodicSendPlan plan;
         plan.start({std::chrono::milliseconds(10), 2});
-        const auto now = serialdemo::PeriodicSendPlan::Clock::now();
+        const auto now = testtools::PeriodicSendPlan::Clock::now();
         plan.recordAttempt(true, now);
         plan.recordAttempt(true, now + std::chrono::milliseconds(10));
-        serialdemo::IntegrityStreamVerifier verifier;
-        verifier.push(serialdemo::encodeIntegrityFrame(0, 64));
-        const auto partialReport = serialdemo::evaluateStressDirection(plan, verifier);
+        testtools::IntegrityStreamVerifier verifier;
+        verifier.push(testtools::encodeIntegrityFrame(0, 64));
+        const auto partialReport = testtools::evaluateStressDirection(plan, verifier);
         if (partialReport.passed || partialReport.sentFrames != 2 || partialReport.lostFrames != 1) {
             return fail("stress direction evaluation detects lost frames");
         }
-        verifier.push(serialdemo::encodeIntegrityFrame(1, 64));
-        const auto passReport = serialdemo::evaluateStressDirection(plan, verifier);
+        verifier.push(testtools::encodeIntegrityFrame(1, 64));
+        const auto passReport = testtools::evaluateStressDirection(plan, verifier);
         if (!passReport.passed || passReport.sentFrames != 2 || passReport.lostFrames != 0) {
             return fail("stress direction evaluation passes when all frames match");
         }
@@ -1074,7 +1075,7 @@ int main()
 
     {
         testtools::SerialLinkVerifier link;
-        auto frames = link.startProbe("p0", {serialdemo::LineEnding::CrLf, serialdemo::LineEnding::None});
+        auto frames = link.startProbe("p0", {testtools::LineEnding::CrLf, testtools::LineEnding::None});
         if (std::string(frames[0].begin(), frames[0].end()) != "SERIAL_POC_A_TO_B_p0\r\n")
             return fail("probe preserves wire token and per-endpoint line ending");
         const auto old = link.probe().generation;
@@ -1084,13 +1085,13 @@ int main()
         link.receive(0, frames[1]);
         if (link.probe().running || !link.probe().aToBPassed || !link.probe().bToAPassed)
             return fail("probe directions complete independently");
-        frames = link.startProbe("new", {serialdemo::LineEnding::None, serialdemo::LineEnding::None});
+        frames = link.startProbe("new", {testtools::LineEnding::None, testtools::LineEnding::None});
         if (link.expireProbe(old) || !link.probe().running || !link.expireProbe(link.probe().generation))
             return fail("old probe timeout cannot stop new probe");
         link.receive(1, frames[0]);
         if (link.probe().aToBPassed) return fail("expired probe cannot accept late data");
 
-        std::array<serialdemo::SerialConfig, 2> configs;
+        std::array<testtools::SerialConfig, 2> configs;
         configs[0].baudRate = configs[1].baudRate = 9600;
         const auto now = testtools::SerialLinkVerifier::Clock::time_point{};
         const int interval = link.startStress(0, 2, 256, 10, configs, now);
@@ -1106,7 +1107,7 @@ int main()
         if (link.beginReceiveWait(false) || !link.beginReceiveWait(true) || link.nextStressFrame(0, later))
             return fail("stress waits for accepted writes before collecting tail bytes");
         const auto& direction = link.directions()[0];
-        const auto report = serialdemo::evaluateStressDirection(direction.sendPlan, direction.verifier);
+        const auto report = testtools::evaluateStressDirection(direction.sendPlan, direction.verifier);
         if (report.passed || report.lostFrames != 1) return fail("extracted stress state preserves loss accounting");
         const auto generation = link.stressGeneration();
         link.stopStress();

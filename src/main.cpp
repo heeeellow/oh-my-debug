@@ -1,6 +1,8 @@
 #include "core/support/command_line.h"
 #include "diagnostics/self_test.h"
 #include "ui/main_window.h"
+#include "app_info.h"
+#include "app_version.h"
 #include <QtCore/QFile>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -8,6 +10,7 @@
 #include <QtCore/QStringList>
 #include <QtCore/QTimer>
 #include <QtGui/QPixmap>
+#include <QtGui/QIcon>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QPushButton>
@@ -54,7 +57,7 @@ int main(int argc, char* argv[])
         if (std::string_view(argv[index]) == "--self-test") {
             if (qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE"))
                 return 2;
-            return serialdemo::runSelfTest();
+            return testtools::runSelfTest();
         }
         if (std::string_view(argv[index]) == "--ui-snapshot" && index + 1 < argc) {
             snapshotPath = argv[++index];
@@ -102,28 +105,32 @@ int main(int argc, char* argv[])
          !agentReconnectSmokeSerial.empty() || !agentAtSmokeSerial.empty()))
         return 2;
     if (!agentSmokeHost.empty()) {
-        return serialdemo::runAgentSmokeTest(agentSmokeHost, agentSmokePort);
+        return testtools::runAgentSmokeTest(agentSmokeHost, agentSmokePort);
     }
     if (!adbSerialSmokeSerial.empty()) {
-        return serialdemo::runAdbSerialSmokeTest(adbSerialSmokeSerial, adbSerialSmokeEndpoint);
+        return testtools::runAdbSerialSmokeTest(adbSerialSmokeSerial, adbSerialSmokeEndpoint);
     }
     if (!agentSerialSmokeSerial.empty()) {
-        return serialdemo::runAgentSerialSmokeTest(
+        return testtools::runAgentSerialSmokeTest(
             agentSerialSmokeSerial, agentSerialSmokePort, agentSerialSmokeEndpoint);
     }
     if (!agentDeploySmokeSerial.empty()) {
         const std::string applicationDirectory =
             std::filesystem::absolute(std::filesystem::u8path(argv[0])).parent_path().u8string();
-        return serialdemo::runAgentDeploymentSmokeTest(agentDeploySmokeSerial,
+        return testtools::runAgentDeploymentSmokeTest(agentDeploySmokeSerial,
                                                        applicationDirectory);
     }
     if (!agentReconnectSmokeSerial.empty()) {
-        return serialdemo::runAgentReconnectSmokeTest(agentReconnectSmokeSerial);
+        return testtools::runAgentReconnectSmokeTest(agentReconnectSmokeSerial);
     }
     if (!agentAtSmokeSerial.empty()) {
-        return serialdemo::runAgentAtSmokeTest(agentAtSmokeSerial, agentAtSmokeEndpoint);
+        return testtools::runAgentAtSmokeTest(agentAtSmokeSerial, agentAtSmokeEndpoint);
     }
     QApplication app(argc, argv);
+    QApplication::setApplicationName(QStringLiteral(OMD_APP_ID));
+    QApplication::setApplicationDisplayName(QStringLiteral(OMD_APP_NAME));
+    QApplication::setApplicationVersion(QStringLiteral(OMD_VERSION));
+    QApplication::setWindowIcon(QIcon(QStringLiteral(":/branding/app.svg")));
     QApplication::setStyle(QStringLiteral("Fusion"));
     QApplication::setFont(QFont(QStringLiteral("Microsoft YaHei UI"), 10));
     MainWindow window;

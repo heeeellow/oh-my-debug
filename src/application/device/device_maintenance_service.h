@@ -15,7 +15,7 @@ struct MaintenanceSnapshot {
 class DeviceMaintenanceService {
   public:
     explicit DeviceMaintenanceService(std::shared_ptr<IDeviceMaintenanceBackend> backend);
-    bool loaderSupported(const serialdemo::AdbDevice& device) const;
+    bool loaderSupported(const testtools::AdbDevice& device) const;
     bool prepare(MaintenanceRequest request, const MaintenanceConflicts&, std::string& error);
     void executePrepared();
     void cancel(std::uint64_t expectedId = 0) noexcept;

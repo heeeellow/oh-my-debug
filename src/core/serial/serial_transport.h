@@ -6,7 +6,7 @@
 #include <mutex>
 #include <string>
 
-namespace serialdemo {
+namespace testtools {
 
 // 串口传输状态事件枚举。
 enum class TransportState {
@@ -79,4 +79,4 @@ private:
     StatusCallback statusCallback_;
 };
 
-} // namespace serialdemo
+} // namespace testtools

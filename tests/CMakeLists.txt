@@ -19,6 +19,7 @@ add_executable(testtools-core-tests
     ${TESTTOOLS_ROOT}/src/application/serial/serial_port_claims.cpp
     ${TESTTOOLS_ROOT}/src/application/serial/at_command_library.cpp
     ${TESTTOOLS_ROOT}/src/application/serial/serial_workspace_state.cpp
+    ${TESTTOOLS_ROOT}/src/application/serial/serial_preferences.cpp
     ${TESTTOOLS_ROOT}/src/application/serial/serial_preferences_writer.cpp
     ${TESTTOOLS_ROOT}/src/application/serial/serial_terminal.cpp
     ${TESTTOOLS_ROOT}/src/application/support/background_task_group.cpp

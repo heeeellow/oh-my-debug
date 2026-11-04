@@ -100,7 +100,7 @@ int main(int argc, char** argv)
         check(!panel->root_->isEnabled() && !panel->logcat_->isEnabled() &&
                   panel->loader_->isHidden(),
               "offline actions disabled and unverified Loader hidden");
-        const serialdemo::AdbDevice device{"device-A", "device", "maintenance fixture"};
+        const testtools::AdbDevice device{"device-A", "device", "maintenance fixture"};
         {
             QSignalBlocker block(window.deviceCombo_);
             window.deviceCombo_->clear();

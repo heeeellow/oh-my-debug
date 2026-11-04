@@ -47,7 +47,7 @@ try {
         throw "Generated files are tracked:`n$($trackedGenerated -join "`n")"
     }
 
-    $projectText = Get-Content -Raw 'TestTools.vcxproj'
+    $projectText = Get-Content -Raw 'OhMyDebug.vcxproj'
     $missingProjectEntries = @()
     Get-ChildItem 'src\application', 'src\core', 'src\adapters' -Recurse -File |
         Where-Object { $_.Extension -in @('.h', '.cpp') } |
@@ -58,7 +58,7 @@ try {
             }
         }
     if ($missingProjectEntries.Count -gt 0) {
-        throw "First-party source missing from TestTools.vcxproj:`n$($missingProjectEntries -join "`n")"
+        throw "First-party source missing from OhMyDebug.vcxproj:`n$($missingProjectEntries -join "`n")"
     }
 
     Write-Host 'Static baseline checks passed.'
@@ -86,7 +86,7 @@ try {
         foreach ($item in $configurations) {
             & (Join-Path $PSScriptRoot 'clean-desktop-objects.ps1') -Configuration $item
             if (-not $?) { throw "Desktop object cleanup failed for $item" }
-            & $msBuild '.\TestTools.vcxproj' /m /nologo `
+            & $msBuild '.\OhMyDebug.vcxproj' /m /nologo `
                 "/p:Configuration=$item" '/p:Platform=x64' "/p:QtMsBuild=$qtMsBuild"
             if ($LASTEXITCODE -ne 0) {
                 throw "TestTools $item build failed"
@@ -95,7 +95,7 @@ try {
             $windowsOutput = Join-Path $repositoryRoot "build\windows\x64\$item"
             $qtSuffix = if ($item -eq 'Debug') { 'd' } else { '' }
             $requiredRuntimeFiles = @(
-                'TestTools.exe',
+                'OhMyDebug.exe',
                 "Qt6Core$qtSuffix.dll",
                 "Qt6Gui$qtSuffix.dll",
                 "Qt6Widgets$qtSuffix.dll",
@@ -138,12 +138,12 @@ try {
     if ($RunSelfTest) {
         $selfTestConfiguration = if ($Configuration -eq 'Release') { 'Release' } else { 'Debug' }
         $executable = Join-Path $repositoryRoot `
-            "build\windows\x64\$selfTestConfiguration\TestTools.exe"
+            "build\windows\x64\$selfTestConfiguration\OhMyDebug.exe"
         if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
             throw "Self-test executable not found: $executable"
         }
         $qtInstallName = [regex]::Match(
-            (Get-Content -Raw 'TestTools.vcxproj'), '<QtInstall>([^<]+)</QtInstall>').Groups[1].Value
+            (Get-Content -Raw 'OhMyDebug.vcxproj'), '<QtInstall>([^<]+)</QtInstall>').Groups[1].Value
         if ($qtInstallName) {
             $qtRegistry = "HKCU:\Software\QtProject\QtVsTools\Versions\$qtInstallName"
             $qtInstallDirectory = (Get-ItemProperty -Path $qtRegistry -ErrorAction SilentlyContinue).InstallDir

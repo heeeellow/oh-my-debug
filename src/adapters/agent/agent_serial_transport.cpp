@@ -10,7 +10,7 @@
 #include <limits>
 #include <regex>
 
-namespace serialdemo {
+namespace testtools {
 
 namespace {
 
@@ -355,4 +355,4 @@ bool AgentSerialTransport::isOpen() const
     return open_.load();
 }
 
-} // namespace serialdemo
+} // namespace testtools

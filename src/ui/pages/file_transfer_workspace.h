@@ -25,7 +25,7 @@ class FileTransferWorkspace final : public QWidget {
     explicit FileTransferWorkspace(QWidget* parent = nullptr,
                                    std::shared_ptr<testtools::FileTransferService> service = {});
     ~FileTransferWorkspace() override;
-    void setDevice(const serialdemo::AdbDevice& device);
+    void setDevice(const testtools::AdbDevice& device);
     void shutdown();
     testtools::FileTransferSnapshot transferSnapshot() const;
     void cancelTransfer(std::uint64_t expectedId);
@@ -57,7 +57,7 @@ class FileTransferWorkspace final : public QWidget {
     void updateRemoteLocations();
     std::shared_ptr<testtools::FileTransferService> service_;
     testtools::BackgroundTaskGroup tasks_;
-    serialdemo::AdbDevice device_;
+    testtools::AdbDevice device_;
     testtools::FileListing local_, remote_;
     std::shared_ptr<std::atomic<bool>> localCancel_, remoteCancel_;
     std::uint64_t localGeneration_ = 0, remoteGeneration_ = 0;

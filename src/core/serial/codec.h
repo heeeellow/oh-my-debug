@@ -4,7 +4,7 @@
 
 #include <string>
 
-namespace serialdemo {
+namespace testtools {
 
 // 串口文本发送行尾类型。
 enum class LineEnding {
@@ -19,4 +19,4 @@ bool parseHex(const std::string &text, ByteBuffer &output, std::string &error);
 std::string toHex(const ByteBuffer &data);
 void appendLineEnding(ByteBuffer &data, LineEnding ending);
 
-} // namespace serialdemo
+} // namespace testtools

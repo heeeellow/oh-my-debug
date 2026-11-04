@@ -2,7 +2,7 @@
 
 #include <cctype>
 
-namespace serialdemo {
+namespace testtools {
 
 namespace {
 
@@ -90,4 +90,4 @@ void appendLineEnding(ByteBuffer &data, LineEnding ending)
     }
 }
 
-} // namespace serialdemo
+} // namespace testtools

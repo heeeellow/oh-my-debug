@@ -4,7 +4,7 @@
 
 #include <algorithm>
 
-namespace serialdemo {
+namespace testtools {
 
 namespace {
 
@@ -163,4 +163,4 @@ void CSerialPortTransport::onReadEvent(const char *, unsigned int readBufferLen)
     }
 }
 
-} // namespace serialdemo
+} // namespace testtools

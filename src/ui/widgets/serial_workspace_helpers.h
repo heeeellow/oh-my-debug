@@ -9,7 +9,7 @@
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QStyle>
 #include <filesystem>
-using serialdemo::LineEnding;
+using testtools::LineEnding;
 namespace testtools::ui::serial {
 
 using testtools::ui::fromUtf8;

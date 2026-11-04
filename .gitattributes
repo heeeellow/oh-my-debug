@@ -17,3 +17,6 @@ third_party/scrcpy/scrcpy-server binary
 third_party/scrcpy/LICENSE.txt -text -whitespace
 third_party/scrcpy/licenses/* -text -whitespace
 third_party/libvterm/** -text -whitespace
+third_party/asio/** -text -whitespace
+third_party/CSerialPort/** -text -whitespace
+third_party/tiny-process-library/** -text -whitespace

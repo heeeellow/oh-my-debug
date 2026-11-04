@@ -14,7 +14,7 @@ class BoardInfoPanel final : public QWidget {
     explicit BoardInfoPanel(QWidget* parent = nullptr,
                             std::shared_ptr<testtools::BoardInfoService> service = {});
     ~BoardInfoPanel() override;
-    void setTarget(const serialdemo::AdbDevice& device);
+    void setTarget(const testtools::AdbDevice& device);
     void setSession(std::string serial,
                     std::uint64_t generation,
                     std::shared_ptr<testtools::IAgentConnection> connection,
@@ -42,7 +42,7 @@ class BoardInfoPanel final : public QWidget {
     void populateDetails(QTreeWidget* values, const testtools::BoardInfoSnapshot& state) const;
     void showDetails();
     testtools::BoardInfoSession session_;
-    serialdemo::AdbDevice target_;
+    testtools::AdbDevice target_;
     std::shared_ptr<testtools::BoardInfoService> service_;
     testtools::BackgroundTaskGroup tasks_;
     bool closing_ = false, wasActive_ = false, shutdownEmitted_ = false;

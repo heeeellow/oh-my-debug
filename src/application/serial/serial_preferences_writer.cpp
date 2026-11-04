@@ -1,3 +1,4 @@
+#include "application/serial/serial_preferences.h"
 #include "application/serial/serial_preferences_writer.h"
 #include <condition_variable>
 #include <mutex>

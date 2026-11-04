@@ -18,7 +18,7 @@ class Backend final : public IDeviceMaintenanceBackend {
     bool hold = false, fail = false, loader = false;
     MaintenanceRequest captured;
     MaintenanceResult answer{MaintenanceOutcome::Completed, "fixture complete"};
-    bool loaderSupported(const serialdemo::AdbDevice&) const override
+    bool loaderSupported(const testtools::AdbDevice&) const override
     {
         return loader;
     }

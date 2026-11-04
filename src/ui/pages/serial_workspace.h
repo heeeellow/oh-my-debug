@@ -50,8 +50,8 @@ class SerialWorkspace final : public SerialEndpointWorkspace {
     void sendFailed(int index) override;
     void displayGap(int index) override;
     void stopPageTasks() override;
-    void appendReceived(int index, const serialdemo::ByteBuffer& data) override;
-    serialdemo::ByteBuffer manualPayload(int index, bool& ok);
+    void appendReceived(int index, const testtools::ByteBuffer& data) override;
+    testtools::ByteBuffer manualPayload(int index, bool& ok);
     void sendManual(int index);
     void sendAtCommand(int index, int commandIndex);
     void fillAtCommandToInput(int index, int commandIndex);

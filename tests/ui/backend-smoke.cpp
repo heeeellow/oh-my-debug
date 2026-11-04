@@ -165,11 +165,11 @@ int wmain(int argc, wchar_t** argv)
         for (const auto& e : fs::directory_iterator(remote))
             check(e.path().filename().u8string().find(".testtools-upload-") != 0,
                   "upload temp cleaned");
-        auto managed = serialdemo::ProcessRunner::runManaged(
+        auto managed = testtools::ProcessRunner::runManaged(
             fs::path(argv[1]).u8string(), {"sleep"}, std::chrono::milliseconds(80), cancel);
         check(managed.command.timedOut, "owned client timeout");
         const auto pidFile = root / "leaf.pid";
-        managed = serialdemo::ProcessRunner::runManaged(fs::path(argv[1]).u8string(),
+        managed = testtools::ProcessRunner::runManaged(fs::path(argv[1]).u8string(),
                                                         {"spawn-leaf", pidFile.u8string()},
                                                         std::chrono::milliseconds(200),
                                                         cancel);
@@ -189,7 +189,7 @@ int wmain(int argc, wchar_t** argv)
         }
         check(managed.command.timedOut && alive,
               "client timeout leaves independent server child alive");
-        managed = serialdemo::ProcessRunner::runManaged(
+        managed = testtools::ProcessRunner::runManaged(
             fs::path(argv[1]).u8string(), {"flood"}, std::chrono::seconds(5), cancel);
         check(managed.outputTruncated, "bounded command output");
 
@@ -217,7 +217,7 @@ int wmain(int argc, wchar_t** argv)
         changed = change(true, FileOperation::Rename, remote, "old.log", FileKind::Regular, u8"已更名 ' &.log");
         check(changed.outcome == TransferOutcome::Completed && get(remote / fs::u8path(u8"已更名 ' &.log")) == "old-data", "remote rename exact target: " + changed.message);
         changed = change(true, FileOperation::SetPermissions, remote, u8"已更名 ' &.log", FileKind::Regular);
-        const auto observedMode = serialdemo::ProcessRunner::run("C:/Program Files/Git/bin/bash.exe",
+        const auto observedMode = testtools::ProcessRunner::run("C:/Program Files/Git/bin/bash.exe",
             {"-c", "stat -c '%a' -- \"$1\"", "_", posix(remote / fs::u8path(u8"已更名 ' &.log"))}, std::chrono::seconds(5));
         check(observedMode.exitCode == 0, "independent host permission read");
         const bool actually755 = std::stoul(observedMode.standardOutput, nullptr, 8) == 0755;
@@ -267,7 +267,7 @@ int wmain(int argc, wchar_t** argv)
         fs::create_directories(outside); fs::create_directories(tree);
         put(outside / "protected.log", "do-not-follow");
         const auto junction = tree / "junction";
-        const auto linked = serialdemo::ProcessRunner::run("cmd.exe", {"/c", "mklink", "/J", junction.u8string(), fs::absolute(outside).u8string()}, std::chrono::seconds(5));
+        const auto linked = testtools::ProcessRunner::run("cmd.exe", {"/c", "mklink", "/J", junction.u8string(), fs::absolute(outside).u8string()}, std::chrono::seconds(5));
         check(linked.exitCode == 0 && (GetFileAttributesW(junction.c_str()) & FILE_ATTRIBUTE_REPARSE_POINT), "isolated junction fixture");
         changed = change(false, FileOperation::Remove, local, "delete-tree", FileKind::Directory);
         check(changed.outcome == TransferOutcome::Completed && !fs::exists(tree) && get(outside / "protected.log") == "do-not-follow", "recursive remove unlinks junction without traversing target: " + changed.message);

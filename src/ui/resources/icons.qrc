@@ -40,4 +40,7 @@
     <file alias="stop-bold.svg">../../../third_party/phosphor-icons/icons/stop-bold.svg</file>
     <file alias="camera-bold.svg">../../../third_party/phosphor-icons/icons/camera-bold.svg</file>
   </qresource>
+  <qresource prefix="/branding">
+    <file alias="app.svg">app.svg</file>
+  </qresource>
 </RCC>

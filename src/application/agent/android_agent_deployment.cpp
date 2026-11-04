@@ -35,7 +35,7 @@ bool validSerial(const std::string& serial)
     return std::regex_match(serial, pattern);
 }
 
-std::string commandDetail(const serialdemo::CommandResult& result)
+std::string commandDetail(const testtools::CommandResult& result)
 {
     if (result.timedOut) {
         return "command timed out";
@@ -45,7 +45,7 @@ std::string commandDetail(const serialdemo::CommandResult& result)
     return detail.empty() ? "exit code " + std::to_string(result.exitCode) : detail;
 }
 
-bool ensureRootAdb(serialdemo::AdbTransport& adb,
+bool ensureRootAdb(testtools::AdbTransport& adb,
                    const std::string& serial,
                    const AndroidAgentDeployment::ProgressCallback& progress,
                    std::string& error)
@@ -106,7 +106,7 @@ std::string normalizeAndroidAbi(std::string abi)
     return agentArchitectureName({AgentPlatform::Android, *architecture});
 }
 
-AndroidAgentDeploymentResult createForward(serialdemo::AdbTransport& adb,
+AndroidAgentDeploymentResult createForward(testtools::AdbTransport& adb,
                                            const std::string& serial,
                                            const std::string& abi,
                                            const std::string& binaryPath,
@@ -153,7 +153,7 @@ AndroidAgentDeployment::deployAndForward(const std::string& serial,
         result.error = "ADB 设备序列号格式不合法";
         return result;
     }
-    serialdemo::AdbTransport adb;
+    testtools::AdbTransport adb;
     if (!ensureRootAdb(adb, serial, progress, result.error)) {
         return result;
     }
@@ -338,7 +338,7 @@ AndroidAgentDeployment::reconnect(const std::string& serial, const ProgressCallb
         result.error = "ADB 设备序列号格式不合法";
         return result;
     }
-    serialdemo::AdbTransport adb;
+    testtools::AdbTransport adb;
     if (progress) {
         progress("正在探测已运行的板端 Agent...");
     }
@@ -370,7 +370,7 @@ void AndroidAgentDeployment::removeForward(const std::string& serial, std::uint1
     if (!validSerial(serial) || localPort == 0) {
         return;
     }
-    serialdemo::AdbTransport adb;
+    testtools::AdbTransport adb;
     adb.runCommand(serial,
                    {"forward", "--remove", "tcp:" + std::to_string(localPort)},
                    std::chrono::seconds(3));
@@ -381,7 +381,7 @@ void AndroidAgentDeployment::removeControlForwards(const std::string& serial) co
     if (!validSerial(serial)) {
         return;
     }
-    serialdemo::AdbTransport adb;
+    testtools::AdbTransport adb;
     const auto list = adb.runCommand({}, {"forward", "--list"}, std::chrono::seconds(3));
     if (list.exitCode != 0 || list.timedOut) {
         return;
@@ -407,7 +407,7 @@ bool AndroidAgentDeployment::stopRemote(const std::string& serial, std::string& 
         error = "ADB 设备序列号格式不合法";
         return false;
     }
-    serialdemo::AdbTransport adb;
+    testtools::AdbTransport adb;
     if (!ensureRootAdb(adb, serial, {}, error)) {
         return false;
     }
