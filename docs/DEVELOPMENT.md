@@ -177,3 +177,42 @@ Qt 只进入 UI/GUI 桥接；无 Qt 层通过接口协作，UI 不包含具体�
 长期设计取舍放 `docs/decisions/`，历史证据放 `DEVLOG.md`，不为每次修改增加新文档。
 提交前运行 `scripts/check-project-docs.ps1` 和 `scripts/check-baseline.ps1`，复核实际 Git 差异。
 保留无关用户修改，不自动暂存、改写历史或推送；提交说明使用中文。
+
+## 7. GitHub SSH 连接
+
+网络限制 22 端口时，GitHub 提供 `ssh.github.com:443`。在用户 SSH 配置中为 GitHub 单独设置，
+其他服务器仍使用自己的 Host 配置：
+
+```sshconfig
+Host github.com
+    HostName ssh.github.com
+    Port 443
+    User git
+```
+
+配置方法见 [GitHub 官方说明](https://docs.github.com/en/authentication/troubleshooting-ssh/using-ssh-over-the-https-port)。
+首次连接时核对官方公布的主机指纹，保留 SSH 的主机校验。
+
+在仓库目录依次检查：
+
+```powershell
+ssh -G git@github.com
+ssh -T git@github.com
+git ls-remote origin
+git push --dry-run origin master v0.16.0
+```
+
+`ssh -G` 用于查看实际生效的主机与端口。`Permission denied (publickey)` 表示已进入认证阶段，
+需要检查公钥登记、所用 SSH 客户端和密钥加载情况。GitHub 显示认证成功但不提供 Shell 时，
+`ssh -T` 仍可能返回退出码 1，判断时应结合输出。
+
+Windows 可能同时安装系统 OpenSSH 和 Git 自带的 SSH。若系统客户端可用而 Git 调用失败，
+可在当前仓库指定系统客户端：
+
+```powershell
+$gitSsh = (Join-Path $env:WINDIR 'System32/OpenSSH/ssh.exe').Replace('\', '/')
+git config --local core.sshCommand "$gitSsh -o ConnectTimeout=15"
+```
+
+这项配置保存在本地 `.git/config`，不随源码提交。修改后重新执行远端读取和推送预检查；
+`--dry-run` 不实际更新远端分支或标签。

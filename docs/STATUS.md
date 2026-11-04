@@ -10,7 +10,7 @@
 - 当前桌面版本为 **0.16.0 / Oh My Debug**，本地分支 `master`，版本标签 `v0.16.0`。
 - Agent 保持 **0.3.7**，协议 **1**。内部标识、部署路径、环境变量和 `%LOCALAPPDATA%/TestTools/` 设置路径兼容。
 - 第一方版权署名 **Yanzhaohui**，采用根目录 [LICENSE](../LICENSE) 的限制用途源码可见许可；第三方保留各自许可。
-- 本地 Windows 包：`build/packages/OhMyDebug-0.16.0-windows-x64.zip`，提交号和文件摘要记录在包内清单。
+- 本地 Windows 包：`build/docs-onboarding/package/OhMyDebug-0.16.0-windows-x64.zip`，包含入门手册；提交号和文件摘要记录在包内清单。
   构建和回归证据位于 `build/release-prep/`；提交整理前的历史、工作区和索引备份位于 `build/git-history-0.16.0/`。
 
 ## 2. 当前实现
@@ -24,6 +24,7 @@
 | 仓库 | 裁剪 1124 个无关上游文件，保留编译源码、许可证、固定版本与摘要；第一方命名空间统一为 testtools |
 | 工程 | OhMyDebug.slnx / vcxproj；VS 筛选器与磁盘路径一致，五个文档快捷入口及独立 agent 源码导航；测试与手工工具移入 tests/ |
 | 发布准备 | 桌面版本资源、应用图标、版权、使用说明与按清单打包；包中保留 Agent、工具、Qt 许可与第三方声明 |
+| 使用文档 | README 列出 Windows 主机、Android/Linux 设备条件；使用手册覆盖首次串口/ADB 连接、录制、文件收发、投屏和常见问题 |
 | 后续候选 | 内嵌 ADB Shell、T2、多标签、GPIO、iperf3、热插拔专项均未启动，按实际需求再决定 |
 
 ## 3. 本轮验证
@@ -40,6 +41,7 @@
 | 打包与独立启动 | ZIP 解压后 235 个载荷文件摘要一致，无 PDB/日志/个人设置；移除 Qt SDK 环境后离线启动通过，使用说明相对链接通过 |
 | VS、文档与静态 | 实际加载 OhMyDebug.slnx 并检查 src 与 third_party；同步检查在 PowerShell 5.1/7 通过，文档/基线检查通过；`vs-layout.txt`、`static-check.log` |
 | 实机、断线与长时压力 | 本轮未验证；未打开 COM3、发送串口数据、查询/重启 ADB、部署或操作开发板 |
+| 入门文档修订 | 根据功能契约和界面实际入口核对说明，文档与静态检查通过；未因文档修订追加设备验证结论。证据在 `build/docs-onboarding/` |
 
 ### Agent 导航补正
 
