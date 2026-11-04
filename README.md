@@ -1,88 +1,67 @@
 # Oh My Debug
 
-Windows 上的串口和板卡调试工具。可以通过 USB 转串口查看启动日志、操作 Debug Shell，
-也可以通过 ADB 管理 Android 或 Linux 设备的文件、打开 Shell、导出日志。
-Android 投屏和设备串口托管有各自的入口。
+用于开发板日常调试的 Windows 工具，集成串口收发、Debug 终端、ADB 文件管理和 Android 投屏。
+适合查看启动日志、调试串口协议、传送文件，以及通过 Shell 检查设备状态。
 
-原项目名为 TestTools；程序显示名称为 Oh My Debug，源码仓库目前仍使用 `test-tools` 名称。
+[使用手册](docs/USAGE.md) · [开发手册](docs/DEVELOPMENT.md) · [项目状态](docs/STATUS.md)
 
-## 能做什么
+## 功能
 
-| 功能 | 用途 |
-| --- | --- |
-| 单串口调试 | 文本/HEX 收发、快捷指令、收发计数、定时或按次数发送 |
-| 双端调试 | 同时观察两个串口，进行双向链路验证和可靠性测试 |
-| 串口终端 | 查看连续启动日志、进入 Debug Shell，支持 ANSI/VT、中文、搜索和复制粘贴 |
-| 持续录制 | 将收发数据保存到文件，录制不受显示清屏和历史裁剪影响 |
-| ADB 文件管理 | 双栏浏览、文件和文件夹上传下载、新建、改名、删除及权限编辑 |
-| ADB Shell | 为选中的设备打开独立系统终端 |
-| Android 投屏 | 查看和控制设备屏幕、保存截图；当前不启用音频转发 |
-| 设备维护与信息 | 导出 Logcat/dmesg、执行 Root/Remount 或重启，读取设备内存与存储信息 |
+- **串口收发**：文本与 HEX、快捷指令、定时或按次数发送，支持单串口和双端调试。
+- **串口终端**：ANSI/VT、中文显示、搜索、复制粘贴、错误与警告自动高亮，可调整字体和配色。
+- **日志记录**：保存当前记录，或持续录制文本、原始接收字节。
+- **ADB 调试**：文件和文件夹上传下载、独立 Shell、Logcat/dmesg 导出、Root/Remount 和重启。
+- **Android 投屏**：查看和控制设备屏幕，保存截图。
+- **板端服务**：操作开发板上的串口，读取系统、内存和存储信息。
 
-## 运行环境和设备范围
+## 支持环境
 
-桌面端目前提供 **Windows x64** 成品，日常使用选择 Release。
-当前构建和界面验证在 Windows 11 完成，Windows 10 的兼容性仍需单独验证。
-暂未提供 Linux、macOS 或 Windows ARM64 的桌面成品。
+桌面程序运行于 **Windows x64**。设备可以通过电脑串口或 USB ADB 连接：
 
-| 设备或连接方式 | 可以使用的部分 | 条件 |
+| 连接方式 | 适用设备 | 准备工作 |
 | --- | --- | --- |
-| Windows 能识别的 COM 串口 | 本地串口收发、终端、录制和双端调试 | 安装串口设备驱动，串口参数与设备一致；设备运行什么系统不影响本地串口连接 |
-| 启用 ADB 的 Android 设备 | 文件、Shell、日志导出和投屏 | USB 调试已启用并授权；具体操作受系统版本、权限和固件限制 |
-| Android ARMv7 / ARM64 | 设备串口、板卡硬件信息 | 随包板端服务提供 `armeabi-v7a`、`arm64-v8a` 产物，构建最低 API 为 23；还需设备允许启动服务和访问相应节点 |
-| Linux ARM64，glibc 2.31 及以上 | 设备串口、板卡硬件信息 | 固件带 adbd，自动部署要求 root adbd，能够写入 `/opt`、`/run` 和 `/var/log` |
-| 其他带 adbd 的 Linux 固件 | ADB Shell 和文件操作 | 取决于固件提供的命令与权限；随包 Agent 不覆盖所有架构和 libc |
+| 本地 COM 串口 | USB 转串口、MCU、开发板 Debug 口，以及 U-Boot、Linux、Android 串口控制台 | 安装 Windows 串口驱动，设置与设备一致的波特率等参数 |
+| Android ADB | 开启 USB 调试的 Android 设备 | 安装 ADB 驱动，在设备上确认调试授权 |
+| Linux ADB | 固件中运行 adbd 的 Linux 开发板 | 启动 adbd，通过 USB 连接电脑 |
 
-Linux 板端服务当前只提供 `aarch64/glibc-2.31` 目标，未提供 Linux ARM32、x86、musl 或 uClibc 的现成包。
-Buildroot、Yocto 等系统需要核对实际架构、libc 和 adbd 配置，不能只按发行版名称判断。
-没有 ADB 的设备仍可通过 PC 端串口调试；当前没有 SSH 连接板卡的入口。
+本地串口可独立使用。ADB 文件管理和 Shell 适用于 Android、Linux；投屏使用 scrcpy，面向 Android。
 
-实机记录主要来自 **RK3568 / Android 11**，不表示其他 Rockchip 型号或所有 Android 固件都已逐项验证。
-各版本实际测过的功能和仍待验证的内容见 [当前状态](docs/STATUS.md)。
+使用设备串口和板卡信息时，程序会部署随包的板端服务。目前提供以下版本：
 
-## 第一次使用
-
-1. 解压完整 Windows 成品 ZIP，运行 `OhMyDebug.exe`。只下载源码包无法直接启动。
-2. 查看串口收发数据，进入“串口调试 → 单串口调试”；进入开发板 Debug Shell，选择“串口终端”。
-3. 使用 ADB 时，通过 USB 连接设备，在设备上确认调试授权，再从顶栏选择在线设备。
-4. 只有设备串口和板卡硬件信息需要“连接服务”；本地 COM、ADB 文件、Shell 和投屏可以分别使用。
-
-顶部的设备列表用于选择 **ADB 设备**，串口页面里的下拉框用于选择 **COM 口或设备串口**。
-ADB 未连接时，本地 COM 串口仍然可用。
-
-详细步骤见 [使用手册](docs/USAGE.md)，包含第一次连接、日志保存、文件收发、投屏和常见问题。
-
-## 成品包与设置
-
-请保留程序旁的 Qt DLL、`platforms/`、`platform-tools/`、`scrcpy/` 和 `agent-bundle/`，不要只复制 EXE。
-若 Windows 提示缺少 MSVC 运行库，可安装包内的 `vc_redist.x64.exe`。
-
-连接参数和界面偏好保存在 `%LOCALAPPDATA%/TestTools/`，改名后继续兼容原设置。
-收发日志需要手动保存或开启录制，不会仅因连接成功就自动保存完整会话。
-
-## 开发
-
-桌面使用 C++17、Qt 和 Visual Studio；板端服务使用独立 CMake 和 Android/Linux 工具链。
-使用已配置 Qt VS Tools 的 Visual Studio 打开 `OhMyDebug.slnx`，选择 `x64 / Release`。
-解决方案中的 `agent` 文件夹提供板端源码、协议、测试和构建脚本入口。
-
-| 路径 | 内容 |
+| 系统 | 板端服务目标 |
 | --- | --- |
-| `src/` | 桌面、板端服务及共享协议实现 |
-| `tests/` | 核心与界面检查、独立手工工具 |
-| `third_party/` | 固定版本的依赖源码、工具和许可 |
-| `scripts/` | 构建、验证与打包 |
-| `docs/` | 使用、设计、开发和验证记录 |
-| `build/` | 本地产物，不纳入 Git |
+| Android | ARMv7、ARM64，API 23 起 |
+| Linux | ARM64，glibc 2.31 起 |
 
-- [开发手册](docs/DEVELOPMENT.md)：环境配置、桌面与 Agent 构建、检查和打包。
-- [架构说明](docs/ARCHITECTURE.md)：分层、线程与数据流。
-- [第三方依赖](docs/THIRD_PARTY.md)：依赖来源、版本、本地修改和许可证。
+Linux 自动部署使用 root adbd，并需要 `/opt`、`/run`、`/var/log` 的写入权限。
+自定义固件请核对 CPU 架构、libc 和 adbd 配置。
 
-参与开发前阅读 [AGENTS.md](AGENTS.md)。项目记录统一维护在本仓库的 `docs/` 中。
+## 开始使用
+
+解压完整的 Windows 成品包，运行 `OhMyDebug.exe`。保留包内目录结构，程序会使用其中的运行库和配套工具。
+如提示缺少 MSVC 运行库，安装包内的 `vc_redist.x64.exe`。
+
+- **收发串口数据**：进入“串口调试 → 单串口调试”，选择 COM 口和波特率，点击“连接”。
+- **使用 Debug Shell**：进入“串口调试 → 串口终端”，连接后直接在终端中输入。
+- **使用 ADB**：连接 USB 并完成授权，在顶部设备栏选择设备，再进入“ADB 调试”。
+- **使用设备串口或查看板卡信息**：选中 ADB 设备后，点击顶部“连接服务”。
+
+首次连接、日志录制、文件收发和常见问题的详细步骤见 [使用手册](docs/USAGE.md)。
+
+## 编译与开发
+
+桌面程序使用 C++17、Qt 6.11.2 和 Visual Studio。配置好 Qt VS Tools 后，打开 `OhMyDebug.slnx`，
+选择 `x64 / Release` 编译运行。板端服务位于 `src/agent/`，使用独立 CMake 工程交叉编译；
+解决方案中的 `agent` 文件夹提供源码和构建脚本入口。
+
+- [开发手册](docs/DEVELOPMENT.md)：环境配置、桌面与板端构建、测试和打包。
+- [架构说明](docs/ARCHITECTURE.md)：源码目录、模块职责和线程模型。
+- [第三方依赖](docs/THIRD_PARTY.md)：组件版本、来源、本地修改和许可证。
+- [开发约定](AGENTS.md)：仓库维护规则。
 
 ## 许可
 
-Copyright (c) 2026 Yanzhaohui。第一方代码采用 [限制用途的源码可见许可](LICENSE)：
-允许阅读和个人学习研究，商用、修改版分发须另行取得书面授权。
-第三方组件保留各自的版权和许可证，详见 [第三方依赖](docs/THIRD_PARTY.md)。
+Copyright (c) 2026 Yanzhaohui。
+
+项目源码允许阅读和个人学习研究，商用、修改版分发需另行取得书面授权，完整条款见 [LICENSE](LICENSE)。
+第三方组件按各自许可证使用，详见 [第三方依赖](docs/THIRD_PARTY.md)。
