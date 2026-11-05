@@ -55,3 +55,17 @@
 - 长时压力、干净 Windows 安装、最终 ZIP：未验证。
 
 本记录的验证阶段未执行暂存、提交、推送或发布，本地 ZIP 未更新。后续源码归档与交付状态以 STATUS 为准。
+
+## ZIP 便携包补验（2026-11-05）
+
+根据用户“测试人员解压就用”的要求，改为随包部署 MSVC x64 CRT DLL，不再要求先运行运行库安装器。
+保留 Qt 和插件、ADB、scrcpy、iperf3、Agent、更新说明与工具箱帮助；不复制 SDK、PDB、测试程序或个人设置。
+
+- 本地试用载荷 265 项，清单大小/SHA-256 与实际解压文件逐项一致，ZIP 的 SHA-256 单独提供。
+- 40 个 Windows PE 的普通和延迟导入检查未发现缺失依赖；ADB 为上游 32 位程序，按 x86/WoW64 检查，不误当成 x64。
+- 将 PATH 缩减到 Windows 系统目录、移除 Qt/QML 变量，在非程序工作目录启动三页离线快照通过；实际 Qt、qwindows 和 MSVC DLL 均从解压包加载。
+- 同一隔离环境中运行 adb version、scrcpy --version、iperf3 --version 均通过；没有连接设备、输出 GPIO 或发送测试流量。
+- 包内用户帮助的相对链接通过；上游许可/作者文件保持原样，不改写其中指向完整上游源码的链接。
+- 本机无 Windows Sandbox，未执行全新 Windows 环境验收；Windows 仍需识别实际硬件驱动。
+
+证据在 `build/zip-trial-0.18.1/`，最终包位置与交付状态只维护在 STATUS。

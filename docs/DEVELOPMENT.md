@@ -170,7 +170,8 @@ Android 与 Linux 不能共用二进制，内核版本也不能代替 ABI、libc
 
 ### 交付形式
 
-当前脚本生成 **ZIP 便携包**，用户解压完整目录后运行 `OhMyDebug.exe`。单文件 EXE 尚未实现。
+当前提供 **ZIP 便携包**，面向 Windows 10（1809 起）/11 x64；完整解压后直接运行 `OhMyDebug.exe`。
+Qt、MSVC app-local 运行库与配套工具随包提供，不要求测试人员安装开发环境或配置 PATH。单文件 EXE 尚未实现。
 
 | 形式 | 用户操作 | 对本项目的影响 |
 | --- | --- | --- |
@@ -193,12 +194,15 @@ Android 与 Linux 不能共用二进制，内核版本也不能代替 ABI、libc
 
 先提交并核对目标源码版本，确认完整 Agent Bundle，构建对应桌面 Release，再提供同版本 Qt 源码目录，以收集许可与第三方声明。
 板端代码或部署内容变化时按上一节执行 Agent 矩阵；仅桌面/文档变化可复用已经校验、版本一致的 Bundle。
-发布内容应同时携带[本版更新说明](releases/0.18.1.md)，发布脚本当前仅自动收集使用手册和第三方说明，补齐更新说明的收集随最终打包方式一起实施。
+脚本收集[本版更新说明](releases/0.18.1.md)、使用手册、工具箱帮助和第三方说明；便携帮助去掉仅在源码仓库可用的导航，并检查包内相对链接。
+通过 `-VcRuntimeDirectory` 指定 Visual Studio Redist 下的 x64 CRT 目录；必需运行库缺失、架构错误或版本过旧时停止打包。
+采用 [Microsoft app-local 部署](https://learn.microsoft.com/cpp/windows/choosing-a-deployment-method)；不安装运行库或修改系统环境。
 
 现有 ZIP 脚本入口：
 
 ```powershell
-.\scripts\package-release.ps1 -QtSourceDirectory '<Qt 6.11.2 source path>'
+.\scripts\package-release.ps1 -QtSourceDirectory '<Qt 6.11.2 source path>' `
+  -VcRuntimeDirectory '<Visual Studio Redist/MSVC/version/x64/Microsoft.VCxxx.CRT>'
 ```
 
 脚本要求干净的 Git 工作树，核对产品版本、Release 标记、Qt 版本、随包工具与 Agent 摘要，

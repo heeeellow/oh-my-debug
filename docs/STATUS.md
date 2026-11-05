@@ -8,11 +8,12 @@
 
 - 日期：2026-11-05。桌面 **0.18.1 / Oh My Debug**，Agent **0.3.12**，协议 **1**。
 - 源码归档分支为 `master`，远程目标 `origin/master`；本版包含自 `d01ac1e` 起的工具箱与维护改动，更新内容见 [0.18.1 更新说明](releases/0.18.1.md)。
-- 当前处于发布准备：尚未创建发布标签或 Release，也未生成新发布包。源码提交与远程同步不等于二进制已发布。
+- 当前处于发布准备：已制作本地 ZIP 便携试用包；尚未创建正式发布标签或 Release。源码同步和本地试用不等于公开发布。
 - 新程序：`build/ui-refinement-0.18.1/runtime/Release/OhMyDebug.exe`；Debug 在同级目录。
 - 本轮只改桌面与文档，沿用 `build/agent-bundle/` 的三目标 0.3.12 Bundle，已复制到独立运行目录；未重编译或替换日常设备服务。
-- 打包形式正在比较 ZIP 便携包与单文件便携 EXE，尚未选定或实施；方案见[开发手册](DEVELOPMENT.md#5-打包与公开前检查)。现有脚本支持 ZIP。
-- 本地 0.16.0 ZIP 保持原样，待交付形式确认并完成发布前检查后生成新包。
+- 用户已选择先试用 ZIP：`build/packages/0.18.1-local/OhMyDebug-0.18.1-windows-x64.zip`，旁边提供 `.sha256` 校验文件；单文件便携 EXE 尚未实现。
+- ZIP 面向 Windows 10（1809 起）/11 x64，随包部署 Qt、MSVC app-local 运行库、ADB、scrcpy、iperf3 与 Agent，无需测试人员安装开发环境或配置 PATH。
+- 旧 0.16.0 ZIP 保持原样。实际硬件仍需 Windows 能识别其 COM 或 ADB 设备，本包不安装设备驱动。
 
 ## 2. 本轮实现
 
@@ -39,7 +40,8 @@
 | 分辨率与 DPI | 1366×768、1920×1080、最小 1120×720 快照已查看；100%/125%/150% 数字框操作、参数对齐、键盘与禁用态通过 |
 | 静态与文档 | 文档链接、分层、VS 导航、Git 空白与本轮差异范围检查通过 |
 | Agent / 跨平台构建 | 本轮未修改 Agent；未重跑 Android/Linux 交叉编译或 Linux 文件系统夹具，前轮证据保留在历史记录 |
-| 发布包 / 长时 | 未验证；未生成 ZIP，未做干净 Windows 安装或长时压力验证 |
+| ZIP 便携包 | 265 项载荷摘要与解压文件一致；40 个 Windows PE 文件的普通/延迟导入检查通过；清除 SDK/PATH 后三页离线启动通过，Qt/MSVC 实际从包内加载，三个配套工具版本启动通过 |
+| 干净系统 / 长时 | 本机不具备 Windows Sandbox；未验证全新 Windows 测试机和长时压力，不能把移除 PATH 的本机检查等同于纯净系统 |
 
 ## 4. 实机只读范围
 
@@ -54,7 +56,7 @@
 - 真实进入 Loader、USB 模式确认、退出与恢复：未验证，需设备具备可恢复条件时另行安排。
 - GPIO 真实输出、电压/负载、物理边沿、断线/休眠/外部并发和长时状态：本轮未验证。
 - rk_gpio 属性布局与更多驱动、SELinux/权限组合：本轮未做新增固件的实机验证。
-- 发布前仍需干净 Windows 验收、第三方对应源码/许可核对和最终 ZIP；不将本地构建等同于发布。
+- 试用包证据在 `build/zip-trial-0.18.1/`：package-check.json、pe-imports.json、tools-check.json、startup-result.json 及截图。最终正式发布前仍需干净 Windows 验收和第三方对应源码/许可核对，不将本地试用等同于发布。
 - 内嵌终端 T2、整体视觉精修和多板并发仍后置，见[原迭代方案](decisions/0007-native-terminal-gpio-and-iperf3-plan.md)。
 
 历史：[0.18.0 适配验收](reviews/board-gpio-0.18.0-validation.md)、[0.17.1 反馈验收](reviews/toolbox-0.17.1-feedback-validation.md)。

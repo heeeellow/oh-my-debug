@@ -54,7 +54,8 @@ Qt 由开发环境提供，当前使用 6.11.2 MSVC x64 动态库（Core、Gui�
 不把 SDK 纳入 Git。发布脚本从同版本 Qt 源码收集 LGPL/GPL 文本和相关模块内第三方声明，
 随 `licenses/Qt/` 提供；库保持动态可替换。对应源码来源为
 [Qt 6.11.2 官方归档](https://download.qt.io/archive/qt/6.11/6.11.2/single/)。
-MSVC 运行库使用 Visual Studio 随附的可再发行安装程序，不混入开发工具。
+MSVC 运行库使用 Visual Studio Redist 目录的 x64 CRT 原始 DLL，随主程序本地部署；不从 System32 或 SDK 拷贝文件，不携带 Debug 运行库。
+包内清单记录运行库版本与逐文件摘要，来源和部署依据见 [Microsoft 部署说明](https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files)。
 
 预览包包含依赖版本、摘要和许可证，公开分发前仍需按实际包复核对应源码提供方式及各项义务；
 本页是依赖记录，不代替逐项分发审查。打包方式见 [开发手册](DEVELOPMENT.md#5-打包与公开前检查)。
