@@ -20,3 +20,5 @@ third_party/libvterm/** -text -whitespace
 third_party/asio/** -text -whitespace
 third_party/CSerialPort/** -text -whitespace
 third_party/tiny-process-library/** -text -whitespace
+third_party/iperf3/** -text -whitespace
+third_party/nlohmann/** -text -whitespace

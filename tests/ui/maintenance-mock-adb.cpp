@@ -93,6 +93,12 @@ int wmain(int argc, wchar_t** argv)
         return 0;
     }
     if (command == "shell" && args.size() == 5 && args[3] == "-T") {
+        if (args[4].find("echo OMD_LOADER_V1") == 0) {
+            if (scene == "loader-denied") { std::cerr << "Permission denied"; return 1; }
+            std::cout << "OMD_LOADER_V1\nPLATFORM\nrockchip,rk3568\nENDPLATFORM\n";
+            if (scene != "loader-unknown") std::cout << "NODE\nsyscon-reboot-mode\nMAGIC\n 52 42 c3 01\nENDNODE\n";
+            std::cout << "END\n"; return 0;
+        }
         if (args[4] == "getprop ro.build.version.sdk") {
             if (scene != "linux")
                 std::cout << "31\n";

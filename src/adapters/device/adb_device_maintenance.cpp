@@ -136,16 +136,22 @@ class LogArtifact {
 
 class AdbDeviceMaintenance final : public IDeviceMaintenanceBackend {
     std::string program_;
-    std::set<std::string> loaders_;
 
   public:
-    AdbDeviceMaintenance(const std::string& program, std::set<std::string> loaders)
-        : program_(testtools::AdbTransport(program).program()), loaders_(std::move(loaders))
+    explicit AdbDeviceMaintenance(const std::string& program)
+        : program_(testtools::AdbTransport(program).program()) {}
+    LoaderSupport inspectLoaderSupport(const AdbDevice& device, const std::atomic<bool>& cancel) override
     {
-    }
-    bool loaderSupported(const testtools::AdbDevice& device) const override
-    {
-        return loaders_.count(device.serial) != 0;
+        if (device.serial.empty() || device.state != "device") return {};
+        std::string output;
+        const auto command = ProcessRunner::runManaged(program_, {"-s", device.serial, "shell", "-T", loaderProbeScript()},
+            std::chrono::seconds(5), cancel, {}, [&](const char* data, std::size_t size) {
+                if (size > 16384 - output.size()) return false;
+                output.append(data, size); return true;
+            });
+        if (!ok(command) || cancel)
+            return {LoaderSupportState::Unknown, "无法读取 Loader 支持信息，请检查设备连接与权限", commandDetail(command)};
+        return parseLoaderProbe(output);
     }
     MaintenanceResult
     execute(const MaintenanceRequest& request,
@@ -214,8 +220,6 @@ class AdbDeviceMaintenance final : public IDeviceMaintenanceBackend {
                                                                  : "导出未完成，保留部分日志";
             return result;
         }
-        if (request.action == MaintenanceAction::Loader && !loaderSupported(request.device))
-            return {MaintenanceOutcome::Failed, "当前设备尚未确认支持 Loader"};
         if (request.action == MaintenanceAction::RootRemount) {
             publish(MaintenanceStage::CheckingPlatform, "正在确认 Android 系统…");
             const auto platform =
@@ -293,6 +297,18 @@ class AdbDeviceMaintenance final : public IDeviceMaintenanceBackend {
                                  : "Root 已核验，Remount 未确认完成；请查看详情";
             return result;
         }
+        if (request.action == MaintenanceAction::Loader) {
+            publish(MaintenanceStage::CheckingPlatform, "正在核验 Loader 重启接口…");
+            const auto support = inspectLoaderSupport(request.device, cancel);
+            result.detail = support.evidence;
+            if (cancel || support.state != LoaderSupportState::Supported) {
+                result.outcome = cancel ? MaintenanceOutcome::Cancelled : MaintenanceOutcome::Failed;
+                result.message = cancel ? "尚未发送 Loader 请求，已取消" : support.reason;
+                result.detail = support.evidence;
+                return result;
+            }
+        }
+        if (cancel) return {MaintenanceOutcome::Cancelled, "尚未发送重启请求，已取消"};
         publish(MaintenanceStage::Reboot,
                 request.action == MaintenanceAction::Loader ? "正在请求 Loader…"
                                                             : "正在发送重启命令…");
@@ -301,7 +317,7 @@ class AdbDeviceMaintenance final : public IDeviceMaintenanceBackend {
                                     : std::vector<std::string>{"reboot"},
                                 request.commandTimeout);
         result.commandIssued = reboot.started;
-        result.detail = commandDetail(reboot);
+        append(result.detail, "重启请求", commandDetail(reboot));
         if (!ok(reboot)) {
             result.outcome = outcome(reboot);
             result.message = "重启请求未确认完成；若命令已发出，停止等待不会撤销设备动作";
@@ -353,9 +369,9 @@ class AdbDeviceMaintenance final : public IDeviceMaintenanceBackend {
 };
 } // namespace
 std::shared_ptr<IDeviceMaintenanceBackend>
-createAdbDeviceMaintenanceBackend(const std::string& program, const std::set<std::string>& loaders)
+createAdbDeviceMaintenanceBackend(const std::string& program)
 {
-    return std::make_shared<AdbDeviceMaintenance>(program, loaders);
+    return std::make_shared<AdbDeviceMaintenance>(program);
 }
 std::shared_ptr<DeviceMaintenanceService> createDeviceMaintenanceService(const std::string& program)
 {

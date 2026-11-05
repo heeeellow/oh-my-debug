@@ -29,6 +29,13 @@ void write(const std::filesystem::path& path, const std::string& text)
 int main(int argc, char** argv)
 {
     try {
+        if (argc == 5 && std::string(argv[1]) == "--inspect-loader") {
+            const auto backend = createAdbDeviceMaintenanceBackend(argv[2]); std::atomic<bool> cancel{false};
+            const auto support = backend->inspectLoaderSupport({argv[3], "device", {}}, cancel);
+            write(std::filesystem::u8path(argv[4]), support.evidence + "\n" + support.reason);
+            check(support.state == LoaderSupportState::Supported, support.reason.c_str());
+            std::cout << "PASS read-only runtime Loader qualification; no reboot requested\n"; return 0;
+        }
         check(argc == 2, "mock program argument");
         const auto program = std::filesystem::absolute(std::filesystem::u8path(argv[1])).u8string();
         SetEnvironmentVariableW(L"ADB_PATH", std::filesystem::u8path(program).c_str());
@@ -201,8 +208,12 @@ int main(int argc, char** argv)
         check(!service->prepare(request, {}, error),
               "default product exposes no unverified Loader target");
         auto loader =
-            DeviceMaintenanceService(createAdbDeviceMaintenanceBackend(program, {"device-A"}));
-        scene("success");
+            DeviceMaintenanceService(createAdbDeviceMaintenanceBackend(program));
+        scene("loader-unknown");
+        loader.setLoaderTarget(request.device); auto probe = loader.prepareLoaderProbe(); loader.executeLoaderProbe(probe);
+        check(!loader.loaderSupported(request.device), "platform name alone does not enable Loader");
+        loader.cancelLoaderProbe(); scene("success");
+        probe = loader.prepareLoaderProbe(); loader.executeLoaderProbe(probe);
         check(loader.prepare(request, {}, error), "explicit fixture proof enables Loader");
         loader.executePrepared();
         result = loader.snapshot().result;
@@ -211,6 +222,12 @@ int main(int argc, char** argv)
               "ADB offline is not Loader proof");
         check(read(fixture / "calls.txt").find("reboot\tloader") != std::string::npos,
               "fixed Loader command");
+        loader.cancelLoaderProbe(); scene("success");
+        probe = loader.prepareLoaderProbe(); loader.executeLoaderProbe(probe);
+        check(loader.prepare(request, {}, error), "fresh Loader fixture prepared");
+        scene("loader-denied"); loader.executePrepared();
+        check(!loader.snapshot().result.commandIssued && loader.snapshot().result.outcome == MaintenanceOutcome::Failed,
+              "runtime capability loss prevents Loader request");
         std::cout
             << "PASS native streaming, binary data, overwrite, partial failures, cancellation, "
                "timeout, root identity, remount, reboot states and Loader qualification\n";

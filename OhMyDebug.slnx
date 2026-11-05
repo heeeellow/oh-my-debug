@@ -17,12 +17,17 @@
     <File Path="src/agent/agent_service.h" />
     <File Path="src/agent/board_capability.cpp" />
     <File Path="src/agent/board_capability.h" />
+    <File Path="src/agent/board_gpio.cpp" />
+    <File Path="src/agent/board_gpio.h" />
     <File Path="src/agent/board_test_job.cpp" />
     <File Path="src/agent/board_test_job.h" />
     <File Path="src/agent/native_board_observations.cpp" />
     <File Path="src/agent/native_board_observations.h" />
     <File Path="src/agent/serial_bridge.cpp" />
     <File Path="src/agent/serial_bridge.h" />
+    <File Path="src/agent/toolbox.cpp" />
+    <File Path="src/agent/toolbox.h" />
+    <File Path="src/agent/toolbox_platform.cpp" />
     <File Path="src/core/protocol/agent_version.h" />
     <File Path="tests/agent/agent_service_test.cpp" />
   </Folder>

@@ -2,6 +2,7 @@
 
 #include "application/agent/adb_agent_deployment.h"
 #include "core/protocol/agent_connection.h"
+#include "core/toolbox/toolbox_host.h"
 
 #include <functional>
 #include <memory>
@@ -27,6 +28,7 @@ class AgentConnectionService {
     using ProgressCallback = std::function<void(const std::string&)>;
 
     static std::shared_ptr<IAgentConnection> createClient();
+    static std::shared_ptr<IToolboxHost> createToolboxHost(const std::string& applicationDirectory);
     static bool checkConnection(std::uint16_t localPort, std::string& error);
     static AgentConnectionResult connectDevice(const std::string& serial,
                                                 const std::string& applicationDirectory,

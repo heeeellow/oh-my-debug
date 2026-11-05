@@ -1,6 +1,7 @@
 #include "application/agent/agent_connection_service.h"
 #include "application/agent/agent_service_status.h"
 #include "core/protocol/agent_protocol.h"
+#include "core/protocol/agent_version.h"
 #include "test_paths.h"
 #include "ui/main_window.h"
 #include "ui/widgets/file_pane.h"
@@ -59,7 +60,7 @@ class LoopbackService {
                       asio::read(socket, asio::buffer(input));
                       const std::string response =
                           i == 0
-                              ? R"({"protocol":1,"request_id":"health-hello","ok":true,"result":{"agent_version":"0.3.7"}})"
+                              ? std::string(R"({"protocol":1,"request_id":"health-hello","ok":true,"result":{"agent_version":")") + testtools::AgentVersion + R"("}})"
                               : R"({"protocol":1,"request_id":"health-capabilities","ok":true,"result":{"capabilities":[{"id":"serial.stream"}]}})";
                       const auto frame =
                           testtools::encodeAgentFrame(testtools::jsonAgentFrame(response));

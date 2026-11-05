@@ -1,6 +1,7 @@
 #include "application/device/file_transfer_service.h"
 #include "application/device/screen_mirror_service.h"
 #include "application/support/background_task_group.h"
+#include "application/toolbox/toolbox_service.h"
 #include "ui/widgets/file_pane.h"
 #include "test_paths.h"
 #include <QtTest/QTest>
@@ -13,6 +14,7 @@
 #include "ui/pages/file_transfer_workspace.h"
 #include "ui/pages/serial_workspace.h"
 #include "ui/pages/serial_terminal_workspace.h"
+#include "ui/pages/toolbox_workspace.h"
 #include "ui/screen_mirror_panel.h"
 #undef protected
 #undef private
@@ -425,6 +427,25 @@ int main(int argc, char** argv)
         check(!w->serialChildren_->isHidden() &&
                   w->pages_->currentIndex() == MainWindow::TerminalPage,
               "serial parent restores last mode");
+        check(w->navigateTo("gpio") && !w->toolboxChildren_->isHidden() && w->pages_->currentIndex() == MainWindow::GpioPage,
+              "toolbox opens GPIO child");
+        w->navigateTo("network"); w->toolboxExpandButton_->click();
+        check(w->toolboxChildren_->isHidden() && w->pages_->currentIndex() == MainWindow::NetworkPage,
+              "toolbox arrow retains active child");
+        w->navigateTo("files"); w->toolboxGroupButton_->click();
+        check(!w->toolboxChildren_->isHidden() && w->pages_->currentIndex() == MainWindow::NetworkPage,
+              "toolbox parent restores last child");
+        testtools::ToolboxRequest toolRequest;
+        toolRequest.session.serial = w->deviceCombo_->currentData().toString().toStdString();
+        toolRequest.session.openConnection = [](std::string& error) -> std::shared_ptr<testtools::IAgentConnection> { error = "fixture has no Agent"; return {}; };
+        toolRequest.capability = "gpio.pin.read";
+        toolRequest.arguments = testtools::JsonValue::object({{"chip", testtools::JsonValue::string("gpiochip4")}, {"offset", testtools::JsonValue::integer(15)}});
+        std::string toolError;
+        check(w->toolbox_->service_->prepare(toolRequest, false, toolError), "prepare controlled tool task");
+        w->toolbox_->taskChanged();
+        check(!w->stopAgentButton_->isEnabled() && !w->disconnectAgentButton_->isEnabled(),
+              "tool task protects service reset and disconnect");
+        w->toolbox_->service_->executePrepared(); w->toolbox_->taskChanged();
         w->navigateTo("files");
         f->remotePane_->navigate("/logs");
         check(await([&] { return !f->remoteLoading_; }), "final list");

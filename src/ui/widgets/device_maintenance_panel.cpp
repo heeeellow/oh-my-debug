@@ -30,7 +30,7 @@ QString actionName(A action)
     case A::Reboot:
         return QStringLiteral("重启设备");
     case A::Loader:
-        return QStringLiteral("重启至 Loader");
+        return QStringLiteral("进入 Loader");
     }
     return {};
 }
@@ -67,7 +67,7 @@ DeviceMaintenancePanel::DeviceMaintenancePanel(
     logs->addWidget(hint);
     auto* exports = new QHBoxLayout;
     auto button = [&](A action, const char* name) {
-        auto* value = new QPushButton(actionName(action) + QStringLiteral("…"), this);
+        auto* value = new QPushButton(actionName(action) + (testtools::disruptive(action) ? QString() : QStringLiteral("…")), this);
         value->setObjectName(name);
         connect(value, &QPushButton::clicked, this, [this, action] { start(action); });
         return value;
@@ -97,6 +97,9 @@ DeviceMaintenancePanel::DeviceMaintenancePanel(
         actions->addWidget(value);
     actions->addStretch();
     controls->addLayout(actions);
+    loaderHint_ = new QLabel(this); loaderHint_->setObjectName("maintenanceLoaderHint");
+    loaderHint_->setWordWrap(true); loaderHint_->setTextFormat(Qt::PlainText);
+    controls->addWidget(loaderHint_);
     status_ = new QLabel(QStringLiteral("尚未执行诊断或维护"), this);
     status_->setObjectName("maintenanceStatus");
     status_->setTextFormat(Qt::PlainText);
@@ -139,11 +142,13 @@ DeviceMaintenancePanel::DeviceMaintenancePanel(
 DeviceMaintenancePanel::~DeviceMaintenancePanel()
 {
     service_->cancel();
+    service_->cancelLoaderProbe();
     tasks_.wait();
 }
 void DeviceMaintenancePanel::setDevice(const testtools::AdbDevice& device)
 {
     device_ = device;
+    service_->setLoaderTarget(device);
     updateControls();
 }
 testtools::MaintenanceSnapshot DeviceMaintenancePanel::snapshot() const
@@ -158,6 +163,7 @@ void DeviceMaintenancePanel::cancelTask(std::uint64_t id)
 void DeviceMaintenancePanel::shutdown()
 {
     closing_ = true;
+    service_->cancelLoaderProbe();
     service_->cancel();
     updateControls();
 }
@@ -182,7 +188,7 @@ void DeviceMaintenancePanel::start(A action)
                                  "连接并改变挂载状态。不会自动关闭校验或重启系统。")
             : action == A::Loader
                 ? QStringLiteral(
-                      "将请求重启至 Loader，当前设备会退出 ADB。需要通过 USB 枚举或实机确认结果。")
+                      "将请求进入 Loader，当前设备会退出 ADB。需要通过 USB 枚举或实机确认结果。")
                 : QStringLiteral(
                       "将立即重启该设备，当前连接会中断。停止等待无法撤销已发出的重启命令。");
         QMessageBox confirm(
@@ -245,15 +251,20 @@ void DeviceMaintenancePanel::updateControls()
     dmesg_->setEnabled(ready);
     root_->setEnabled(ready && !blockers.any());
     reboot_->setEnabled(ready && !blockers.any());
-    const auto conflictHint = QStringLiteral("请先结束该设备的文件任务、设备串口、投屏或服务准备");
+    const auto conflictHint = QStringLiteral("请先结束该设备的文件任务、设备串口、板卡任务、投屏或服务准备");
     root_->setToolTip(
         blockers.any() ? conflictHint
                        : QStringLiteral("用于 Android 调试系统；先核验 Root 身份，再尝试 Remount"));
     reboot_->setToolTip(blockers.any()
                             ? conflictHint
                             : QStringLiteral("确认后重启当前设备；停止等待不能撤销设备动作"));
-    loader_->setVisible(service_->loaderSupported(device_));
-    loader_->setEnabled(ready && !blockers.any());
+    const auto support = service_->loaderSupport(device_);
+    const auto loaderReason = !ready ? (state.active ? QStringLiteral("维护任务进行中，请等待结束") :
+        (closing_ ? QStringLiteral("正在关闭") : QStringLiteral("选择在线设备后识别 Loader 支持情况"))) :
+        blockers.any() ? conflictHint : text(support.reason);
+    loader_->setEnabled(ready && !blockers.any() && support.state == testtools::LoaderSupportState::Supported);
+    loader_->setToolTip(loaderReason);
+    loaderHint_->setText(QStringLiteral("Loader：") + loaderReason);
     cancel_->setVisible(state.active);
     cancel_->setEnabled(state.active && !state.cancelling && !closing_);
     cancel_->setText(state.cancelling                              ? QStringLiteral("正在停止…")
@@ -283,11 +294,13 @@ void DeviceMaintenancePanel::updateControls()
                                 ? QStringLiteral("日志文件：")
                                 : QStringLiteral("部分日志：")) +
                            QString::fromStdWString(artifact.wstring()));
-    const auto details = state.id == 0 ? QStringLiteral("暂无诊断或维护记录")
+    auto details = state.id == 0 ? QStringLiteral("暂无诊断或维护记录")
                                        : QStringLiteral("目标设备：%1\n动作：%2\n%3")
                                              .arg(text(state.request.device.serial),
                                                   actionName(state.request.action),
                                                   text(state.result.detail));
+    details += QStringLiteral("\n\nLoader 支持判定：") + text(support.reason);
+    if (!support.evidence.empty()) details += "\n" + text(support.evidence);
     if (detail_->toPlainText() != details)
         detail_->setPlainText(details);
 }
@@ -295,6 +308,10 @@ void DeviceMaintenancePanel::poll()
 {
     tasks_.reapFinished();
     const auto state = service_->snapshot();
+    if (!closing_ && isVisible() && !state.active && !qEnvironmentVariableIsSet("TESTTOOLS_OFFLINE")) {
+        const auto probe = service_->prepareLoaderProbe();
+        if (probe.id) tasks_.start([service = service_, probe] { service->executeLoaderProbe(probe); });
+    }
     updateControls();
     if (wasActive_ && !state.active) {
         wasActive_ = false;

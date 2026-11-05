@@ -99,18 +99,31 @@ Windows Shell 图标后台读取并有界缓存，QPixmap 与模型通知只在 
 
 ## 5. 板端、协议与部署
 
+`ToolboxWorkspace` 装配 GPIO 与网络两个页面，`ToolboxService` 在无 Qt 层持有固定设备的请求、
+独立控制连接、停止/复核及报告。`core/toolbox/` 保存参数白名单、主机接口与有界 iperf JSON 解析，
+`WindowsToolboxHost` 提供网卡、路由和受管客户端进程。阻塞执行与续租均由后台工作线程驱动，
+UI 只读取快照并投递停止意图。偏好和报告写入也在后台，Qt 控件只在 GUI 线程访问。
+
+板端 `ToolboxAgent` 管理实例/所有者/操作票据、进度和租约，复用现有单板级任务管理器；
+`toolbox_platform.cpp` 独占 GPIO 句柄和固定随包 Runner 的子进程。启动响应丢失先废弃/复核原操作，
+不重复执行。资源结束未知由用例保持门禁；固定动作、限额和结果语义见 [工具箱契约](features/TOOLBOX.md)。
+`BoardGpioRegistry` 在 Agent 内适配固定的公司 sysfs ABI，按驱动、设备树和原生行信息关联端点；
+端点标识不接受路径透传，执行时重新核对身份。它复用 ToolboxAgent 的任务归属，保持原生 GPIO 申请规则。
+
 Agent 默认只监听板端回环地址，桌面经当前设备的 ADB 动态转发连接。
 控制连接使用长度前缀帧和有输入限额的 UTF-8 JSON；串口使用独立数据连接，避免持续数据阻塞控制。
 字段、能力、会话与错误定义以 [AGENT_PROTOCOL_V1.md](AGENT_PROTOCOL_V1.md) 为准，不在本页复制协议。
 
-板级能力通过静态 ProviderBinding 关联固定能力 ID、参数、风险、资源与执行函数。
+原有只读板级能力通过静态 ProviderBinding 关联固定能力 ID、风险、资源与执行函数；
+工具能力由上述 ToolboxAgent 的固定白名单校验参数并装配执行上下文。
 只使用既定的 `agent_native`、`runner_pack`、`sdk_bsp` 和可选 `rk_reference` 来源，
 不建立动态插件或任意路径执行。资源冲突由板端裁决，桌面预检查用于提前提示。
 读取结果保留 observation，与能力执行成功和规格判断区分。设计取舍见
 [ADR-0003](decisions/0003-stable-board-capabilities-and-providers.md)。
 
 Bundle v2 按用户空间选择 Android ARMv7/ARM64 或 Linux aarch64/glibc-2.31，
-逐文件校验大小和 SHA-256。AgentVersion 是需要升级的唯一版本标识，桌面版本独立。
+每目标包含 Agent 与 iperf3 Runner，逐文件校验大小和 SHA-256。Runner 从 Agent 所在目录固定定位，
+不接受外部路径。AgentVersion 是需要升级的唯一版本标识，桌面版本独立。
 内核版本不是二进制目录维度，更换内核后仍需重验驱动、节点、termios、权限和安全策略。
 
 Android 使用受控临时目录部署；Linux 使用 `/opt/testtools-agent/versions/` 的版本目录及

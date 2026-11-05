@@ -3,7 +3,13 @@ project(testtools_agent LANGUAGES CXX)
 
 find_package(Threads REQUIRED)
 
+set(TESTTOOLS_TOOLBOX_SOURCES
+    toolbox.cpp toolbox_platform.cpp board_gpio.cpp
+    ../core/toolbox/toolbox_contract.cpp
+    ../core/toolbox/iperf_json.cpp)
+
 add_executable(testtools-agent
+    ${TESTTOOLS_TOOLBOX_SOURCES}
     agent_main.cpp
     board_capability.cpp
     board_test_job.cpp
@@ -20,11 +26,16 @@ target_compile_definitions(testtools-agent PRIVATE ASIO_STANDALONE)
 target_include_directories(testtools-agent PRIVATE
     ..
     ../../third_party/asio/include
+    ../../third_party/nlohmann
 )
 target_link_libraries(testtools-agent PRIVATE Threads::Threads)
 install(TARGETS testtools-agent RUNTIME DESTINATION .)
 if(MSVC)
     target_compile_options(testtools-agent PRIVATE /utf-8)
+endif()
+
+if(NOT WIN32)
+    add_subdirectory(../../third_party/iperf3 "${CMAKE_CURRENT_BINARY_DIR}/iperf3-build")
 endif()
 
 if(WIN32)
@@ -65,6 +76,7 @@ option(TESTTOOLS_BUILD_TESTS "Build host-side Agent contract tests"
 if(TESTTOOLS_BUILD_TESTS)
     enable_testing()
     add_executable(testtools-agent-tests
+        ${TESTTOOLS_TOOLBOX_SOURCES}
         ../../tests/agent/agent_service_test.cpp
         board_capability.cpp
         board_test_job.cpp
@@ -75,7 +87,7 @@ if(TESTTOOLS_BUILD_TESTS)
         ../core/protocol/json_value.cpp
     )
     target_compile_features(testtools-agent-tests PRIVATE cxx_std_17)
-    target_include_directories(testtools-agent-tests PRIVATE ..)
+    target_include_directories(testtools-agent-tests PRIVATE .. ../../third_party/nlohmann)
     target_link_libraries(testtools-agent-tests PRIVATE Threads::Threads)
     if(MSVC)
         target_compile_options(testtools-agent-tests PRIVATE /utf-8)

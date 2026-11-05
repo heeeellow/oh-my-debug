@@ -51,6 +51,14 @@ function New-Package {
         root = $root
         files = @($fileEntry)
     }
+    $runnerPath = Join-Path $bundleRoot (($root + '/iperf3') -replace '/', '\')
+    if (-not (Test-Path -LiteralPath $runnerPath -PathType Leaf)) { throw "Missing iperf3 Runner: $runnerPath" }
+    $runner = Get-Item -LiteralPath $runnerPath
+    $package.files += [ordered]@{
+        path = 'iperf3'; role = 'runner'; executable = $true
+        size = [int64]$runner.Length
+        sha256 = (Get-FileHash -LiteralPath $runnerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
     foreach ($key in $SpecificMetadata.Keys) {
         if ($key -ne 'id') { $package[$key] = $SpecificMetadata[$key] }
     }

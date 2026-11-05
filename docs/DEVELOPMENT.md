@@ -51,14 +51,20 @@ VS Installer 需安装对应 MSVC 组件。其他编译器组合需要单独验�
 
 ```powershell
 $qtMsBuild = Join-Path $env:LOCALAPPDATA 'QtMsBuild'
-msbuild .\OhMyDebug.vcxproj /m /p:Configuration=Release /p:Platform=x64 `
+msbuild .\OhMyDebug.vcxproj /m /p:VCToolsVersion=14.44.35207 /p:Configuration=Release /p:Platform=x64 `
   /p:QtMsBuild="$qtMsBuild"
 ```
 
 未找到 MSBuild 时通过 Visual Studio Installer 自带的 `vswhere` 查询，不在脚本写入个人路径。
 产物位于 `build/windows/x64/Release/OhMyDebug.exe`。
 Qt 运行时、固定 ADB、scrcpy 和已有 Agent Bundle 会复制到程序旁。
+工具箱的固定 Windows iperf3/运行库/许可同步复制到 `iperf3/`；构建前校验
+`third_party/iperf3/`、`third_party/nlohmann/` 的摘要，失败时停止。
 构建不联网升级依赖，也不执行设备操作；缺少 Bundle 时仅允许开发启动，不能打完整发布包。
+
+工程固定 `VCToolsVersion=14.44.35207`，避免 Developer Shell 默认版本覆盖并混用 LTCG 对象。
+命令行构建同时显式传入该全局属性；本机 VS 2026 的默认工具集会选择较新的编译器，不能仅凭已进入 Developer Shell 推断实际版本。
+隔离构建可指定 `OutDir`、`IntDir` 与 `TestToolsAgentBundleDirectory`，不影响正在使用的程序。
 
 `VERSION.txt` 是桌面版本唯一来源，构建时生成 `app_version.h`，供程序与 Windows 版本资源共用。
 品牌和版权常量在 `src/app_info.h`。内部设置目录、协议标识、Agent 文件名和部署路径保持 TestTools 兼容。
@@ -90,10 +96,21 @@ cmake --build build/tests/ui --config Release --parallel
 ctest --test-dir build/tests/ui -C Release --output-on-failure
 ```
 
+隔离产品对象时增加 `-DTESTTOOLS_HOST_OBJECT_DIRECTORY='<absolute Release object directory>'`，
+同时保持测试与产品的编译器版本一致。`toolbox-contract` 覆盖协议、租约、未知结束与测速协调；
+`toolbox-ui` 覆盖两页的门禁、确认取消、结果与关闭，不操作真实引脚或发送实际测试流量。
+
 `serial-workspace-smoke` 验证页面分离、偏好和端口交接；`terminal-throughput-smoke`
 包含连续输出、空闲交互与回显延迟检查。计时检查应在低负载下单独运行，不能把并行编译造成的延迟当成产品结论。
 `tests/manual/` 中的工具必须显式选择目标构建；`terminal-live-smoke` 会打开并发送到真实串口，
 `device-smoke` 会访问真实设备，它们不在默认检查中。任何发送、写入、重启或压力操作均需明确设备与授权范围。
+
+`toolbox-smoke` 默认仍为无设备夹具。显式 `--live-network <serial> <forward-port> <runtime-directory> <output-directory>`
+会通过真实服务发起双向 TCP/UDP 流量；当前验收入口固定核对 192.168.1.211 ↔ 192.168.1.111，不适用于其他网络配置。
+`--live-inspect` 使用相同参数只读取元数据和抓图；`--chart-report <report.json> <output.png>` 从已有样本重绘，不访问设备。
+`--live-board-inspect` 使用相同四个参数，在显式选择的真实服务上发现设备控制接口、读取首个端点并抓图，断言任务为 `gpio.board.read`，不发送 GPIO 写入。
+`maintenance-backend-smoke --inspect-loader <adb-program> <serial> <output.txt>` 仅执行当前设备的 Loader 支持信息读取，不发送重启请求；默认 CTest 不访问真实设备。
+Linux 主机的 toolbox-contract 另含两类驱动接口的隔离文件系统夹具，模拟内核 show/store；Windows 主机仅运行可移植契约。
 
 无设备界面快照：
 
@@ -103,6 +120,8 @@ ctest --test-dir build/tests/ui -C Release --output-on-failure
 ```
 
 `--offline` 不启动 ADB 或真实串口；不可与实机诊断入口混用。
+工具箱页面参数为 `--ui-page gpio` 或 `network`。多次快照顺序启动并等待退出，
+使用独立 `TESTTOOLS_DATA_DIR` 和 `TESTTOOLS_TOOLBOX_PREFERENCES_DIRECTORY`，避免碰到用户偏好。
 界面改动至少检查目标分辨率、控件状态与异常路径。
 构建、静态、模拟、实机、异常和压力结果分别记录，未执行写“未验证”。
 内置 `--self-test` 可能访问设备，不能当作离线检查调用。
@@ -128,7 +147,7 @@ Agent 生产行为、协议字段或随包部署的 Runner/配置变化时，先
 .\scripts\build-agent-matrix.ps1 -NdkRoot '<Android NDK path>' `
   -CMakeProgram '<cmake path>' -NinjaProgram '<ninja path>'
 .\scripts\validate-agent-bundle.ps1 -BundleDirectory .\build\agent-bundle
-msbuild .\OhMyDebug.vcxproj /m /p:Configuration=Release /p:Platform=x64 `
+msbuild .\OhMyDebug.vcxproj /m /p:VCToolsVersion=14.44.35207 /p:Configuration=Release /p:Platform=x64 `
   /p:QtMsBuild="$env:LOCALAPPDATA\QtMsBuild"
 ```
 
@@ -138,7 +157,9 @@ msbuild .\OhMyDebug.vcxproj /m /p:Configuration=Release /p:Platform=x64 `
 可通过 `-WslDistribution`、`-LinuxToolchainRoot` 指定环境。CMake/Ninja 来自参数或 PATH。
 
 最终 Bundle 位于 `build/agent-bundle/`，schema v2 记录目标、文件、大小和 SHA-256；
-校验覆盖三个目标及当前 AgentVersion。桌面构建只复制，不隐式启动交叉编译。
+校验覆盖三个目标的 Agent/iperf3 Runner 及当前 AgentVersion。板端 iperf3 从固定原始源码包
+通过 `third_party/iperf3/CMakeLists.txt` 构建，配置探测在输出目录进行，不改写上游压缩包。
+桌面构建只复制，不隐式启动交叉编译。
 存在且校验通过的 Bundle 会进入 `build/windows/x64/<Configuration>/agent-bundle/`，发布脚本再将其纳入 ZIP。
 缺少 Bundle 时桌面构建给出警告，陈旧或损坏的 Bundle 阻止复制；发布打包要求完整 Bundle。
 Android 与 Linux 不能共用二进制，内核版本也不能代替 ABI、libc 和设备权限验收。
@@ -147,7 +168,34 @@ Android 与 Linux 不能共用二进制，内核版本也不能代替 ABI、libc
 
 ## 5. 打包与公开前检查
 
-先构建 Release 和完整 Agent Bundle，再提供同版本 Qt 源码目录，以收集许可与第三方声明：
+### 交付形式
+
+当前脚本生成 **ZIP 便携包**，用户解压完整目录后运行 `OhMyDebug.exe`。单文件 EXE 尚未实现。
+
+| 形式 | 用户操作 | 对本项目的影响 |
+| --- | --- | --- |
+| ZIP 便携包 | 完整解压一次，后续直接运行；搬移时复制整个目录 | 沿用已有运行目录与校验流程，便于保留多个版本、检查依赖和定位问题 |
+| 单文件便携 EXE | 双击一个文件，启动器自动准备运行文件 | 拟采用首次解包到用户缓存目录、同版本复用；需要处理缓存校验、并发启动、子进程占用、版本隔离和清理。启动耗时与包体积均需实测 |
+| EXE 安装包 | 下载一个文件，安装后从快捷方式启动 | 安装完整运行目录，可增加快捷方式和卸载；安装器和升级/卸载行为需单独实现与验收 |
+
+用户提出的 SSCOM 式体验指单文件、免安装、双击启动；本页不推断 SSCOM 内部使用何种链接或打包技术。
+本项目当前使用动态 Qt 库、插件、ADB、scrcpy、iperf3 和多目标 Agent，单文件便携方案仍需将这些运行文件释放到磁盘。
+设置沿用现有用户目录，打包成一个 EXE 不会自动把配置、日志和缓存也变成一个文件。
+
+建议先保留 ZIP 作为可检查的基础交付；若选单文件便携 EXE，使用同一份已验证运行文件清单构建启动器，
+保留功能与依赖版本一致。两种容器都可以压缩，不能仅根据扩展名承诺体积更小或启动更快。
+格式选择不改变设备操作的确认与任务规则；形式未确认前不生成新包、不新增安装器或自解包代码。
+
+依据：[Qt 6.11 Windows 部署](https://doc.qt.io/qt-6.11/windows-deployment.html)说明依赖目录的收集与安装包交付；
+[Inno Setup 官方说明](https://jrsoftware.org/ishelp/topic_whatisinnosetup.htm)说明单 EXE 安装包能力，作为安装器候选参考，不代表已选用。
+
+### ZIP 打包流程
+
+先提交并核对目标源码版本，确认完整 Agent Bundle，构建对应桌面 Release，再提供同版本 Qt 源码目录，以收集许可与第三方声明。
+板端代码或部署内容变化时按上一节执行 Agent 矩阵；仅桌面/文档变化可复用已经校验、版本一致的 Bundle。
+发布内容应同时携带[本版更新说明](releases/0.18.1.md)，发布脚本当前仅自动收集使用手册和第三方说明，补齐更新说明的收集随最终打包方式一起实施。
+
+现有 ZIP 脚本入口：
 
 ```powershell
 .\scripts\package-release.ps1 -QtSourceDirectory '<Qt 6.11.2 source path>'
@@ -163,6 +211,7 @@ Android 与 Linux 不能共用二进制，内核版本也不能代替 ABI、libc
 本机启动不等于未安装运行库的干净 Windows 已验证；后者需在发布前单独执行。
 
 公开前还需复核历史提交中的个人信息、第三方对应源码的提供方式和分发义务，
+包括所带 Cygwin 运行时的准确对应源码/补丁；现有许可文本和源码入口不能替代这一核对。
 并进行真实设备回归。公开源码、发布二进制、远程改名、推送与打标签均是独立操作。
 仓库中的 LICENSE 不代表已完成名称权利检索。
 

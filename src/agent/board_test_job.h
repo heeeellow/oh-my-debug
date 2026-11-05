@@ -15,9 +15,12 @@
 
 namespace testtools::agent {
 
+struct ToolContext;
+
 struct BoardTestRunRequest {
     std::string capabilityId;
     int capabilityVersion = 1;
+    std::shared_ptr<ToolContext> toolbox;
 };
 
 struct BoardTestProviderIdentity {

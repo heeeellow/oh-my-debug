@@ -13,11 +13,13 @@
     <Filter Include="src\application\serial"><UniqueIdentifier>{885C18DB-A502-DCF4-ED8A-5BE955D722B8}</UniqueIdentifier></Filter>
     <Filter Include="src\application\support"><UniqueIdentifier>{77B966D2-A968-0EF4-302C-EA36161829E2}</UniqueIdentifier></Filter>
     <Filter Include="src\application\terminal"><UniqueIdentifier>{B2C9A806-A17D-4139-BDF3-777774269750}</UniqueIdentifier></Filter>
+    <Filter Include="src\application\toolbox"><UniqueIdentifier>{DA660BD0-AF91-E98C-2709-A5F79B5512A3}</UniqueIdentifier></Filter>
     <Filter Include="src\core"><UniqueIdentifier>{59E50381-09E8-8BF2-5892-0D3A3697D64A}</UniqueIdentifier></Filter>
     <Filter Include="src\core\device"><UniqueIdentifier>{A395DDBA-5DEE-6B49-A20B-014E7B08F7BE}</UniqueIdentifier></Filter>
     <Filter Include="src\core\protocol"><UniqueIdentifier>{724CDABD-40D7-23C3-D955-0A113B4BA824}</UniqueIdentifier></Filter>
     <Filter Include="src\core\serial"><UniqueIdentifier>{188F8CFC-CA8A-7551-6A12-3A8702D5EFC0}</UniqueIdentifier></Filter>
     <Filter Include="src\core\support"><UniqueIdentifier>{2A23D181-565A-1CC1-366C-55783353E1AB}</UniqueIdentifier></Filter>
+    <Filter Include="src\core\toolbox"><UniqueIdentifier>{21415C8D-B82E-FA8D-A8D2-E087F9E095AF}</UniqueIdentifier></Filter>
     <Filter Include="src\diagnostics"><UniqueIdentifier>{72858A5B-5224-B194-618C-3E51B97F59ED}</UniqueIdentifier></Filter>
     <Filter Include="src\ui"><UniqueIdentifier>{CC2E1E27-31C0-AF5A-D10B-B6FDDF2CDAD7}</UniqueIdentifier></Filter>
     <Filter Include="src\ui\pages"><UniqueIdentifier>{EC580DE9-7BF5-A33B-385C-7E27CC171864}</UniqueIdentifier></Filter>
@@ -36,6 +38,7 @@
     <QtMoc Include="src\ui\pages\serial_endpoint_workspace.h"><Filter>src\ui\pages</Filter></QtMoc>
     <QtMoc Include="src\ui\pages\serial_terminal_workspace.h"><Filter>src\ui\pages</Filter></QtMoc>
     <QtMoc Include="src\ui\pages\serial_workspace.h"><Filter>src\ui\pages</Filter></QtMoc>
+    <QtMoc Include="src\ui\pages\toolbox_workspace.h"><Filter>src\ui\pages</Filter></QtMoc>
     <QtMoc Include="src\ui\screen_mirror_panel.h"><Filter>src\ui</Filter></QtMoc>
     <QtMoc Include="src\ui\widgets\board_info_panel.h"><Filter>src\ui\widgets</Filter></QtMoc>
     <QtMoc Include="src\ui\widgets\device_maintenance_panel.h"><Filter>src\ui\widgets</Filter></QtMoc>
@@ -50,6 +53,7 @@
     <ClCompile Include="src\adapters\device\adb_file_transfer_backend.cpp"><Filter>src\adapters\device</Filter></ClCompile>
     <ClCompile Include="src\adapters\device\file_management.cpp"><Filter>src\adapters\device</Filter></ClCompile>
     <ClCompile Include="src\adapters\device\scrcpy_backend.cpp"><Filter>src\adapters\device</Filter></ClCompile>
+    <ClCompile Include="src\adapters\device\windows_toolbox_host.cpp"><Filter>src\adapters\device</Filter></ClCompile>
     <ClCompile Include="src\adapters\serial\cserialport_transport.cpp"><Filter>src\adapters\serial</Filter></ClCompile>
     <ClCompile Include="src\application\agent\adb_agent_deployment.cpp"><Filter>src\application\agent</Filter></ClCompile>
     <ClCompile Include="src\application\agent\agent_bundle.cpp"><Filter>src\application\agent</Filter></ClCompile>
@@ -78,12 +82,17 @@
     <ClCompile Include="src\application\serial\serial_workspace_state.cpp"><Filter>src\application\serial</Filter></ClCompile>
     <ClCompile Include="src\application\support\background_task_group.cpp"><Filter>src\application\support</Filter></ClCompile>
     <ClCompile Include="src\application\terminal\terminal_engine.cpp"><Filter>src\application\terminal</Filter></ClCompile>
+    <ClCompile Include="src\application\toolbox\gpio_inventory.cpp"><Filter>src\application\toolbox</Filter></ClCompile>
+    <ClCompile Include="src\application\toolbox\toolbox_service.cpp"><Filter>src\application\toolbox</Filter></ClCompile>
+    <ClCompile Include="src\core\device\loader_support.cpp"><Filter>src\core\device</Filter></ClCompile>
     <ClCompile Include="src\core\protocol\agent_protocol.cpp"><Filter>src\core\protocol</Filter></ClCompile>
     <ClCompile Include="src\core\protocol\json_value.cpp"><Filter>src\core\protocol</Filter></ClCompile>
     <ClCompile Include="src\core\serial\async_serial_sender.cpp"><Filter>src\core\serial</Filter></ClCompile>
     <ClCompile Include="src\core\serial\codec.cpp"><Filter>src\core\serial</Filter></ClCompile>
     <ClCompile Include="src\core\serial\serial_test_engine.cpp"><Filter>src\core\serial</Filter></ClCompile>
     <ClCompile Include="src\core\support\command_line.cpp"><Filter>src\core\support</Filter></ClCompile>
+    <ClCompile Include="src\core\toolbox\iperf_json.cpp"><Filter>src\core\toolbox</Filter></ClCompile>
+    <ClCompile Include="src\core\toolbox\toolbox_contract.cpp"><Filter>src\core\toolbox</Filter></ClCompile>
     <ClCompile Include="src\diagnostics\self_test.cpp"><Filter>src\diagnostics</Filter></ClCompile>
     <ClCompile Include="src\main.cpp"><Filter>src</Filter></ClCompile>
     <ClCompile Include="src\ui\icons.cpp"><Filter>src\ui</Filter></ClCompile>
@@ -92,6 +101,8 @@
     <ClCompile Include="src\ui\pages\serial_endpoint_workspace.cpp"><Filter>src\ui\pages</Filter></ClCompile>
     <ClCompile Include="src\ui\pages\serial_terminal_workspace.cpp"><Filter>src\ui\pages</Filter></ClCompile>
     <ClCompile Include="src\ui\pages\serial_workspace.cpp"><Filter>src\ui\pages</Filter></ClCompile>
+    <ClCompile Include="src\ui\pages\toolbox_pages.cpp"><Filter>src\ui\pages</Filter></ClCompile>
+    <ClCompile Include="src\ui\pages\toolbox_workspace.cpp"><Filter>src\ui\pages</Filter></ClCompile>
     <ClCompile Include="src\ui\screen_mirror_panel.cpp"><Filter>src\ui</Filter></ClCompile>
     <ClCompile Include="src\ui\theme.cpp"><Filter>src\ui</Filter></ClCompile>
     <ClCompile Include="src\ui\widgets\at_command_dialog.cpp"><Filter>src\ui\widgets</Filter></ClCompile>
@@ -104,6 +115,7 @@
     <ClCompile Include="src\ui\widgets\serial_keyword_highlighter.cpp"><Filter>src\ui\widgets</Filter></ClCompile>
     <ClCompile Include="src\ui\widgets\serial_shortcut_sidebar.cpp"><Filter>src\ui\widgets</Filter></ClCompile>
     <ClCompile Include="src\ui\widgets\terminal_grid_widget.cpp"><Filter>src\ui\widgets</Filter></ClCompile>
+    <ClCompile Include="src\ui\widgets\toolbox_plot.cpp"><Filter>src\ui\widgets</Filter></ClCompile>
     <ClCompile Include="third_party\CSerialPort\src\SerialPort.cpp"><Filter>third_party\CSerialPort\src</Filter></ClCompile>
     <ClCompile Include="third_party\CSerialPort\src\SerialPortAsyncBase.cpp"><Filter>third_party\CSerialPort\src</Filter></ClCompile>
     <ClCompile Include="third_party\CSerialPort\src\SerialPortBase.cpp"><Filter>third_party\CSerialPort\src</Filter></ClCompile>
@@ -131,6 +143,7 @@
     <ClInclude Include="src\adapters\device\adb_device_maintenance.h"><Filter>src\adapters\device</Filter></ClInclude>
     <ClInclude Include="src\adapters\device\file_management.h"><Filter>src\adapters\device</Filter></ClInclude>
     <ClInclude Include="src\adapters\device\scrcpy_backend.h"><Filter>src\adapters\device</Filter></ClInclude>
+    <ClInclude Include="src\adapters\device\windows_toolbox_host.h"><Filter>src\adapters\device</Filter></ClInclude>
     <ClInclude Include="src\adapters\serial\cserialport_transport.h"><Filter>src\adapters\serial</Filter></ClInclude>
     <ClInclude Include="src\app_info.h"><Filter>src</Filter></ClInclude>
     <ClInclude Include="src\application\agent\adb_agent_deployment.h"><Filter>src\application\agent</Filter></ClInclude>
@@ -160,8 +173,11 @@
     <ClInclude Include="src\application\serial\serial_workspace_state.h"><Filter>src\application\serial</Filter></ClInclude>
     <ClInclude Include="src\application\support\background_task_group.h"><Filter>src\application\support</Filter></ClInclude>
     <ClInclude Include="src\application\terminal\terminal_engine.h"><Filter>src\application\terminal</Filter></ClInclude>
+    <ClInclude Include="src\application\toolbox\gpio_inventory.h"><Filter>src\application\toolbox</Filter></ClInclude>
+    <ClInclude Include="src\application\toolbox\toolbox_service.h"><Filter>src\application\toolbox</Filter></ClInclude>
     <ClInclude Include="src\core\device\device_maintenance.h"><Filter>src\core\device</Filter></ClInclude>
     <ClInclude Include="src\core\device\file_transfer.h"><Filter>src\core\device</Filter></ClInclude>
+    <ClInclude Include="src\core\device\loader_support.h"><Filter>src\core\device</Filter></ClInclude>
     <ClInclude Include="src\core\device\screen_mirror.h"><Filter>src\core\device</Filter></ClInclude>
     <ClInclude Include="src\core\protocol\agent_connection.h"><Filter>src\core\protocol</Filter></ClInclude>
     <ClInclude Include="src\core\protocol\agent_protocol.h"><Filter>src\core\protocol</Filter></ClInclude>
@@ -173,6 +189,9 @@
     <ClInclude Include="src\core\serial\serial_transport.h"><Filter>src\core\serial</Filter></ClInclude>
     <ClInclude Include="src\core\serial\serial_types.h"><Filter>src\core\serial</Filter></ClInclude>
     <ClInclude Include="src\core\support\command_line.h"><Filter>src\core\support</Filter></ClInclude>
+    <ClInclude Include="src\core\toolbox\iperf_json.h"><Filter>src\core\toolbox</Filter></ClInclude>
+    <ClInclude Include="src\core\toolbox\toolbox_contract.h"><Filter>src\core\toolbox</Filter></ClInclude>
+    <ClInclude Include="src\core\toolbox\toolbox_host.h"><Filter>src\core\toolbox</Filter></ClInclude>
     <ClInclude Include="src\diagnostics\self_test.h"><Filter>src\diagnostics</Filter></ClInclude>
     <ClInclude Include="src\ui\icons.h"><Filter>src\ui</Filter></ClInclude>
     <ClInclude Include="src\ui\theme.h"><Filter>src\ui</Filter></ClInclude>
@@ -185,6 +204,7 @@
     <ClInclude Include="src\ui\widgets\serial_receive_view.h"><Filter>src\ui\widgets</Filter></ClInclude>
     <ClInclude Include="src\ui\widgets\serial_shortcut_sidebar.h"><Filter>src\ui\widgets</Filter></ClInclude>
     <ClInclude Include="src\ui\widgets\serial_workspace_helpers.h"><Filter>src\ui\widgets</Filter></ClInclude>
+    <ClInclude Include="src\ui\widgets\toolbox_plot.h"><Filter>src\ui\widgets</Filter></ClInclude>
   </ItemGroup>
   <ItemGroup>
     <QtRcc Include="src\ui\resources\icons.qrc"><Filter>src\ui\resources</Filter></QtRcc>

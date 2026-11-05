@@ -9,9 +9,64 @@ DeviceMaintenanceService::DeviceMaintenanceService(
 {
 }
 
-bool DeviceMaintenanceService::loaderSupported(const testtools::AdbDevice& device) const
+namespace {
+bool sameTarget(const AdbDevice& a, const AdbDevice& b)
 {
-    return backend_ && backend_->loaderSupported(device);
+    return a.serial == b.serial && a.state == b.state && a.description == b.description;
+}
+}
+LoaderSupport DeviceMaintenanceService::loaderSupport(const AdbDevice& device) const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (device.serial.empty() || device.state != "device")
+        return {LoaderSupportState::Unavailable, "选择在线设备后识别 Loader 支持情况", {}};
+    if (!sameTarget(device, loaderTarget_)) return {};
+    if (loaderSupport_.state != LoaderSupportState::Checking &&
+        std::chrono::steady_clock::now() - probeTime_ > std::chrono::seconds(30)) return {};
+    return loaderSupport_;
+}
+bool DeviceMaintenanceService::loaderSupported(const AdbDevice& device) const
+{
+    return loaderSupport(device).state == LoaderSupportState::Supported;
+}
+void DeviceMaintenanceService::setLoaderTarget(const AdbDevice& device)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (sameTarget(device, loaderTarget_)) return;
+    if (loaderProbe_.cancel) *loaderProbe_.cancel = true;
+    loaderTarget_ = device; loaderSupport_ = {}; loaderProbe_ = {}; probeExecuting_ = false; probeTime_ = {};
+}
+LoaderProbe DeviceMaintenanceService::prepareLoaderProbe()
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!backend_ || state_.active || loaderTarget_.serial.empty() || loaderTarget_.state != "device" ||
+        loaderTarget_.serial.size() > 512 || loaderTarget_.serial.find_first_of("\r\n\t") != std::string::npos ||
+        loaderTarget_.serial.find('\0') != std::string::npos ||
+        loaderSupport_.state == LoaderSupportState::Checking ||
+        std::chrono::steady_clock::now() - probeTime_ < std::chrono::seconds(30)) return {};
+    loaderProbe_ = {++probeSequence_, loaderTarget_, std::make_shared<std::atomic<bool>>(false)};
+    loaderSupport_ = {LoaderSupportState::Checking, "正在识别 Loader 支持情况…", {}}; probeExecuting_ = false;
+    return loaderProbe_;
+}
+void DeviceMaintenanceService::executeLoaderProbe(const LoaderProbe& probe)
+{
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!probe.id || probe.id != loaderProbe_.id || probeExecuting_ || !probe.cancel || *probe.cancel) return;
+        probeExecuting_ = true;
+    }
+    LoaderSupport result;
+    try { result = backend_->inspectLoaderSupport(probe.device, *probe.cancel); }
+    catch (...) { result = {LoaderSupportState::Unknown, "Loader 支持信息读取失败", {}}; }
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (probe.id != loaderProbe_.id || *probe.cancel || !sameTarget(probe.device, loaderTarget_)) return;
+    loaderSupport_ = std::move(result); probeTime_ = std::chrono::steady_clock::now(); probeExecuting_ = false;
+}
+void DeviceMaintenanceService::cancelLoaderProbe()
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (loaderProbe_.cancel) *loaderProbe_.cancel = true;
+    loaderProbe_ = {}; loaderSupport_ = {}; probeExecuting_ = false; probeTime_ = {};
 }
 bool DeviceMaintenanceService::prepare(MaintenanceRequest request,
                                        const MaintenanceConflicts& conflicts,
@@ -44,10 +99,14 @@ bool DeviceMaintenanceService::prepare(MaintenanceRequest request,
         error = "请选择完整的本地日志文件路径";
     else if (disruptive(request.action) && conflicts.any())
         error = "请先结束该设备的文件任务、设备串口、板卡任务、投屏或服务准备，再执行维护";
-    else if (request.action == MaintenanceAction::Loader && !loaderSupported(request.device))
+    else if (request.action == MaintenanceAction::Loader &&
+             (!sameTarget(request.device, loaderTarget_) || loaderSupport_.state != LoaderSupportState::Supported ||
+              std::chrono::steady_clock::now() - probeTime_ > std::chrono::seconds(30)))
         error = "当前设备尚未确认支持 Loader，不能执行此动作";
     if (!error.empty())
         return false;
+    if (loaderProbe_.cancel) *loaderProbe_.cancel = true;
+    loaderProbe_ = {};
     const auto id = state_.id + 1;
     state_ = {};
     state_.id = id;
@@ -95,6 +154,7 @@ void DeviceMaintenanceService::executePrepared()
     state_.cancelling = false;
     state_.progress.stage = MaintenanceStage::Finished;
     executing_ = false;
+    loaderSupport_ = {}; probeTime_ = {};
 }
 void DeviceMaintenanceService::cancel(std::uint64_t expectedId) noexcept
 {

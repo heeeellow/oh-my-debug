@@ -11,10 +11,11 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
+    <TestToolsAgentBundleDirectory Condition="'$(TestToolsAgentBundleDirectory)'==''">$(ProjectDir)build\agent-bundle</TestToolsAgentBundleDirectory>
     <ProjectGuid>{8E035381-B87B-4EFC-9A06-B5F10FCEE4DE}</ProjectGuid>
     <ProjectName>OhMyDebug</ProjectName>
     <RootNamespace>OhMyDebug</RootNamespace>
-    <VCToolsVersion Condition="'$(VCToolsVersion)' == ''">14.44.35207</VCToolsVersion>
+    <VCToolsVersion>14.44.35207</VCToolsVersion>
     <Keyword>QtVS_v304</Keyword>
     <WindowsTargetPlatformVersion Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">10.0</WindowsTargetPlatformVersion>
     <WindowsTargetPlatformVersion Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">10.0</WindowsTargetPlatformVersion>
@@ -88,7 +89,7 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(ProjectDir)third_party\libvterm\include;$(ProjectDir)src;$(IntDir);$(ProjectDir)third_party\CSerialPort\include;$(ProjectDir)third_party\asio\include;$(ProjectDir)third_party\tiny-process-library;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)third_party\nlohmann;$(ProjectDir)third_party\libvterm\include;$(ProjectDir)src;$(IntDir);$(ProjectDir)third_party\CSerialPort\include;$(ProjectDir)third_party\asio\include;$(ProjectDir)third_party\tiny-process-library;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>ASIO_STANDALONE;CSERIALPORT_USE_UTF8;NOMINMAX;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
@@ -106,7 +107,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(ProjectDir)third_party\libvterm\include;$(ProjectDir)src;$(IntDir);$(ProjectDir)third_party\CSerialPort\include;$(ProjectDir)third_party\asio\include;$(ProjectDir)third_party\tiny-process-library;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)third_party\nlohmann;$(ProjectDir)third_party\libvterm\include;$(ProjectDir)src;$(IntDir);$(ProjectDir)third_party\CSerialPort\include;$(ProjectDir)third_party\asio\include;$(ProjectDir)third_party\tiny-process-library;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>ASIO_STANDALONE;CSERIALPORT_USE_UTF8;NOMINMAX;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
@@ -284,12 +285,12 @@
   </ImportGroup>
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
-  <ItemGroup Condition="Exists('$(ProjectDir)build\agent-bundle\manifest.json')">
-    <TestToolsAgentBundleFiles Include="$(ProjectDir)build\agent-bundle\**\*" />
+  <ItemGroup Condition="Exists('$(TestToolsAgentBundleDirectory)\manifest.json')">
+    <TestToolsAgentBundleFiles Include="$(TestToolsAgentBundleDirectory)\**\*" />
   </ItemGroup>
   <Target Name="CopyTestToolsAgentBundleForRun" AfterTargets="Build"
-          Condition="Exists('$(ProjectDir)build\agent-bundle\manifest.json')">
-    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)scripts\validate-agent-bundle.ps1&quot; -BundleDirectory &quot;$(ProjectDir)build\agent-bundle&quot;" />
+          Condition="Exists('$(TestToolsAgentBundleDirectory)\manifest.json')">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)scripts\validate-agent-bundle.ps1&quot; -BundleDirectory &quot;$(TestToolsAgentBundleDirectory)&quot;" />
     <MakeDir Directories="$(OutDir)agent-bundle" />
     <Copy SourceFiles="@(TestToolsAgentBundleFiles)"
           DestinationFiles="@(TestToolsAgentBundleFiles->'$(OutDir)agent-bundle\%(RecursiveDir)%(Filename)%(Extension)')"
@@ -301,7 +302,7 @@
           DestinationFiles="$(OutDir)licenses\Phosphor-Icons-LICENSE.txt" SkipUnchangedFiles="true" />
   </Target>
   <Target Name="WarnMissingTestToolsAgentBundle" AfterTargets="Build"
-          Condition="'$(DesignTimeBuild)'!='true' AND !Exists('$(ProjectDir)build\agent-bundle\manifest.json')">
+          Condition="'$(DesignTimeBuild)'!='true' AND !Exists('$(TestToolsAgentBundleDirectory)\manifest.json')">
     <Warning Text="Agent Bundle not found; TestTools can reconnect to an existing Agent but cannot install or upgrade one. Run scripts\build-agent-matrix.ps1 to build all Android and Linux Agent targets." />
   </Target>
   <ItemGroup>
@@ -390,6 +391,35 @@
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\core\toolbox\toolbox_contract.cpp" />
+    <ClCompile Include="src\core\toolbox\iperf_json.cpp" />
+    <ClCompile Include="src\application\toolbox\gpio_inventory.cpp" />
+    <ClCompile Include="src\core\device\loader_support.cpp" />
+    <ClCompile Include="src\application\toolbox\toolbox_service.cpp" />
+    <ClCompile Include="src\adapters\device\windows_toolbox_host.cpp" />
+    <ClCompile Include="src\ui\pages\toolbox_workspace.cpp" />
+    <ClCompile Include="src\ui\pages\toolbox_pages.cpp" />
+    <ClCompile Include="src\ui\widgets\toolbox_plot.cpp" />
+    <ClInclude Include="src\core\toolbox\toolbox_contract.h" />
+    <ClInclude Include="src\core\toolbox\iperf_json.h" />
+    <ClInclude Include="src\core\toolbox\toolbox_host.h" />
+    <ClInclude Include="src\application\toolbox\gpio_inventory.h" />
+    <ClInclude Include="src\core\device\loader_support.h" />
+    <ClInclude Include="src\application\toolbox\toolbox_service.h" />
+    <ClInclude Include="src\adapters\device\windows_toolbox_host.h" />
+    <ClInclude Include="src\ui\widgets\toolbox_plot.h" />
+    <QtMoc Include="src\ui\pages\toolbox_workspace.h" />
+  </ItemGroup>
+  <Target Name="CopyToolboxTools" AfterTargets="Build">
+    <MakeDir Directories="$(OutDir)iperf3;$(OutDir)licenses" />
+    <Copy SourceFiles="$(ProjectDir)third_party\iperf3\windows\iperf3.exe;$(ProjectDir)third_party\iperf3\windows\cygwin1.dll" DestinationFolder="$(OutDir)iperf3" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ProjectDir)third_party\iperf3\LICENSE;$(ProjectDir)third_party\nlohmann\LICENSE.MIT" DestinationFiles="$(OutDir)licenses\iperf3-LICENSE.txt;$(OutDir)licenses\nlohmann-json-LICENSE.txt" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ProjectDir)third_party\iperf3\CYGWIN-LICENSE;$(ProjectDir)third_party\iperf3\CYGWIN-COPYING;$(ProjectDir)third_party\iperf3\CYGWIN-COPYING.LIB" DestinationFolder="$(OutDir)licenses" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="ValidateToolboxDependencies" BeforeTargets="PrepareForBuild" Condition="'$(DesignTimeBuild)'!='true'">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)scripts\validate-toolbox-dependencies.ps1&quot;" />
+  </Target>
   <Target Name="CopyTestToolsTerminalLicense" AfterTargets="Build">
     <MakeDir Directories="$(OutDir)licenses" />
     <Copy SourceFiles="$(ProjectDir)third_party\libvterm\LICENSE" DestinationFiles="$(OutDir)licenses\libvterm-LICENSE.txt" SkipUnchangedFiles="true" />

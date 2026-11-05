@@ -4,6 +4,24 @@ project(testtools_host_tests LANGUAGES C CXX)
 find_package(Threads REQUIRED)
 enable_testing()
 
+add_executable(testtools-toolbox-tests toolbox_tests.cpp
+    ../src/agent/toolbox.cpp ../src/agent/toolbox_platform.cpp ../src/agent/board_gpio.cpp ../src/agent/board_test_job.cpp
+    ../src/application/toolbox/toolbox_service.cpp
+    ../src/core/toolbox/toolbox_contract.cpp ../src/core/toolbox/iperf_json.cpp
+    ../src/core/protocol/json_value.cpp)
+target_compile_features(testtools-toolbox-tests PRIVATE cxx_std_17)
+target_include_directories(testtools-toolbox-tests PRIVATE ../src ../third_party/nlohmann)
+target_link_libraries(testtools-toolbox-tests PRIVATE Threads::Threads)
+if(MSVC)
+    target_compile_options(testtools-toolbox-tests PRIVATE /utf-8)
+endif()
+add_test(NAME toolbox-contract COMMAND testtools-toolbox-tests)
+if(UNIX AND NOT ANDROID)
+    target_sources(testtools-toolbox-tests PRIVATE board_gpio_tests.cpp)
+    target_compile_definitions(testtools-toolbox-tests PRIVATE TESTTOOLS_BOARD_GPIO_FIXTURES=1)
+endif()
+set_tests_properties(toolbox-contract PROPERTIES TIMEOUT 25)
+
 get_filename_component(TESTTOOLS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
 
 add_executable(testtools-core-tests
@@ -68,7 +86,8 @@ add_test(NAME serial-recording-contract COMMAND testtools-serial-recording-tests
 set_tests_properties(serial-recording-contract PROPERTIES TIMEOUT 30)
 
 add_executable(testtools-maintenance-tests device_maintenance_tests.cpp
-    ${TESTTOOLS_ROOT}/src/application/device/device_maintenance_service.cpp)
+    ${TESTTOOLS_ROOT}/src/application/device/device_maintenance_service.cpp
+    ${TESTTOOLS_ROOT}/src/core/device/loader_support.cpp)
 target_compile_features(testtools-maintenance-tests PRIVATE cxx_std_17)
 target_include_directories(testtools-maintenance-tests PRIVATE ${TESTTOOLS_ROOT}/src)
 target_link_libraries(testtools-maintenance-tests PRIVATE Threads::Threads)
@@ -105,3 +124,13 @@ if(MSVC)
 endif()
 add_test(NAME terminal-engine-contract COMMAND testtools-terminal-tests)
 set_tests_properties(terminal-engine-contract PROPERTIES TIMEOUT 15)
+
+add_executable(testtools-gpio-inventory-tests gpio_inventory_tests.cpp
+    ../src/application/toolbox/gpio_inventory.cpp ../src/core/toolbox/toolbox_contract.cpp
+    ../src/core/protocol/json_value.cpp)
+target_compile_features(testtools-gpio-inventory-tests PRIVATE cxx_std_17)
+target_include_directories(testtools-gpio-inventory-tests PRIVATE ../src)
+if(MSVC)
+    target_compile_options(testtools-gpio-inventory-tests PRIVATE /utf-8)
+endif()
+add_test(NAME gpio-inventory-contract COMMAND testtools-gpio-inventory-tests)

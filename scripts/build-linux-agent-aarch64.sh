@@ -59,6 +59,7 @@ fi
 
 mkdir -p "$(dirname "$output_file")"
 "$cmake_program" -E copy "$build_directory/testtools-agent" "$output_file"
+"$cmake_program" -E copy "$build_directory/iperf3" "$(dirname "$output_file")/iperf3"
 
 readelf_program="$toolchain_root/usr/bin/aarch64-linux-gnu-readelf"
 if [[ ! -x "$readelf_program" ]]; then

@@ -42,3 +42,5 @@ if ($LASTEXITCODE -ne 0) { throw 'Android Agent build failed' }
     (Join-Path $applicationOutput 'testtools-agent')
 
 Write-Host "Android Agent ready: $applicationOutput\testtools-agent"
+& $CMakeProgram -E copy_if_different (Join-Path $buildDirectory 'iperf3') (Join-Path $applicationOutput 'iperf3')
+if ($LASTEXITCODE -ne 0) { throw 'Android iperf3 Runner copy failed' }

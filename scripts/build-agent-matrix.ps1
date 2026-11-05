@@ -65,7 +65,7 @@ try {
     }
     New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 
-    $sourceRoots = @('src\agent', 'src\core\protocol', 'src\core\support')
+    $sourceRoots = @('src\agent', 'src\core\protocol', 'src\core\support', 'src\core\toolbox')
     $sourceFiles = foreach ($sourceRoot in $sourceRoots) {
         Get-ChildItem -LiteralPath (Join-Path $repositoryRoot $sourceRoot) -Recurse -File |
             Where-Object { $_.Extension -in @('.h', '.cpp') }
@@ -74,6 +74,9 @@ try {
         $relative = $sourceFile.FullName.Substring($repositoryRoot.Length + 1).Replace('\', '/')
         $hash = (Get-FileHash -LiteralPath $sourceFile.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
         "$relative=$hash"
+    }
+    foreach ($dependency in @('third_party\iperf3\iperf-3.20.tar.gz', 'third_party\iperf3\CMakeLists.txt', 'third_party\iperf3\iperf_config.h.in', 'third_party\nlohmann\json.hpp')) {
+        $sourceFingerprintLines += "$dependency=$((Get-FileHash -LiteralPath (Join-Path $repositoryRoot $dependency) -Algorithm SHA256).Hash.ToLowerInvariant())"
     }
     $buildInputs = @(
         "configuration=$Configuration",

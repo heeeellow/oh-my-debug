@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/serial/serial_types.h"
+#include "core/device/loader_support.h"
 #include <atomic>
 #include <chrono>
 #include <filesystem>
@@ -65,10 +66,10 @@ struct MaintenanceConflicts {
 class IDeviceMaintenanceBackend {
   public:
     virtual ~IDeviceMaintenanceBackend() = default;
-    // 本地已核实配置查询，不进行设备 I/O；不得仅根据 Rockchip 名称猜测支持。
-    virtual bool loaderSupported(const testtools::AdbDevice&) const
+    // Only call on an owned background worker; this may perform read-only device I/O.
+    virtual LoaderSupport inspectLoaderSupport(const testtools::AdbDevice&, const std::atomic<bool>&)
     {
-        return false;
+        return {};
     }
     virtual MaintenanceResult
     execute(const MaintenanceRequest&,

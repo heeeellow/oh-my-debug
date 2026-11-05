@@ -1,4 +1,5 @@
 #include "agent_service.h"
+#include "toolbox.h"
 #include "core/protocol/agent_version.h"
 
 #include <algorithm>
@@ -378,6 +379,7 @@ JsonValue boardTestSnapshotValue(const BoardTestJobSnapshot& snapshot)
 AgentService::AgentService()
     : AgentService(
           [](const BoardTestRunRequest& request, const std::atomic_bool& cancelRequested) {
+              if (request.toolbox) return request.toolbox->execute(request, cancelRequested);
               return runBoardCapability(request, cancelRequested);
           },
           [] { return availableBoardCapabilities(); })
@@ -386,7 +388,8 @@ AgentService::AgentService()
 
 AgentService::AgentService(BoardTestJobManager::RunFunction boardTestRunner,
                            CapabilityListFunction capabilityList)
-    : boardTestJobs_(std::move(boardTestRunner)), capabilityList_(std::move(capabilityList))
+    : boardTestJobs_(std::move(boardTestRunner)),
+      toolbox_(std::make_unique<ToolboxAgent>(boardTestJobs_)), capabilityList_(std::move(capabilityList))
 {
 }
 
@@ -426,6 +429,11 @@ std::string AgentService::handleRequest(const std::string& request)
         return errorResponse(
             requestId, "unsupported_protocol", "only protocol version 1 is supported");
     }
+    if (toolbox_->handles(method, *params)) {
+        const auto reply = toolbox_->handle(method, *params);
+        return reply.ok ? resultResponse(requestId, reply.result) :
+                          errorResponse(requestId, reply.code, reply.message);
+    }
     if (method == "session.hello") {
         if (!params->objectItems().empty()) {
             return errorResponse(requestId, "invalid_params", "session.hello takes no parameters");
@@ -461,7 +469,10 @@ std::string AgentService::handleRequest(const std::string& request)
             }),
         };
         {
-            for (const auto& definition : validatedCapabilities(capabilityList_)) {
+            auto definitions = validatedCapabilities(capabilityList_);
+            const auto toolDefinitions = toolbox_->capabilities();
+            definitions.insert(definitions.end(), toolDefinitions.begin(), toolDefinitions.end());
+            for (const auto& definition : definitions) {
                 JsonValue::Array risks;
                 JsonValue::Array resources;
                 for (const auto& risk : definition.risks)

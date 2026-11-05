@@ -1,5 +1,6 @@
 #include "../board_info_fixture.h"
 #include "application/device/device_maintenance_service.h"
+#include "core/protocol/agent_version.h"
 #include "test_paths.h"
 #include "ui/theme.h"
 #include <QtCore/QJsonDocument>
@@ -73,7 +74,7 @@ int main(int argc, char** argv)
         window.deviceCombo_->currentIndexChanged(0);
         window.agentStatusLabel_->setText(QStringLiteral("板端服务 · 已就绪（夹具）"));
         window.agentConnectionDetail_->setText(QStringLiteral("只读信息交互夹具"));
-        window.agentVersionValue_->setText(QStringLiteral("应用要求：v0.3.7 · 设备：v0.3.7"));
+        window.agentVersionValue_->setText(QStringLiteral("应用要求：v%1 · 设备：v%1").arg(QString::fromLatin1(testtools::AgentVersion)));
         window.agentSecurityValue_->setText(QStringLiteral("连接权限：夹具"));
         window.agentCapabilitiesValue_->setText(QStringLiteral("内存容量、存储信息、存储健康"));
         window.agentModelValue_->setText(QStringLiteral("模拟设备"));

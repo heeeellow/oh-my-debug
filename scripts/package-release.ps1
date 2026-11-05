@@ -79,11 +79,19 @@ foreach ($directory in @('platform-tools','scrcpy')) {
     }
 }
 foreach ($file in @('LICENSE','docs/USAGE.md','docs/THIRD_PARTY.md')) { Copy-File (Join-Path $root $file) $file }
-foreach ($dependency in @('asio','CSerialPort','tiny-process-library','libvterm','phosphor-icons')) {
+& (Join-Path $PSScriptRoot 'validate-toolbox-dependencies.ps1')
+foreach ($file in @('iperf3.exe','cygwin1.dll')) {
+    $source = Join-Path $runtime "iperf3/$file"
+    if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ne
+        (Get-FileHash -LiteralPath (Join-Path $root "third_party/iperf3/windows/$file") -Algorithm SHA256).Hash) { throw "Bundled iperf3 differs from source: $file" }
+    Copy-File $source "iperf3/$file"
+}
+foreach ($dependency in @('asio','CSerialPort','tiny-process-library','libvterm','phosphor-icons','iperf3','nlohmann')) {
     Get-ChildItem -LiteralPath (Join-Path $root "third_party/$dependency") -File |
-        Where-Object { $_.Name -match '^(LICENSE|COPYING|VERSION|SHA256)' } |
+        Where-Object { $_.Name -match '^(LICENSE|COPYING|CYGWIN|VERSION|SHA256)' } |
         ForEach-Object { Copy-File $_.FullName "licenses/$dependency/$($_.Name)" }
 }
+foreach ($file in @('iperf-3.20.tar.gz','CMakeLists.txt','iperf_config.h.in')) { Copy-File (Join-Path $root "third_party/iperf3/$file") "licenses/iperf3/$file" }
 foreach ($file in @('LGPL-3.0-only.txt','GPL-3.0-only.txt','GPL-2.0-only.txt','Qt-GPL-exception-1.0.txt','BSD-3-Clause.txt')) {
     Copy-File (Join-Path $qtSource "LICENSES/$file") "licenses/Qt/LICENSES/$file"
 }
@@ -100,7 +108,7 @@ $readme = "# Oh My Debug $version`n`nRun OhMyDebug.exe from this directory. Keep
     "Copyright (c) 2026 Yanzhaohui. See manifest.json for build and file information.`n"
 [IO.File]::WriteAllText((Join-Path $stage 'README.md'), $readme, $utf8)
 $notices = [IO.File]::ReadAllText((Join-Path $stage 'docs/THIRD_PARTY.md'))
-foreach ($dependency in @('asio','CSerialPort','tiny-process-library','libvterm','phosphor-icons')) {
+foreach ($dependency in @('asio','CSerialPort','tiny-process-library','libvterm','phosphor-icons','iperf3','nlohmann')) {
     $notices = $notices.Replace("../third_party/$dependency/", "../licenses/$dependency/")
 }
 $notices = $notices.Replace('../third_party/platform-tools/', '../platform-tools/').Replace('../third_party/scrcpy/', '../scrcpy/')

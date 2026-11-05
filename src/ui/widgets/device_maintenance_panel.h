@@ -32,7 +32,7 @@ class DeviceMaintenancePanel final : public QWidget {
     testtools::BackgroundTaskGroup tasks_;
     testtools::AdbDevice device_;
     bool closing_ = false, wasActive_ = false, shutdownEmitted_ = false;
-    QLabel *target_ = nullptr, *status_ = nullptr, *artifact_ = nullptr;
+    QLabel *target_ = nullptr, *status_ = nullptr, *artifact_ = nullptr, *loaderHint_ = nullptr;
     QPlainTextEdit* detail_ = nullptr;
     QPushButton *logcat_ = nullptr, *dmesg_ = nullptr, *root_ = nullptr, *reboot_ = nullptr,
                 *loader_ = nullptr, *cancel_ = nullptr;

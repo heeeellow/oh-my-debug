@@ -1,4 +1,5 @@
 #include "board_test_job.h"
+#include "toolbox.h"
 
 #include <algorithm>
 #include <condition_variable>
@@ -84,6 +85,9 @@ std::optional<BoardTestJobSnapshot> BoardTestJobManager::start(const BoardTestRu
                 result.exitCode = -1;
             }
             finish(jobId, std::move(result));
+            if (request.toolbox) {
+                if (const auto state = snapshot(jobId)) request.toolbox->finish(*state);
+            }
         });
     } catch (...) {
         active_ = false;

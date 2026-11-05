@@ -8,7 +8,8 @@ get_filename_component(ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 set(TESTTOOLS_TEST_OUTPUT "${CMAKE_BINARY_DIR}/evidence" CACHE PATH "Native test evidence directory")
 file(MAKE_DIRECTORY "${TESTTOOLS_TEST_OUTPUT}")
 set(TESTTOOLS_HOST_CONFIGURATION "Release" CACHE STRING "Product object configuration used by native checks")
-if(NOT EXISTS "${ROOT}/build/intermediate/desktop/x64/${TESTTOOLS_HOST_CONFIGURATION}/main_window.obj")
+set(TESTTOOLS_HOST_OBJECT_DIRECTORY "${ROOT}/build/intermediate/desktop/x64/${TESTTOOLS_HOST_CONFIGURATION}" CACHE PATH "Product object directory")
+if(NOT EXISTS "${TESTTOOLS_HOST_OBJECT_DIRECTORY}/main_window.obj")
     message(FATAL_ERROR "Build TestTools ${TESTTOOLS_HOST_CONFIGURATION} first; checks link the actual product objects")
 endif()
 # Derive link inputs from the current product project. An object left by removed
@@ -28,7 +29,7 @@ foreach(item IN LISTS HOST_ITEMS)
     elseif(source STREQUAL "src/main.cpp")
         continue()
     endif()
-    set(object "${ROOT}/build/intermediate/desktop/x64/${TESTTOOLS_HOST_CONFIGURATION}/${stem}.obj")
+    set(object "${TESTTOOLS_HOST_OBJECT_DIRECTORY}/${stem}.obj")
     if(NOT EXISTS "${object}")
         message(FATAL_ERROR "Current product object is missing: ${object}; build TestTools Release first")
     endif()
@@ -36,7 +37,7 @@ foreach(item IN LISTS HOST_ITEMS)
 endforeach()
 list(REMOVE_DUPLICATES HOST_OBJECTS)
 set(MANUAL_CHECKS device-smoke directory-perf mirror-host-probe terminal-live-smoke)
-foreach(target mock-adb backend-smoke ui-smoke file-management-smoke icon-style-smoke serial-smoke service-icons-smoke serial-workspace-smoke recording-smoke ${MANUAL_CHECKS} maintenance-mock-adb maintenance-backend-smoke maintenance-ui-smoke board-info-smoke terminal-throughput-smoke)
+foreach(target mock-adb backend-smoke ui-smoke file-management-smoke icon-style-smoke serial-smoke service-icons-smoke serial-workspace-smoke recording-smoke ${MANUAL_CHECKS} maintenance-mock-adb maintenance-backend-smoke maintenance-ui-smoke board-info-smoke terminal-throughput-smoke toolbox-smoke)
     if(target IN_LIST MANUAL_CHECKS)
         add_executable(${target} EXCLUDE_FROM_ALL ../manual/${target}.cpp ${HOST_OBJECTS})
     else()
@@ -61,13 +62,15 @@ add_test(NAME icon-style-ui COMMAND icon-style-smoke)
 add_test(NAME native-device-maintenance COMMAND maintenance-backend-smoke $<TARGET_FILE:maintenance-mock-adb>)
 add_test(NAME device-maintenance-ui COMMAND maintenance-ui-smoke)
 add_test(NAME board-info-ui COMMAND board-info-smoke)
+add_test(NAME toolbox-ui COMMAND toolbox-smoke)
+set_tests_properties(toolbox-ui PROPERTIES TIMEOUT 30)
 add_test(NAME terminal-throughput-ui COMMAND terminal-throughput-smoke)
 add_test(NAME terminal-idle-interaction-ui COMMAND terminal-throughput-smoke --interaction-only)
 add_test(NAME terminal-echo-latency-ui COMMAND terminal-throughput-smoke --echo-latency)
-set_tests_properties(file-workspace-ui serial-workspace-ui native-file-backend service-icons-ui serial-independent-pages serial-recording-ui file-management-ui icon-style-ui native-device-maintenance device-maintenance-ui board-info-ui terminal-throughput-ui terminal-idle-interaction-ui terminal-echo-latency-ui PROPERTIES
+set_tests_properties(file-workspace-ui serial-workspace-ui native-file-backend service-icons-ui serial-independent-pages serial-recording-ui file-management-ui icon-style-ui native-device-maintenance device-maintenance-ui board-info-ui toolbox-ui terminal-throughput-ui terminal-idle-interaction-ui terminal-echo-latency-ui PROPERTIES
     WORKING_DIRECTORY "${ROOT}"
     RUN_SERIAL TRUE
     TIMEOUT 60
-    ENVIRONMENT "ADB_PATH=$<TARGET_FILE:mock-adb>;QT_SCALE_FACTOR=1;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::Core>/../plugins/platforms;TESTTOOLS_DATA_DIR=${CMAKE_BINARY_DIR}/fixture-data;TESTTOOLS_TEST_OUTPUT=${TESTTOOLS_TEST_OUTPUT}"
+    ENVIRONMENT "ADB_PATH=$<TARGET_FILE:mock-adb>;QT_SCALE_FACTOR=1;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::Core>/../plugins/platforms;TESTTOOLS_DATA_DIR=${CMAKE_BINARY_DIR}/fixture-data;TESTTOOLS_TOOLBOX_PREFERENCES_DIRECTORY=${CMAKE_BINARY_DIR}/fixture-data/toolbox;TESTTOOLS_TEST_OUTPUT=${TESTTOOLS_TEST_OUTPUT}"
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 # device-smoke and mirror-host-probe touch a real device and are never CTest defaults.

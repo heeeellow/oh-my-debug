@@ -1,4 +1,5 @@
 #include "application/agent/agent_connection_service.h"
+#include "adapters/device/windows_toolbox_host.h"
 #include "application/agent/agent_service_status.h"
 
 #include "adapters/agent/agent_client.h"
@@ -6,6 +7,11 @@
 #include <exception>
 
 namespace testtools {
+
+std::shared_ptr<IToolboxHost> AgentConnectionService::createToolboxHost(const std::string& directory)
+{
+    return std::make_shared<WindowsToolboxHost>(directory);
+}
 
 namespace {
 

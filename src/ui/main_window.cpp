@@ -9,6 +9,7 @@
 #include "ui/pages/file_transfer_workspace.h"
 #include "ui/pages/serial_workspace.h"
 #include "ui/pages/serial_terminal_workspace.h"
+#include "ui/pages/toolbox_workspace.h"
 #include "ui/screen_mirror_panel.h"
 #include "ui/widgets/board_info_panel.h"
 #include "ui/widgets/device_maintenance_panel.h"
@@ -107,7 +108,7 @@ MainWindow::MainWindow(QWidget* parent,
     connect(taskTimer_, &QTimer::timeout, this, [this] {
         updateTasks();
         if (closeRequested_ && fileShutdownComplete_ && mirrorShutdownComplete_ &&
-            maintenanceShutdownComplete_ && boardShutdownComplete_ && !recordingsPending())
+            maintenanceShutdownComplete_ && boardShutdownComplete_ && toolboxShutdownComplete_ && !recordingsPending())
             close();
     });
     taskTimer_->start();
@@ -162,7 +163,7 @@ void MainWindow::closeEvent(QCloseEvent* event)
 {
     if (!shuttingDown_ &&
         (!mirrorShutdownComplete_ || !fileShutdownComplete_ || !maintenanceShutdownComplete_ ||
-         !boardShutdownComplete_ || recordingsPending())) {
+         !boardShutdownComplete_ || !toolboxShutdownComplete_ || recordingsPending())) {
         event->ignore();
         closeRequested_ = true;
         if (serviceHealthTimer_)
@@ -188,6 +189,8 @@ void MainWindow::closeEvent(QCloseEvent* event)
             boardInfoPanel_->shutdown();
         else
             boardShutdownComplete_ = true;
+        if (toolbox_) toolbox_->shutdown();
+        else toolboxShutdownComplete_ = true;
         return;
     }
     QMainWindow::closeEvent(event);
@@ -207,6 +210,7 @@ void MainWindow::prepareForShutdown()
     if (maintenancePanel_) maintenancePanel_->shutdown();
     if (boardInfoPanel_)
         boardInfoPanel_->shutdown();
+    if (toolbox_) toolbox_->shutdown();
     updateAdbTerminalControls();
     const std::string selectedSerial = selectedDevice().serial;
     if (serialWorkspace_) {
@@ -256,6 +260,10 @@ bool MainWindow::navigateTo(const QString& pageName)
         showPage(FileTransferPage);
     } else if ((normalized == QStringLiteral("mirror") || normalized == QStringLiteral("remote"))) {
         showPage(MirrorPage);
+    } else if (normalized == QStringLiteral("gpio") || normalized == QStringLiteral("toolbox")) {
+        showPage(GpioPage);
+    } else if (normalized == QStringLiteral("network")) {
+        showPage(NetworkPage);
     } else {
         return false;
     }
@@ -298,6 +306,19 @@ void MainWindow::buildUi()
     pages_->addWidget(buildFileTransferPage());
     pages_->addWidget(buildMirrorPage());
     pages_->addWidget(buildSerialPage(true));
+    toolbox_ = new ToolboxWorkspace(this);
+    pages_->addWidget(wrapAdbPage(QStringLiteral("GPIO 调试"), toolbox_->gpioPage()));
+    pages_->addWidget(wrapAdbPage(QStringLiteral("网络测速"), toolbox_->networkPage()));
+    connect(toolbox_, &ToolboxWorkspace::activityChanged, this, &MainWindow::setActivity);
+    connect(toolbox_, &ToolboxWorkspace::connectRequested, this, &MainWindow::deploySelectedAgent);
+    connect(toolbox_, &ToolboxWorkspace::taskChanged, this, [this] { updateTasks(); updateAgentControls(); });
+    connect(toolbox_, &ToolboxWorkspace::shutdownFinished, this, [this] { toolboxShutdownComplete_ = true; });
+    toolbox_->conflict = [this](const std::string& serial) {
+        const auto maintenance = maintenanceService_->snapshot();
+        return (maintenance.active && maintenance.request.device.serial == serial) ||
+            (boardInfoPanel_ && boardInfoPanel_->busyForDevice(serial)) ||
+            ((agentConnecting_ || agentCleanupPending_) && selectedDevice().serial == serial);
+    };
     bodyLayout->addWidget(pages_, 1);
     root->addWidget(body, 1);
 
@@ -454,6 +475,21 @@ QWidget* MainWindow::buildNavigation()
     layout->addWidget(adbChildren_); setAdbExpanded(false);
     connect(adb, &QPushButton::clicked, this, [this] { showPage(lastAdbPage_); });
     connect(adbExpandButton_, &QToolButton::clicked, this, [this] { setAdbExpanded(adbChildren_->isHidden()); });
+    toolboxGroupRow_ = new QFrame(rail);
+    toolboxGroupRow_->setObjectName("navigationGroupRow"); toolboxGroupRow_->setAttribute(Qt::WA_Hover);
+    auto* toolboxRow = new QHBoxLayout(toolboxGroupRow_); toolboxRow->setContentsMargins(0, 0, 0, 0); toolboxRow->setSpacing(0);
+    toolboxGroupButton_ = new QPushButton(QStringLiteral("工具箱"), toolboxGroupRow_);
+    toolboxGroupButton_->setCheckable(true); toolboxGroupButton_->setObjectName("navigationGroupButton");
+    toolboxExpandButton_ = new QToolButton(toolboxGroupRow_); toolboxExpandButton_->setFixedSize(32, 38); toolboxExpandButton_->setAutoRaise(true);
+    toolboxExpandButton_->setObjectName("toolboxExpandButton"); toolboxExpandButton_->setAccessibleName(QStringLiteral("展开或收起工具箱子页面"));
+    toolboxRow->addWidget(toolboxGroupButton_, 1); toolboxRow->addWidget(toolboxExpandButton_); layout->addWidget(toolboxGroupRow_);
+    toolboxChildren_ = new QWidget(rail); toolboxChildren_->setObjectName("toolboxNavigationChildren");
+    auto* toolboxPages = new QVBoxLayout(toolboxChildren_); toolboxPages->setContentsMargins(18, 0, 0, 2); toolboxPages->setSpacing(4);
+    toolboxPages->addWidget(addNavigationButton(QStringLiteral("GPIO 调试"), GpioPage));
+    toolboxPages->addWidget(addNavigationButton(QStringLiteral("网络测速"), NetworkPage));
+    layout->addWidget(toolboxChildren_); setToolboxExpanded(false);
+    connect(toolboxGroupButton_, &QPushButton::clicked, this, [this] { showPage(lastToolboxPage_); });
+    connect(toolboxExpandButton_, &QToolButton::clicked, this, [this] { setToolboxExpanded(toolboxChildren_->isHidden()); });
     layout->addStretch();
     layout->addWidget(addNavigationButton(QStringLiteral("设备信息"), DeviceInfoPage));
     return rail;
@@ -464,6 +500,13 @@ void MainWindow::setAdbExpanded(bool expanded)
     adbChildren_->setVisible(expanded);
     adbExpandButton_->setIcon(testtools::ui::navigationChevron(expanded, adbGroupButton_->isChecked()));
     adbExpandButton_->setToolTip(expanded ? QStringLiteral("收起 ADB 子页面") : QStringLiteral("展开 ADB 子页面"));
+}
+
+void MainWindow::setToolboxExpanded(bool expanded)
+{
+    toolboxChildren_->setVisible(expanded);
+    toolboxExpandButton_->setIcon(testtools::ui::navigationChevron(expanded, toolboxGroupButton_->isChecked()));
+    toolboxExpandButton_->setToolTip(expanded ? QStringLiteral("收起工具箱子页面") : QStringLiteral("展开工具箱子页面"));
 }
 
 QWidget* MainWindow::wrapAdbPage(const QString& title, QWidget* content)
@@ -685,6 +728,7 @@ QWidget* MainWindow::buildDeviceInfoPage()
     columns->setObjectName("deviceInfoColumns");
     layout->addWidget(columns);
     boardInfoPanel_->maintenanceBusy = [this](const std::string& serial) {
+        if (toolbox_ && toolbox_->busyForDevice(serial)) return true;
         const auto state = maintenanceService_->snapshot();
         return state.active && testtools::disruptive(state.request.action) &&
                state.request.device.serial == serial;
@@ -700,6 +744,7 @@ QWidget* MainWindow::buildDeviceInfoPage()
     layout->addStretch();
     connect(deployAgentButton_, &QPushButton::clicked, this, &MainWindow::deploySelectedAgent);
     connect(disconnectAgentButton_, &QPushButton::clicked, this, [this] {
+        if (toolbox_ && toolbox_->busyForDevice(selectedDevice().serial)) return;
         disconnectAgent(QStringLiteral("设备连接已断开"));
     });
     connect(stopAgentButton_, &QPushButton::clicked, this, &MainWindow::stopSelectedAgent);
@@ -768,6 +813,8 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
         return;
     }
 
+    // 结束尚未确认时只能只读重连，不能通过同步部署破坏原任务的归属与收尾。
+    if (toolbox_ && toolbox_->busyForDevice(device.serial)) allowDeploy = false;
     const std::string serial = device.serial;
     const QByteArray applicationDirectoryBytes = QCoreApplication::applicationDirPath().toUtf8();
     const std::string applicationDirectory(
@@ -916,6 +963,17 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
                             }
                             return client;
                         });
+                if (guard->toolbox_) {
+                    testtools::ToolboxSession toolSession;
+                    toolSession.serial = guard->agentAdbSerial_; toolSession.generation = generation;
+                    toolSession.openConnection = [port = guard->agentForwardPort_](std::string& error) -> std::shared_ptr<testtools::IAgentConnection> {
+                        auto client = testtools::AgentConnectionService::createClient();
+                        if (!client->connect("127.0.0.1", port, error) ||
+                            !testtools::probeAgentService(*client, testtools::AdbAgentDeployment::RequiredAgentVersion, error)) { client->close(); return {}; }
+                        return client;
+                    };
+                    guard->toolbox_->setSession(std::move(toolSession), snapshot.capabilityIds);
+                }
                 guard->agentSummary_ = QStringLiteral("已就绪");
                 guard->setAgentStatus(
                     QStringLiteral("板端服务 · %1").arg(guard->agentSummary_),
@@ -931,6 +989,7 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
                     capabilityLabels << QStringLiteral("设备信息（只读）");
                 if (serialStream)
                     capabilityLabels << QStringLiteral("串口调试");
+                if (snapshot.hasCapability("toolbox.v1")) capabilityLabels << QStringLiteral("工具箱");
                 capabilityLabels.append(boardCapabilityLabels);
                 guard->agentCapabilitiesValue_->setText(
                     QStringLiteral("可用功能：%1")
@@ -1011,6 +1070,7 @@ void MainWindow::connectSelectedAgent(bool allowDeploy)
 void MainWindow::stopSelectedAgent()
 {
     if (maintenanceBlocking_ ||
+        (toolbox_ && toolbox_->busyForDevice(selectedDevice().serial)) ||
         (boardInfoPanel_ && boardInfoPanel_->busyForDevice(selectedDevice().serial)) ||
         agentConnecting_ || shuttingDown_) {
         return;
@@ -1053,6 +1113,7 @@ void MainWindow::stopSelectedAgent()
 
 void MainWindow::disconnectAgent(const QString& reason)
 {
+    if (toolbox_) toolbox_->clearSession();
     if (boardInfoPanel_)
         boardInfoPanel_->clearSession();
     ++agentGeneration_;
@@ -1165,7 +1226,7 @@ void MainWindow::updateServicePresentation()
         ? QStringLiteral("● 板端服务：%1").arg(topServiceStatus_->fontMetrics().elidedText(serviceDetail_, Qt::ElideRight, 180))
         : label);
     topServiceStatus_->setToolTip(serviceDetail_.isEmpty()
-        ? QStringLiteral("板端服务提供设备串口和只读信息；PC端串口、ADB 文件、Shell 和投屏独立可用。")
+        ? QStringLiteral("板端服务提供设备串口、只读信息和工具箱；PC端串口、ADB 文件、Shell 和投屏独立可用。")
         : serviceDetail_);
     topServiceButton_->setText(state == State::Ready ? QStringLiteral("服务详情")
         : state == State::Connecting ? QStringLiteral("启动中…")
@@ -1254,21 +1315,23 @@ void MainWindow::updateAgentControls()
     }
     const bool connected = static_cast<bool>(agentClient_);
     const auto device = selectedDevice();
+    const bool toolBusy = toolbox_ && toolbox_->busyForDevice(device.serial);
     deviceCombo_->setToolTip(deviceCombo_->currentText());
     const bool online = !device.serial.empty() && device.state == "device";
     deployAgentButton_->setEnabled(online && !maintenanceBlocking_ &&
                                    (!agentConnecting_ || passiveAgentProbe_) &&
                                    !agentCleanupPending_ && !connected && !agentSerialBusy());
-    disconnectAgentButton_->setEnabled(connected && !agentSerialBusy());
+    disconnectAgentButton_->setEnabled(connected && !agentSerialBusy() && !toolBusy);
     stopAgentButton_->setEnabled(
         online && !maintenanceBlocking_ && !agentConnecting_ && !agentSerialBusy() &&
-        !(boardInfoPanel_ && boardInfoPanel_->busyForDevice(device.serial)));
+        !(boardInfoPanel_ && boardInfoPanel_->busyForDevice(device.serial)) && !toolBusy);
     updateServicePresentation();
     deployAgentButton_->setText(agentConnecting_ && !passiveAgentProbe_
                                     ? QStringLiteral("正在连接…")
                                     : QStringLiteral("连接板端服务"));
     deployAgentButton_->setToolTip(
-        QStringLiteral("准备 Android 板端服务可能请求 Root，以访问设备串口；不会自动 Remount。"));
+        toolBusy ? QStringLiteral("原工具任务尚未确认结束，只检查现有服务连接，不同步或重置服务。")
+                 : QStringLiteral("准备 Android 板端服务可能请求 Root，以访问设备串口和工具箱；不会自动 Remount。"));
     if (agentDeviceValue_) {
         agentDeviceValue_->setText(
             online ? QStringLiteral("目标设备：%1").arg(deviceDisplayName(device))
@@ -1525,6 +1588,7 @@ void MainWindow::applySelectedDevice()
     if (maintenancePanel_) maintenancePanel_->setDevice(device);
     if (boardInfoPanel_)
         boardInfoPanel_->setTarget(device);
+    if (toolbox_) toolbox_->setTarget(device);
     if (fileWorkspace_) fileWorkspace_->setDevice(device);
     if (!agentAdbSerial_.empty() &&
         (agentAdbSerial_ != device.serial || device.state != "device")) {
@@ -1546,6 +1610,8 @@ void MainWindow::showPage(int pageIndex)
         return;
     }
     pages_->setCurrentIndex(pageIndex);
+    if (toolbox_) toolbox_->setVisible(pageIndex == GpioPage, pageIndex == NetworkPage);
+    if (pageIndex == GpioPage || pageIndex == NetworkPage) { lastToolboxPage_ = pageIndex; setToolboxExpanded(true); }
     if (boardInfoPanel_)
         boardInfoPanel_->setDashboardVisible(pageIndex == DeviceInfoPage);
     if (pageIndex == FileTransferPage || pageIndex == MirrorPage) {
@@ -1574,14 +1640,17 @@ void MainWindow::updateNavigation()
                                    pages_->currentIndex() == TerminalPage);
     adbGroupButton_->setChecked(pages_->currentIndex() == FileTransferPage ||
                                 pages_->currentIndex() == MirrorPage);
-    for (auto* row : {serialGroupRow_, adbGroupRow_}) {
-        const bool active = row == serialGroupRow_ ? serialGroupButton_->isChecked() : adbGroupButton_->isChecked();
+    toolboxGroupButton_->setChecked(pages_->currentIndex() == GpioPage || pages_->currentIndex() == NetworkPage);
+    for (auto* row : {serialGroupRow_, adbGroupRow_, toolboxGroupRow_}) {
+        const bool active = row == serialGroupRow_ ? serialGroupButton_->isChecked() :
+            row == adbGroupRow_ ? adbGroupButton_->isChecked() : toolboxGroupButton_->isChecked();
         row->setProperty("active", active);
         row->style()->unpolish(row);
         row->style()->polish(row);
     }
     serialExpandButton_->setIcon(testtools::ui::navigationChevron(!serialChildren_->isHidden(), serialGroupButton_->isChecked()));
     adbExpandButton_->setIcon(testtools::ui::navigationChevron(!adbChildren_->isHidden(), adbGroupButton_->isChecked()));
+    toolboxExpandButton_->setIcon(testtools::ui::navigationChevron(!toolboxChildren_->isHidden(), toolboxGroupButton_->isChecked()));
     for (auto* button : navigationButtons_) {
         const auto mode = button->property("serialMode").toString();
         button->setChecked(button->property("pageIndex").toInt() == pages_->currentIndex() &&
@@ -1695,6 +1764,19 @@ void MainWindow::updateTasks(bool rebuildMenu)
             }
         }
     }
+    if (toolbox_) {
+        const auto state = toolbox_->snapshot();
+        if (state.active || state.remotePending) {
+            ++count;
+            const auto label = QStringLiteral("工具箱 · %1 · %2").arg(fromUtf8(state.serial), fromUtf8(state.message));
+            descriptions.push_back(label);
+            if (rebuildMenu) {
+                auto* action = taskMenu_->addAction(label + (state.active ? QStringLiteral(" · 停止任务") : QStringLiteral(" · 结束状态未知")));
+                action->setEnabled(state.active && !state.cancelling);
+                connect(action, &QAction::triggered, this, [this, id = state.id] { toolbox_->cancelTask(id); updateTasks(); });
+            }
+        }
+    }
     taskButton_->setText(count ? QStringLiteral("后台任务 %1").arg(count) : QStringLiteral("无后台任务"));
     taskButton_->setVisible(count > 0);
     taskButton_->setToolTip(descriptions.join(QLatin1Char('\n')));
@@ -1729,6 +1811,7 @@ testtools::MaintenanceConflicts MainWindow::maintenanceConflicts(const testtools
     result.serial=(serialWorkspace_ && serialWorkspace_->hasActiveAgentConnection(device.serial)) ||
                   (terminalWorkspace_ && terminalWorkspace_->hasActiveAgentConnection(device.serial));
     result.board = boardInfoPanel_ && boardInfoPanel_->busyForDevice(device.serial);
+    result.board = result.board || (toolbox_ && toolbox_->busyForDevice(device.serial));
     result.mirror=screenMirrorPanel_ && screenMirrorPanel_->busyForDevice(device.serial);
     result.preparingService = (agentConnecting_ || agentCleanupPending_ || terminalLaunching_ ||
                                (scanning_ && !automaticScan_)) &&

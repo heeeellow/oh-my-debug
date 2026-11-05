@@ -27,6 +27,7 @@ class FileTransferWorkspace;
 class ScreenMirrorPanel;
 class DeviceMaintenancePanel;
 class BoardInfoPanel;
+class ToolboxWorkspace;
 namespace testtools {
 class IAgentConnection;
 }
@@ -51,7 +52,7 @@ class MainWindow final : public QMainWindow {
     friend class MainWindowUiChecks;
     enum class StatusTone { Neutral, Good, Warning, Error };
 
-    enum PageIndex { SerialPage = 0, DeviceInfoPage, FileTransferPage, MirrorPage, TerminalPage };
+    enum PageIndex { SerialPage = 0, DeviceInfoPage, FileTransferPage, MirrorPage, TerminalPage, GpioPage, NetworkPage };
 
     void buildUi();
     QWidget* buildTopBar();
@@ -88,6 +89,7 @@ class MainWindow final : public QMainWindow {
     void applySelectedDevice();
     testtools::AdbDevice selectedDevice() const;
     void showPage(int pageIndex);
+    void setToolboxExpanded(bool expanded);
     void setAdbStatus(const QString& text, StatusTone tone = StatusTone::Good);
     void setActivity(const QString& message);
     void updateTasks(bool rebuildMenu = false);
@@ -102,6 +104,12 @@ class MainWindow final : public QMainWindow {
     QLabel* topServiceStatus_ = nullptr;
     QPushButton* topServiceButton_ = nullptr;
     QPushButton *serialGroupButton_ = nullptr, *adbGroupButton_ = nullptr;
+    QPushButton* toolboxGroupButton_ = nullptr;
+    QWidget *toolboxGroupRow_ = nullptr, *toolboxChildren_ = nullptr;
+    QToolButton* toolboxExpandButton_ = nullptr;
+    int lastToolboxPage_ = GpioPage;
+    ToolboxWorkspace* toolbox_ = nullptr;
+    bool toolboxShutdownComplete_ = false;
     QTimer* serviceHealthTimer_ = nullptr;
     bool serviceProbeActive_ = false, agentCleanupPending_ = false;
     int serviceHealthFailures_ = 0;

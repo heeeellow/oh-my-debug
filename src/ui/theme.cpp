@@ -369,6 +369,18 @@ QString applicationStyleSheet()
             width: 11px;
             height: 11px;
         }
+        QSpinBox { padding-right: 30px; }
+        QSpinBox::up-button, QSpinBox::down-button {
+            subcontrol-origin: border; width: 26px; height: 17px;
+            border-left: 1px solid #cfc9c2; background: #f8f6f3;
+        }
+        QSpinBox::up-button { subcontrol-position: top right; border-top-right-radius: 7px; }
+        QSpinBox::down-button { subcontrol-position: bottom right; border-bottom-right-radius: 7px; border-top: 1px solid #ddd8d3; }
+        QSpinBox::up-button:hover, QSpinBox::down-button:hover { background: #eee7e1; }
+        QSpinBox::up-button:pressed, QSpinBox::down-button:pressed { background: #e5d8cd; }
+        QSpinBox::up-button:disabled, QSpinBox::down-button:disabled { background: #eeece9; }
+        QSpinBox::up-arrow { image: url(:/testtools/icons/arrow-up-bold.svg); width: 11px; height: 11px; }
+        QSpinBox::down-arrow { image: url(:/testtools/icons/arrow-down-bold.svg); width: 11px; height: 11px; }
         QComboBox QAbstractItemView {
             background: #ffffff;
             border: 1px solid #cfc9c2;

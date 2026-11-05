@@ -50,6 +50,7 @@ foreach ($package in $manifest.packages) {
         throw "Package file count is invalid: $id"
     }
     $agentCount = 0
+    $runnerCount = 0
     foreach ($file in $package.files) {
         $relative = [string]$file.path
         if ([string]::IsNullOrWhiteSpace($relative) -or $relative -notmatch '^[A-Za-z0-9._/-]+$' -or [System.IO.Path]::IsPathRooted($relative) -or $relative -match '(^|[\/])\.\.([\/]|$)' -or $relative.Contains('\') -or $relative.Contains(':')) { throw "Unsafe install path: $id/$relative" }
@@ -63,12 +64,14 @@ foreach ($package in $manifest.packages) {
         if ([string]$file.sha256 -ne $hash -or [string]$file.sha256 -notmatch '^[0-9a-fA-F]{64}$') { throw "SHA-256 mismatch: $canonical" }
         if ([string]::IsNullOrWhiteSpace([string]$file.role) -or $null -eq $file.executable) { throw "File role or executable flag missing: $canonical" }
         if ([string]$file.role -eq 'agent') { ++$agentCount }
+        if ([string]$file.role -eq 'runner' -and [string]$file.path -eq 'iperf3' -and [bool]$file.executable) { ++$runnerCount }
     }
     $agent = @($package.files | Where-Object { [string]$_.role -eq 'agent' })
     if ($agentCount -ne 1 -or [string]$agent[0].path -ne 'testtools-agent' -or
         -not [bool]$agent[0].executable) {
         throw "Package must contain one executable testtools-agent: $id"
     }
+    if ($runnerCount -ne 1) { throw "Package must contain one executable iperf3 Runner: $id" }
 }
 if ($seenIds.Count -ne 3) { throw 'Manifest is missing one or more required packages.' }
 Write-Host ("Agent Bundle v2 valid: {0} packages; all files, sizes and SHA-256 values match." -f $manifest.packages.Count)

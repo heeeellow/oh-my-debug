@@ -43,6 +43,14 @@ class Backend final : public IDeviceMaintenanceBackend {
   public:
     std::atomic<int> calls{0};
     std::atomic<bool> hold{true};
+    std::atomic<bool> probeHold{false}, probeEntered{false};
+    std::atomic<LoaderSupportState> support{LoaderSupportState::Unknown};
+    LoaderSupport inspectLoaderSupport(const AdbDevice&, const std::atomic<bool>& cancel) override
+    {
+        probeEntered = true;
+        while (probeHold && !cancel) std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        return {support.load(), "fixture support reason", {}};
+    }
     MaintenanceResult answer{MaintenanceOutcome::Completed, "fixture complete"};
     MaintenanceResult
     execute(const MaintenanceRequest& request,
@@ -98,8 +106,8 @@ int main(int argc, char** argv)
         window.show();
         auto* panel = window.maintenancePanel_;
         check(!panel->root_->isEnabled() && !panel->logcat_->isEnabled() &&
-                  panel->loader_->isHidden(),
-              "offline actions disabled and unverified Loader hidden");
+                  !panel->loader_->isHidden() && !panel->loader_->isEnabled(),
+              "offline actions disabled and Loader remains discoverable");
         const testtools::AdbDevice device{"device-A", "device", "maintenance fixture"};
         {
             QSignalBlocker block(window.deviceCombo_);
@@ -254,6 +262,30 @@ int main(int argc, char** argv)
               "window closes after cancellation and owned task drainage");
         check(!service->snapshot().active && window.maintenanceShutdownComplete_,
               "maintenance worker settled before window close");
+        auto probeBackend = std::make_shared<Backend>(); probeBackend->probeHold = true;
+        auto probeService = std::make_shared<DeviceMaintenanceService>(probeBackend);
+        DeviceMaintenancePanel probePanel(nullptr, probeService); probePanel.resize(720, 600); probePanel.show();
+        probePanel.setDevice(device); qunsetenv("TESTTOOLS_OFFLINE");
+        check(await([&] { return probeBackend->probeEntered.load(); }), "Loader probe did not start on worker");
+        check(!probePanel.loader_->isHidden() && !probePanel.loader_->isEnabled() && probePanel.loaderHint_->text().contains(QStringLiteral("识别")), "checking Loader state is unclear");
+        probeBackend->probeHold = false;
+        check(await([&] { return probeService->loaderSupport(device).state == LoaderSupportState::Unknown; }), "unknown Loader probe did not settle");
+        probeBackend->support = LoaderSupportState::Unsupported; probeService->cancelLoaderProbe();
+        check(await([&] { return probeService->loaderSupport(device).state == LoaderSupportState::Unsupported; }), "unsupported Loader state missing");
+        check(!probePanel.loader_->isEnabled(), "unsupported Loader allowed");
+        probeBackend->support = LoaderSupportState::Supported; probeService->cancelLoaderProbe();
+        check(await([&] { return probePanel.loader_->isEnabled(); }), "supported Loader not enabled");
+        check(probePanel.loader_->text() == QStringLiteral("进入 Loader") && probePanel.reboot_->text() == QStringLiteral("重启设备") && probePanel.logcat_->text().endsWith(QStringLiteral("…")), "maintenance action punctuation incorrect");
+        probePanel.conflicts = [](const AdbDevice&) { MaintenanceConflicts c; c.board = true; return c; };
+        QTest::qWait(180); check(!probePanel.loader_->isEnabled(), "same-device conflict did not block Loader");
+        probePanel.conflicts = {}; QTest::qWait(180);
+        QTimer::singleShot(0, [] { for (auto* w : QApplication::topLevelWidgets()) if (auto* box = qobject_cast<QMessageBox*>(w)) box->reject(); });
+        probePanel.loader_->click(); check(probeBackend->calls == 0, "cancelled Loader confirmation executed");
+        probeBackend->probeHold = true; probeBackend->probeEntered = false; probeService->cancelLoaderProbe();
+        check(await([&] { return probeBackend->probeEntered.load(); }), "closing probe fixture did not start");
+        probePanel.shutdown();
+        check(await([&] { return probePanel.shutdownEmitted_; }), "closing did not cancel and drain probe");
+        probePanel.hide(); qputenv("TESTTOOLS_OFFLINE", "1");
         std::cout << "PASS maintenance UI, responsive layout, confirmations, context checks, "
                      "interlocks, Windows COM independence, task IDs, partial results and close\n";
         return 0;
