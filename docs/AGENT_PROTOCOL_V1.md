@@ -73,7 +73,7 @@ termios 兼容字段，不代表 USB 总线或模块内部 UART 的物理速率�
 `job.status` 仍只查询当前保留的任务，旧任务被下一任务替换后可返回 `job_not_found`。
 
 取消与完成按状态锁内的提交顺序裁决：终态提交后再取消返回 `job_not_active`，不改写终态；取消先被
-接受时，最终按 `cancelled` 收敛，即使 Provider 随后返回成功。保留已有优先级：Provider 明确报告的
+接受时，最终状态为 `cancelled`，即使 Provider 随后返回成功。保留已有优先级：Provider 明确报告的
 超时优先于取消。`completion` 只从最终任务状态映射，不能另从 Provider 布尔值推断。
 取消不表示设备操作已回滚；Provider 的退出码、观察值和日志保留实际证据，取消请求的回复也不代表
 工作线程已退出。示例：

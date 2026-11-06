@@ -7,7 +7,7 @@
 
 ## 源码与实现范围
 
-只读读取用户指定 A11 内核的 `drivers/mfd/rk-gpio.c`，并定位同目录 `rock-gpios.c`。
+只读核对 A11 内核的 `drivers/mfd/rk-gpio.c`，并定位同目录 `rock-gpios.c`。
 源码 revision、大小和 SHA-256 保存在 `evidence/bsp-source-context.json`，核对副本只留本地忽略目录。
 服务器源码和内核均未修改、构建或部署。
 
