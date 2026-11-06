@@ -3,6 +3,8 @@
 用于开发板日常调试的 Windows 工具，集成串口收发、Debug 终端、ADB 文件管理、Android 投屏和测试工具箱。
 适合查看启动日志、调试串口协议、传送文件，以及通过 Shell 检查设备状态。
 
+[下载 Windows x64 便携包](https://github.com/heeeellow/oh-my-debug/releases/download/v0.18.1/OhMyDebug-0.18.1-windows-x64.zip) · [SHA-256 校验文件](https://github.com/heeeellow/oh-my-debug/releases/download/v0.18.1/OhMyDebug-0.18.1-windows-x64.zip.sha256) · [Release 页面](https://github.com/heeeellow/oh-my-debug/releases/tag/v0.18.1)
+
 [使用手册](docs/USAGE.md) · [开发手册](docs/DEVELOPMENT.md) · [项目状态](docs/STATUS.md) · [0.18.1 更新说明](docs/releases/0.18.1.md)
 
 ## 功能

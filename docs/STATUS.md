@@ -8,10 +8,11 @@
 
 - 日期：2026-11-06。桌面 **0.18.1 / Oh My Debug**，Agent **0.3.12**，协议 **1**。
 - 源码归档分支为 `master`，远程目标 `origin/master`；本版包含自 `d01ac1e` 起的工具箱与维护改动，更新内容见 [0.18.1 更新说明](releases/0.18.1.md)。
-- 仓库目前已公开。当前仍处于发布准备，尚未创建 `v0.18.1` 标签或 GitHub Release；浏览器附件上传受本地文件权限限制，本机无可用的命令行 GitHub 登录，未上传二进制。源码同步和本地打包不等于公开发布。
+- 仓库已公开，2026-11-06 发布首个正式 [GitHub Release v0.18.1](https://github.com/heeeellow/oh-my-debug/releases/tag/v0.18.1)，标记为 Latest，非草稿、非预发布。
+- 发布标签 `v0.18.1` 固定到 `5265dab568dfec92496f7e9e4bcd98faf9d10b12`，与公司版 ZIP 的源码清单一致。
 - 公司署名程序：`build/public-release-0.18.1/runtime/Release/OhMyDebug.exe`；本次单独构建 Release。前轮 Debug 位于 `build/ui-refinement-0.18.1/runtime/Debug/`，未重新构建。
 - 本次将第一方版权署名统一为陕西瑞迅电子信息技术有限公司，保留 Yanzhaohui 的开发者署名，并补齐 Cygwin 对应源码。未修改产品业务逻辑；沿用已校验的三目标 Agent 0.3.12 Bundle，未重新交叉编译或操作日常设备服务。
-- 公司署名候选包放在 `build/packages/0.18.1-company/OhMyDebug-0.18.1-windows-x64.zip`，旁边提供 `.sha256`；源码归档前的预览证据在 `build/public-release-0.18.1/preview/`。旧个人署名包 `build/packages/0.18.1-local/` 保留，不能作为公司署名成品发布。
+- 公司署名正式便携包放在 `build/packages/0.18.1-company/OhMyDebug-0.18.1-windows-x64.zip`，旁边提供 `.sha256`；两份文件均已上传到上述 Release。源码归档前的预览证据在 `build/public-release-0.18.1/preview/`。旧个人署名包 `build/packages/0.18.1-local/` 保留，不能作为公司署名成品发布。
 - ZIP 面向 Windows 10（1809 起）/11 x64，随包部署 Qt、MSVC app-local 运行库、ADB、scrcpy、iperf3 与 Agent，无需测试人员安装开发环境或配置 PATH。
 - 旧 0.16.0 ZIP 保持原样。实际硬件仍需 Windows 能识别其 COM 或 ADB 设备，本包不安装设备驱动。
 
@@ -53,6 +54,7 @@
 - 解压后移除 Qt/QML 环境变量、将 PATH 限于 Windows 目录，从独立工作目录离线启动串口终端通过；1366×768 逻辑尺寸快照已查看。三个配套工具的版本启动通过。
 - 本日架构审查复跑既有检查程序：核心 8/8、Agent 1/1、原生 UI 15/15 通过；它们不代表对下面已知问题的故障注入验证，也不作为新构建对象的全套重测。
 - 静态分层、VS 导航、依赖摘要、Git 空白和文档链接检查通过。新 Debug、Agent 矩阵、干净 Windows、真实设备动作、异常和长时压力：本次未验证。
+- 正式发布后通过 GitHub API 核对标签提交、非草稿/非预发布状态和两份附件的大小、SHA-256，均与本地一致；ZIP 为 55,760,699 字节。未登录的公开校验文件下载与本地一致。发布核对记录为 `github-release-verification.json`，页面凭据为 `github-release-v0.18.1.jpg`。
 
 ## 4. 实机只读范围
 
