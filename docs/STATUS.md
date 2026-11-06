@@ -6,12 +6,12 @@
 
 ## 1. 版本与交付
 
-- 日期：2026-11-05。桌面 **0.18.1 / Oh My Debug**，Agent **0.3.12**，协议 **1**。
+- 日期：2026-11-06。桌面 **0.18.1 / Oh My Debug**，Agent **0.3.12**，协议 **1**。
 - 源码归档分支为 `master`，远程目标 `origin/master`；本版包含自 `d01ac1e` 起的工具箱与维护改动，更新内容见 [0.18.1 更新说明](releases/0.18.1.md)。
-- 当前处于发布准备：已制作本地 ZIP 便携试用包；尚未创建正式发布标签或 Release。源码同步和本地试用不等于公开发布。
-- 新程序：`build/ui-refinement-0.18.1/runtime/Release/OhMyDebug.exe`；Debug 在同级目录。
-- 本轮只改桌面与文档，沿用 `build/agent-bundle/` 的三目标 0.3.12 Bundle，已复制到独立运行目录；未重编译或替换日常设备服务。
-- 用户已选择先试用 ZIP：`build/packages/0.18.1-local/OhMyDebug-0.18.1-windows-x64.zip`，旁边提供 `.sha256` 校验文件；单文件便携 EXE 尚未实现。
+- 仓库目前已公开。当前仍处于发布准备，尚未创建 `v0.18.1` 标签或 GitHub Release；浏览器附件上传受本地文件权限限制，本机无可用的命令行 GitHub 登录，未上传二进制。源码同步和本地打包不等于公开发布。
+- 公司署名程序：`build/public-release-0.18.1/runtime/Release/OhMyDebug.exe`；本次单独构建 Release。前轮 Debug 位于 `build/ui-refinement-0.18.1/runtime/Debug/`，未重新构建。
+- 本次将第一方版权署名统一为陕西瑞迅电子信息技术有限公司，保留 Yanzhaohui 的开发者署名，并补齐 Cygwin 对应源码。未修改产品业务逻辑；沿用已校验的三目标 Agent 0.3.12 Bundle，未重新交叉编译或操作日常设备服务。
+- 公司署名候选包放在 `build/packages/0.18.1-company/OhMyDebug-0.18.1-windows-x64.zip`，旁边提供 `.sha256`；源码归档前的预览证据在 `build/public-release-0.18.1/preview/`。旧个人署名包 `build/packages/0.18.1-local/` 保留，不能作为公司署名成品发布。
 - ZIP 面向 Windows 10（1809 起）/11 x64，随包部署 Qt、MSVC app-local 运行库、ADB、scrcpy、iperf3 与 Agent，无需测试人员安装开发环境或配置 PATH。
 - 旧 0.16.0 ZIP 保持原样。实际硬件仍需 Windows 能识别其 COM 或 ADB 设备，本包不安装设备驱动。
 
@@ -43,6 +43,17 @@
 | ZIP 便携包 | 265 项载荷摘要与解压文件一致；40 个 Windows PE 文件的普通/延迟导入检查通过；清除 SDK/PATH 后三页离线启动通过，Qt/MSVC 实际从包内加载，三个配套工具版本启动通过 |
 | 干净系统 / 长时 | 本机不具备 Windows Sandbox；未验证全新 Windows 测试机和长时压力，不能把移除 PATH 的本机检查等同于纯净系统 |
 
+### 2026-11-06 公司署名与分发补验
+
+证据目录：`build/public-release-0.18.1/`。本次没有改变界面布局或设备业务逻辑。
+
+- Release 独立构建通过，使用 MSVC 14.44；核对 EXE 的版本、公司、版权和开发者属性，中文公司全称显示正确。
+- 打包脚本拒绝旧个人署名 EXE 与摘要不符的 Cygwin 源码包，均在创建载荷目录之前失败。
+- 公司预览包 268 项载荷逐项核对大小和 SHA-256，零差异；其中包含固定 Cygwin 官方源码、3.6.5-1 构建配方和来源清单。
+- 解压后移除 Qt/QML 环境变量、将 PATH 限于 Windows 目录，从独立工作目录离线启动串口终端通过；1366×768 逻辑尺寸快照已查看。三个配套工具的版本启动通过。
+- 本日架构审查复跑既有检查程序：核心 8/8、Agent 1/1、原生 UI 15/15 通过；它们不代表对下面已知问题的故障注入验证，也不作为新构建对象的全套重测。
+- 静态分层、VS 导航、依赖摘要、Git 空白和文档链接检查通过。新 Debug、Agent 矩阵、干净 Windows、真实设备动作、异常和长时压力：本次未验证。
+
 ## 4. 实机只读范围
 
 - MTB-720（RK3568）11 个已适配端点逐个读取通过；统一 UI 自动通过对应接口读取，gpio1 对应 GPIO3_B5 / Linux 109。
@@ -56,7 +67,8 @@
 - 真实进入 Loader、USB 模式确认、退出与恢复：未验证，需设备具备可恢复条件时另行安排。
 - GPIO 真实输出、电压/负载、物理边沿、断线/休眠/外部并发和长时状态：本轮未验证。
 - rk_gpio 属性布局与更多驱动、SELinux/权限组合：本轮未做新增固件的实机验证。
-- 试用包证据在 `build/zip-trial-0.18.1/`：package-check.json、pe-imports.json、tools-check.json、startup-result.json 及截图。最终正式发布前仍需干净 Windows 验收和第三方对应源码/许可核对，不将本地试用等同于发布。
+- 旧个人署名试用包证据在 `build/zip-trial-0.18.1/`。公司包证据在上节目录；Cygwin 对应源码已经补齐，其他验证不能据此自动视为通过。
+- 同设备多实例转发清理、普通 ADB 超时子进程处理、GPIO 终态事件分页取尽，以及 Agent 连接限额/空闲期限仍待改进；本次未修改这些代码或实机复现，发布说明保留已知问题。
 - 内嵌终端 T2、整体视觉精修和多板并发仍后置，见[原迭代方案](decisions/0007-native-terminal-gpio-and-iperf3-plan.md)。
 
 历史：[0.18.0 适配验收](reviews/board-gpio-0.18.0-validation.md)、[0.17.1 反馈验收](reviews/toolbox-0.17.1-feedback-validation.md)。

@@ -67,7 +67,8 @@ Qt 运行时、固定 ADB、scrcpy 和已有 Agent Bundle 会复制到程序旁�
 隔离构建可指定 `OutDir`、`IntDir` 与 `TestToolsAgentBundleDirectory`，不影响正在使用的程序。
 
 `VERSION.txt` 是桌面版本唯一来源，构建时生成 `app_version.h`，供程序与 Windows 版本资源共用。
-品牌和版权常量在 `src/app_info.h`。内部设置目录、协议标识、Agent 文件名和部署路径保持 TestTools 兼容。
+品牌、公司版权和开发者常量在 `src/app_info.h`；Windows 文件属性和发布包使用同一公司署名。
+内部设置目录、协议标识、Agent 文件名和部署路径保持 TestTools 兼容。
 生成文件不加入工程源码或 Git。清理废弃桌面对象可用 `scripts/clean-desktop-objects.ps1`，先检查其提示。
 
 ## 3. 验证
@@ -202,11 +203,15 @@ Qt、MSVC app-local 运行库与配套工具随包提供，不要求测试人员
 
 ```powershell
 .\scripts\package-release.ps1 -QtSourceDirectory '<Qt 6.11.2 source path>' `
-  -VcRuntimeDirectory '<Visual Studio Redist/MSVC/version/x64/Microsoft.VCxxx.CRT>'
+  -VcRuntimeDirectory '<Visual Studio Redist/MSVC/version/x64/Microsoft.VCxxx.CRT>' `
+  -CygwinSourceArchive '<Cygwin-3.6.5-1-corresponding-source.zip>'
 ```
 
 脚本要求干净的 Git 工作树，核对产品版本、Release 标记、Qt 版本、随包工具与 Agent 摘要，
 按清单收集运行文件、使用说明、许可与版本清单，生成 ZIP 和 SHA-256。
+公司与版权属性必须匹配 `src/app_info.h`；旧个人署名程序不能进入公司署名包。
+Cygwin 源码包从已验证交付中取得，或按 [对应源码说明](../third_party/iperf3/CYGWIN-SOURCE.md) 的固定修订导出；
+打包核对源码 ZIP 与 DLL 摘要，并将源码包一并放入 `licenses/iperf3/`，不在打包时联网补取。
 不复制 PDB、测试程序、个人设置或整个开发输出目录，不覆盖已有包。
 `-RuntimeDirectory` 可指定隔离构建；`-OutputDirectory` 可指定新目录。
 尚未提交时用 `-AllowDirty` 生成明确带 `preview` 的本地预览，不能将它作为正式发布记录。
@@ -215,7 +220,7 @@ Qt、MSVC app-local 运行库与配套工具随包提供，不要求测试人员
 本机启动不等于未安装运行库的干净 Windows 已验证；后者需在发布前单独执行。
 
 公开前还需复核历史提交中的个人信息、第三方对应源码的提供方式和分发义务，
-包括所带 Cygwin 运行时的准确对应源码/补丁；现有许可文本和源码入口不能替代这一核对。
+已有 Cygwin 对应源码和构建配方清单；升级运行时后仍需重新核对，不能只沿用原许可文本或源码入口。
 并进行真实设备回归。公开源码、发布二进制、远程改名、推送与打标签均是独立操作。
 仓库中的 LICENSE 不代表已完成名称权利检索。
 

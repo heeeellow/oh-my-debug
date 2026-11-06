@@ -1,0 +1,12 @@
+{
+  "schema": "ohmydebug.cygwin-source/v1",
+  "version": "3.6.5-1",
+  "archive": "Cygwin-3.6.5-1-corresponding-source.zip",
+  "sha256": "ba2f094dceaf6d21f31f5a4ed17f827c438f6039e9cef43c811fb95eac9f0ad1",
+  "runtime_sha256": "936c0398caf7d6f4dc8eba2aa931e64e5b6f9626e6ca99d41c36bb9ecb8a3154",
+  "source_repository": "https://cygwin.com/git/newlib-cygwin.git",
+  "source_tag": "cygwin-3.6.5",
+  "source_commit": "2ae6825d022ac4450cef168ce066d68810b3a6e2",
+  "packaging_repository": "https://cygwin.com/git/cygwin-packages/cygwin.git",
+  "packaging_commit": "e68f921332ce8fe9b265bc0f620356e0de7f7b01"
+}

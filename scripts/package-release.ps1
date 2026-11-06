@@ -3,6 +3,7 @@ param(
     [string]$RuntimeDirectory = '',
     [Parameter(Mandatory = $true)][string]$QtSourceDirectory,
     [Parameter(Mandatory = $true)][string]$VcRuntimeDirectory,
+    [Parameter(Mandatory = $true)][string]$CygwinSourceArchive,
     [string]$OutputDirectory = '',
     [switch]$AllowDirty
 )
@@ -14,6 +15,13 @@ if (-not $OutputDirectory) { $OutputDirectory = Join-Path $root 'build/packages'
 $runtime = (Resolve-Path -LiteralPath $RuntimeDirectory).Path
 $qtSource = (Resolve-Path -LiteralPath $QtSourceDirectory).Path
 $vcRuntime = (Resolve-Path -LiteralPath $VcRuntimeDirectory).Path
+$cygwinSource = (Resolve-Path -LiteralPath $CygwinSourceArchive).Path
+$cygwinSourceManifest = Get-Content -LiteralPath (Join-Path $root 'third_party/iperf3/CYGWIN-SOURCE.json') -Raw | ConvertFrom-Json
+if ($cygwinSourceManifest.schema -ne 'ohmydebug.cygwin-source/v1' -or
+    (Get-FileHash -LiteralPath $cygwinSource -Algorithm SHA256).Hash -ne $cygwinSourceManifest.sha256 -or
+    (Get-FileHash -LiteralPath (Join-Path $root 'third_party/iperf3/windows/cygwin1.dll') -Algorithm SHA256).Hash -ne $cygwinSourceManifest.runtime_sha256) {
+    throw 'Cygwin corresponding source archive or runtime does not match the pinned source manifest.'
+}
 $vcFiles = @('concrt140.dll','msvcp140.dll','msvcp140_1.dll','msvcp140_2.dll','msvcp140_atomic_wait.dll','msvcp140_codecvt_ids.dll','vcruntime140.dll','vcruntime140_1.dll','vcruntime140_threads.dll')
 foreach ($file in $vcFiles) {
     $path = Join-Path $vcRuntime $file
@@ -26,10 +34,21 @@ $vcVersion = (Get-Item -LiteralPath (Join-Path $vcRuntime 'vcruntime140.dll')).V
 if ([version]$vcVersion -lt [version]'14.44.35211.0') { throw 'MSVC runtime is older than the supported product toolchain.' }
 $version = [IO.File]::ReadAllText((Join-Path $root 'VERSION.txt')).Trim()
 if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid VERSION.txt' }
+$appInfo = [IO.File]::ReadAllText((Join-Path $root 'src/app_info.h'))
+$companyMatch = [regex]::Match($appInfo, '(?m)^#define OMD_COMPANY_NAME "([^"]+)"')
+$developerMatch = [regex]::Match($appInfo, '(?m)^#define OMD_DEVELOPER_NAME "([^"]+)"')
+$copyrightMatch = [regex]::Match($appInfo, '(?m)^#define OMD_COPYRIGHT "([^"]+)" OMD_COMPANY_NAME')
+if (-not $companyMatch.Success -or -not $developerMatch.Success -or -not $copyrightMatch.Success) {
+    throw 'Application copyright metadata is missing from src/app_info.h.'
+}
+$copyrightOwner = $companyMatch.Groups[1].Value
+$developer = $developerMatch.Groups[1].Value
+$copyrightNotice = $copyrightMatch.Groups[1].Value + $copyrightOwner
 $exe = Join-Path $runtime 'OhMyDebug.exe'
 $info = (Get-Item -LiteralPath $exe).VersionInfo
 if ($info.ProductVersion -ne $version -or $info.ProductName -ne 'Oh My Debug' -or
-    $info.OriginalFilename -ne 'OhMyDebug.exe' -or $info.IsDebug) {
+    $info.OriginalFilename -ne 'OhMyDebug.exe' -or $info.IsDebug -or
+    $info.CompanyName -ne $copyrightOwner -or $info.LegalCopyright -ne $copyrightNotice) {
     throw 'Build the current Release version before packaging.'
 }
 $qtVersion = ([version](Get-Item -LiteralPath (Join-Path $runtime 'Qt6Core.dll')).VersionInfo.ProductVersion).ToString(3)
@@ -105,6 +124,7 @@ foreach ($dependency in @('asio','CSerialPort','tiny-process-library','libvterm'
         ForEach-Object { Copy-File $_.FullName "licenses/$dependency/$($_.Name)" }
 }
 foreach ($file in @('iperf-3.20.tar.gz','CMakeLists.txt','iperf_config.h.in')) { Copy-File (Join-Path $root "third_party/iperf3/$file") "licenses/iperf3/$file" }
+Copy-File $cygwinSource "licenses/iperf3/$($cygwinSourceManifest.archive)"
 foreach ($file in @('LGPL-3.0-only.txt','GPL-3.0-only.txt','GPL-2.0-only.txt','Qt-GPL-exception-1.0.txt','BSD-3-Clause.txt')) {
     Copy-File (Join-Path $qtSource "LICENSES/$file") "licenses/Qt/LICENSES/$file"
 }
@@ -130,7 +150,8 @@ Windows 10（1809 起）或 Windows 11，x64。所需 Qt、MSVC 运行库、ADB�
 
 [使用手册](docs/USAGE.md) · [更新说明](docs/releases/$version.md) · [许可](LICENSE) · [第三方声明](docs/THIRD_PARTY.md)
 
-版本、源码提交与文件摘要见 manifest.json。Copyright (c) 2026 Yanzhaohui。
+版本、源码提交与文件摘要见 manifest.json。$copyrightNotice。
+开发者：$developer。
 "@
 [IO.File]::WriteAllText((Join-Path $stage 'README.md'), $readme, $utf8)
 $notices = [IO.File]::ReadAllText((Join-Path $stage 'docs/THIRD_PARTY.md'))
@@ -181,7 +202,7 @@ $files = @(Get-ChildItem -LiteralPath $stage -Recurse -File | Sort-Object FullNa
     [ordered]@{ path=$_.FullName.Substring($stage.Length + 1).Replace('\','/'); bytes=$_.Length;
                sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
 })
-$manifest = [ordered]@{ product='Oh My Debug'; version=$version; copyright='Yanzhaohui';
+$manifest = [ordered]@{ product='Oh My Debug'; version=$version; copyright=$copyrightOwner; developer=$developer;
     source_revision=$revision; source_dirty=$dirty; qt_version=$qtVersion;
     agent_version=$bundleManifest.agent_version; msvc_runtime_version=$vcVersion; msvc_runtime_deployment='app-local'; created_utc=[DateTime]::UtcNow.ToString('o'); files=$files }
 [IO.File]::WriteAllText((Join-Path $stage 'manifest.json'), ($manifest | ConvertTo-Json -Depth 8), $utf8)

@@ -12,7 +12,7 @@ Windows 10（1809 起）/11 x64 的便携包已包含 Qt、MSVC 运行库、ADB�
 
 解压 Windows x64 成品包，运行 `OhMyDebug.exe`。程序可以直接使用，无需安装 Qt 或开发环境。
 移动程序时请复制整个文件夹，保留配套的 DLL、`platform-tools/`、`agent-bundle/`、`iperf3/` 和 `scrcpy/` 等目录。
-如果提示缺少 MSVC 运行库，安装包内的 `vc_redist.x64.exe`。
+如果提示缺少 MSVC 运行库，请重新下载并完整解压便携包，确认主程序旁的运行库 DLL 齐全。
 
 窗口顶部用于选择 **ADB 设备**；串口页面的连接栏用于选择 **COM 口或设备串口**。
 只用电脑上的 COM 口时，直接进入串口页面即可。

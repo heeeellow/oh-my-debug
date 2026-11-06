@@ -7,6 +7,6 @@
 - Windows x64：[ar51an 3.20 固定发布](https://github.com/ar51an/iperf3-win-builds/releases/tag/3.20)的 `iperf-3.20-win64.zip`，SHA-256 `fc2a736b35559d410b7032e2be3de45a6884d5dcf9d12b96e759b1e2e7076b7b`；只取 `iperf3.exe` 与 `cygwin1.dll`。
 - 该 Windows 产物的版本输出为 iperf 3.20 / Cygwin 3.6.5-1；上游未正式支持 Windows，本项目按固定产物逐项验证，不推定其他构建兼容。
 - iperf3 许可原文见 `LICENSE`；Cygwin 许可说明及 GPLv3/LGPLv3 原文见 `CYGWIN-LICENSE`、`CYGWIN-COPYING`、`CYGWIN-COPYING.LIB`。
-- Cygwin 许可文本保留自公共源码镜像 `mirror/newlib-cygwin` 的提交 `1b7c72fdcc4bde7520407d2d3364146f04fb8312`。该镜像截至 2024-09-19，不冒充 3.6.5 对应源码；最终分发前需另核对所带运行时的对应源码/补丁提供方式。[Cygwin 官方源码入口](https://cygwin.com/git.html)。
+- Cygwin 3.6.5 对应官方源码与 3.6.5-1 构建配方已经核对；原许可文本与对应源码的措辞一致，排版保持。发布包同时携带对应源码 ZIP，修订、DLL/源码包摘要与边界见 `CYGWIN-SOURCE.md` 和 `CYGWIN-SOURCE.json`。
 
-文件摘要见 `SHA256SUMS.txt`。构建和程序运行均不联网下载依赖；最终发布 ZIP 按用户安排另行生成。
+文件摘要见 `SHA256SUMS.txt`。构建和程序运行均不联网下载依赖；发布打包需显式提供与源码清单摘要一致的 Cygwin 源码包。

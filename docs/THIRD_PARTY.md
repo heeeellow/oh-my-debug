@@ -36,7 +36,9 @@ scrcpy 归档摘要、保留文件、依赖源码和补充许可见 [随包版�
 libvterm 的归档来源、SHA-256 与提取范围见 [版本记录](../third_party/libvterm/VERSION.md)，逐文件摘要见 [SHA256SUMS](../third_party/libvterm/SHA256SUMS)，许可见 [LICENSE](../third_party/libvterm/LICENSE)。构建不联网，许可复制为 `licenses/libvterm-LICENSE.txt`。
 该目录保留原始行尾及上游空白，不对其执行第一方格式修正；`.gitattributes` 固定原样入库，提交时核对逐文件摘要。
 
-工具箱依赖的固定文件见 [iperf3 摘要](../third_party/iperf3/SHA256SUMS.txt) 与 [JSON 摘要](../third_party/nlohmann/SHA256SUMS.txt)，构建前由 `scripts/validate-toolbox-dependencies.ps1` 校验。Cygwin 许可说明和 GPLv3/LGPLv3 文本保留原文；许可文本来源与 3.6.5 对应源码的待核对边界见上述版本记录。最终发布前仍须核对实际运行时的源码/补丁提供方式。
+工具箱依赖的固定文件见 [iperf3 摘要](../third_party/iperf3/SHA256SUMS.txt) 与 [JSON 摘要](../third_party/nlohmann/SHA256SUMS.txt)，构建前由 `scripts/validate-toolbox-dependencies.ps1` 校验。
+Cygwin 3.6.5 的官方源码与 3.6.5-1 构建配方已核对，发布包在 `licenses/iperf3/` 同时携带对应源码 ZIP；打包前核对其摘要和实际 DLL。
+完整修订、许可文本核对与未重编译 DLL 的边界见 [对应源码说明](../third_party/iperf3/CYGWIN-SOURCE.md)。
 
 ## 源码裁剪与许可
 

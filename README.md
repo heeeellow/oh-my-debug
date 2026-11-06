@@ -65,7 +65,9 @@ GPIO 需内核字符设备接口及访问权限；设备提供的扩展控制接
 
 ## 许可
 
-Copyright (c) 2026 Yanzhaohui。
+Copyright (c) 2026 陕西瑞迅电子信息技术有限公司。
+
+开发者：Yanzhaohui。
 
 项目源码允许阅读和个人学习研究，商用、修改版分发需另行取得书面授权，完整条款见 [LICENSE](LICENSE)。
 第三方组件按各自许可证使用，详见 [第三方依赖](docs/THIRD_PARTY.md)。
